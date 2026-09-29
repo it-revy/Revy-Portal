@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, Bell, ChevronDown, Menu, User } from 'lucide-react';
+import { LogOut, Bell, ChevronDown, Menu, User, ArrowLeft, LayoutGrid } from 'lucide-react';
 
 const Header = ({ onToggleMobile }) => {
   const { user, logout } = useAuth();
@@ -33,6 +34,15 @@ const Header = ({ onToggleMobile }) => {
         >
           <Menu size={22} />
         </button>
+
+        <Link
+          to="/portal"
+          className="portal-back-btn"
+          title="Return to REVY Central Management Portal"
+        >
+          <ArrowLeft size={15} />
+          <span>Module Portal</span>
+        </Link>
       </div>
 
       <div className="header-right">

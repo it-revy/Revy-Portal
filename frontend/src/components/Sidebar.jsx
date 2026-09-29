@@ -16,7 +16,8 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
-  X
+  X,
+  LayoutGrid
 } from 'lucide-react';
 
 const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
@@ -107,6 +108,35 @@ const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
 
       {/* Nav List */}
       <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', flex: 1, overflowY: 'auto' }}>
+        {/* Return to Central Module Portal */}
+        <NavLink
+          to="/portal"
+          onClick={handleLinkClick}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.65rem',
+            padding: '0.65rem 0.85rem',
+            borderRadius: '8px',
+            color: '#93c5fd',
+            background: 'rgba(37, 99, 235, 0.15)',
+            border: '1px solid rgba(59, 130, 246, 0.3)',
+            textDecoration: 'none',
+            fontSize: '0.85rem',
+            fontWeight: 600,
+            marginBottom: '0.65rem',
+            transition: 'all 0.15s ease'
+          }}
+          title="Return to Central Module Portal"
+        >
+          <LayoutGrid size={18} color="#60a5fa" style={{ flexShrink: 0 }} />
+          {(!isCollapsed || isMobileOpen) && (
+            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              ← All Modules
+            </span>
+          )}
+        </NavLink>
+
         {/* 1. Dashboard - FIRST Navigation Item for Admins */}
         {hasPermission('breakfast.view') && (
           <NavLink

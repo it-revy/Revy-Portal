@@ -21,7 +21,7 @@ const LoginPage = () => {
     try {
       const res = await login(username, password);
       if (res.success) {
-        navigate('/today');
+        navigate('/portal');
       } else {
         setError(res.message || 'Invalid username or password.');
       }
@@ -55,9 +55,9 @@ const LoginPage = () => {
           }}>
             <Coffee size={28} color="white" />
           </div>
-          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)' }}>REVY Breakfast Portal</h1>
+          <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)' }}>REVY Management Portal</h1>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-            REVY Company Platform — Sign In
+            Enterprise Management Platform — Sign In
           </p>
         </div>
 

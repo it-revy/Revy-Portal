@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 
 import LoginPage from './pages/LoginPage';
+import CentralPortalPage, { getBreakfastDestination } from './pages/CentralPortalPage';
 import EmployeeDailyPage from './pages/EmployeeDailyPage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import TodayBreakfastListPage from './pages/TodayBreakfastListPage';
@@ -37,7 +38,20 @@ const ProtectedLayout = ({ children, requiredPermission }) => {
   }
 
   const checkPermission = () => {
-    if (!requiredPermission) return true;
+    if (!requiredPermission) {
+      // Require at least basic breakfast access for breakfast routes
+      const baseBreakfastPerms = [
+        '*',
+        'breakfast.view',
+        'breakfast.view_own',
+        'breakfast.submit',
+        'breakfast.manage',
+        'breakfast.report',
+        'breakfast.dashboard.view',
+        'finance.breakfast_fund.view'
+      ];
+      return baseBreakfastPerms.some(p => hasPermission(p));
+    }
     if (Array.isArray(requiredPermission)) {
       return requiredPermission.some(p => hasPermission(p));
     }
@@ -54,9 +68,12 @@ const ProtectedLayout = ({ children, requiredPermission }) => {
           <div className="page-body">
             <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center' }}>
               <h2 style={{ color: 'var(--danger)', marginBottom: '1rem' }}>403 - Permission Denied</h2>
-              <p style={{ color: 'var(--text-secondary)' }}>
-                Your current role does not have required permissions <code>{JSON.stringify(requiredPermission)}</code> to view this section.
+              <p style={{ color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
+                Your current role does not have authorization to view this section.
               </p>
+              <Link to="/portal" className="btn btn-primary" style={{ display: 'inline-flex', gap: '0.5rem' }}>
+                ← Return to Module Portal
+              </Link>
             </div>
           </div>
         </div>
@@ -77,21 +94,68 @@ const ProtectedLayout = ({ children, requiredPermission }) => {
 };
 
 function AppRoutes() {
-  const { user, hasPermission } = useAuth();
+  const { user, hasPermission, loading } = useAuth();
 
-  const getHomeRedirect = () => {
-    if (!user) return '/login';
-    if (hasPermission('breakfast.view')) return '/admin/dashboard';
-    if (hasPermission('breakfast.dashboard.view')) return '/ceo-dashboard';
-    if (hasPermission('finance.breakfast_fund.view')) return '/finance/fund-requests';
-    return '/today';
+  if (loading) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-secondary)' }}>
+        Loading session...
+      </div>
+    );
+  }
+
+  const canAccessBreakfast = () => {
+    if (!user) return false;
+    const perms = [
+      '*',
+      'breakfast.view',
+      'breakfast.view_own',
+      'breakfast.submit',
+      'breakfast.manage',
+      'breakfast.report',
+      'breakfast.dashboard.view',
+      'finance.breakfast_fund.view'
+    ];
+    return perms.some(p => hasPermission(p));
   };
 
   return (
     <Routes>
-      <Route path="/login" element={user ? <Navigate to={getHomeRedirect()} replace /> : <LoginPage />} />
+      {/* Root redirects to Central Portal if logged in, otherwise Login */}
+      <Route path="/" element={<Navigate to={user ? "/portal" : "/login"} replace />} />
 
-      {/* Common Breakfast Response - Accessible by ANY authenticated user */}
+      {/* Login redirects to Central Portal if already authenticated */}
+      <Route path="/login" element={user ? <Navigate to="/portal" replace /> : <LoginPage />} />
+
+      {/* NEW Central Module Selection Portal (Protected) */}
+      <Route
+        path="/portal"
+        element={
+          user ? (
+            <CentralPortalPage />
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+
+      {/* Gateway route for Breakfast Module -> forwards to user's role-based dashboard */}
+      <Route
+        path="/breakfast"
+        element={
+          user ? (
+            canAccessBreakfast() ? (
+              <Navigate to={getBreakfastDestination(hasPermission)} replace />
+            ) : (
+              <Navigate to="/portal" replace />
+            )
+          ) : (
+            <Navigate to="/login" replace />
+          )
+        }
+      />
+
+      {/* Common Breakfast Response - Accessible by ANY authenticated user with breakfast permission */}
       <Route
         path="/today"
         element={
@@ -252,7 +316,7 @@ function AppRoutes() {
         }
       />
 
-      <Route path="*" element={<Navigate to={getHomeRedirect()} replace />} />
+      <Route path="*" element={<Navigate to={user ? "/portal" : "/login"} replace />} />
     </Routes>
   );
 }
