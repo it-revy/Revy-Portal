@@ -1,160 +1,285 @@
-# REVY Company Platform — Breakfast Management System
+# REVY Breakfast Management System
 
-A production-ready, full-stack internal **Breakfast Management System** built with **React**, **Node.js + Express**, and **MongoDB**.
+A production-grade, enterprise modular monolith for **Breakfast Management** built with **FastAPI**, **PostgreSQL (SQLAlchemy + Alembic)**, and **React**.
 
-Designed as an enterprise platform module sharing a unified MongoDB database, RBAC authorization matrix, user accounts, timezone engine (Asia/Kolkata), and audit trail framework.
+Designed as a core foundational module for the **REVY Centralized Enterprise Management System**, featuring unified employee/user models, permission-based RBAC, authoritative financial ledger management, audit trails, and seamless Microsoft Azure / Entra ID readiness.
+
+---
+
+## 🏗️ Architecture Overview
+
+The system follows a clean **Modular Monolith** architecture:
+
+```text
+                 EXISTING REACT UI
+                        │
+                        ▼
+              API SERVICE LAYER (frontend/src/services/)
+                        │
+                        ▼
+            FASTAPI GATEWAY (backend/app/main.py)
+            Mounted at /api/v1 (Standard) & /api (Legacy Compatibility)
+                        │
+        ┌───────────────┼───────────────┬───────────────┐
+        ▼               ▼               ▼               ▼
+      Auth          Employees       Breakfast        Reports
+   (JWT / SSO)     (Users & RBAC) (Orders & Ledger) (Excel / CEO)
+        │               │               │               │
+        └───────────────┴───────┬───────┴───────────────┘
+                                ▼
+                       SQLAlchemy ORM (2.0)
+                                │
+                                ▼
+                    PostgreSQL Database (Alembic)
+```
+
+### Module Structure (`backend/app/`):
+```text
+backend/app/
+├── core/               # App configuration, database pooling, security, RBAC dependencies, logging
+├── auth/               # JWT authentication, login, password change, future Entra SSO adapter
+├── users/              # User entity, password hashing, active status
+├── employees/          # Employee entity, department mapping, participation types, management APIs
+├── roles/              # Dynamic roles and granular permissions matrix
+├── breakfast/          # Daily responses, cutoff checks, daily entries, additional orders, money ledger
+├── audit/              # Comprehensive audit logging across all state-mutating actions
+├── notifications/      # In-app notifications foundation (Teams/Email ready)
+├── files/              # File storage provider abstraction (Local & Azure Blob Storage)
+└── reports/            # Monthly aggregation, working days calculation, 4-sheet Excel generator
+```
 
 ---
 
 ## 🛠️ Technology Stack
 
-- **Frontend**: React 18, React Router v6, Lucide Icons, Axios, Vite
-- **Backend**: Node.js, Express.js, Mongoose, JWT, BcryptJS, Helmet, CORS
-- **Database**: MongoDB (Shared platform collections + Breakfast module collections)
-- **API Documentation**: OpenAPI / Swagger UI (`/api/docs`)
-- **Testing & Tooling**: Jest, Supertest
+| Layer | Technology |
+|---|---|
+| **Frontend** | React 18, Vite, React Router v6, Tailwind / CSS, Lucide Icons, Axios |
+| **Backend** | Python 3.10+, FastAPI, Pydantic v2, Uvicorn, Passlib (Bcrypt), Python-JOSE |
+| **ORM & Migrations** | SQLAlchemy 2.0, Alembic |
+| **Database** | PostgreSQL 15+ (with SQLite dev/fallback support) |
+| **Reporting** | openpyxl (4-sheet formatted Excel workbook), Pandas-ready |
+| **Containerization** | Docker, Docker Compose (FastAPI + PostgreSQL + Redis + Frontend) |
+| **Cloud Target** | Microsoft Azure (App Service, Azure Database for PostgreSQL, Azure Blob, Entra ID) |
 
 ---
 
-## 📋 Production Security & Authentication Rules
+## 📋 Prerequisites & Requirements
 
-1. **Username + Password Login**:
-   - Authentication uses **Username** (normalized lowercase) and **Password**.
-   - Employee ID is used purely as an internal corporate identifier, NOT for login credentials.
-   - Database enforces a unique index on `employees.username`.
-
-2. **Seeded Account Initial Passwords**:
-   - Initial accounts receive a predictable default password pattern: `<USER_NAME> + 123` (e.g. `Vasudev123`, `Faiz123`, `Rajneesh123`, `Jyoti123`, `Finance123`).
-   - All passwords are immediately hashed with `bcryptjs` (salt factor 10) before MongoDB insertion.
-   - Plaintext passwords are **NEVER** stored or logged anywhere.
-
-3. **First-Login Password Enforcement (`forcePasswordChange`)**:
-   - Seeded initial accounts and accounts reset by IT Admin are flagged with `forcePasswordChange: true`.
-   - On first successful login, the application prompts the user with a mandatory password change screen before granting access.
-   - Once updated, `forcePasswordChange` becomes `false`.
-
-4. **Role Selection (Top-Right Header)**:
-   - Placed in top-right corner of application header: `[ Notifications ] [ Role: Active Role Selector ▼ ] [ User Profile ▼ ]`.
-   - Appears only when a user holds multiple active roles. Single-role users see their active role badge.
-   - Switching roles updates session context, recalculates navigation, and sends `X-Role-Used` header without logging out the user or permanently altering assigned roles.
-
-5. **Production Error Handling & Logging**:
-   - Error messages returned to clients are production-safe (`"Unable to process the request."`). Internal stack traces and DB details are never exposed to clients.
-   - Backend logs operational events, login success/failure, authorization blocks, and financial ledger adjustments while strictly excluding passwords, tokens, or JWT secrets.
+- **Python**: 3.10 or higher
+- **Node.js**: 18.x or 20.x
+- **PostgreSQL**: 14+ (or Docker)
+- **Git**
 
 ---
 
-## 🗄️ Production Fresh Seed & Financial Ledger Rules
+## 🚀 Installation & Local Setup
 
-- **Clean Seed State**:
-  - `breakfast_money_transactions`: **0 records**
-  - `breakfast_daily_entries`: **0 records**
-  - `breakfast_additional_orders`: **0 records**
-  - `breakfast_orders`: **0 records**
-- **Fresh Ledger Balances**:
-  - `TOTAL RECEIVED` = **₹0**
-  - `TOTAL SPENT` = **₹0**
-  - `CURRENT BALANCE` = **₹0**
-- **Maximum Current Balance Configuration**:
-  - Default operating cash threshold: **₹2,500** (Controlled by Finance Manager).
-  - Current Balance is calculated from real ledger transactions: `Verified Money Received - Valid Expenses + Valid Adjustments/Reversals`.
-
----
-
-## 📅 Calendar & Working Day Rules
-
-1. **Sundays**: Automatically marked as non-working days. No employee leave submission required.
-2. **Public Holidays**: Configured via Public Holidays collection. Automatically marked as non-working days.
-3. **Month-Wise Working Days Calculation**:
-   - Formula: `Calendar Days - Sundays - Public Holidays = Applicable Working/Breakfast Days`
-   - Calculated independently for every month/year selection.
-
----
-
-## 🚀 Quick Start & Installation
-
-### 1. Environment Configuration
-
-Create `.env` in `backend/.env` (refer to `.env.example`):
-
-```env
-PORT=5000
-NODE_ENV=production
-MONGODB_URI=mongodb+srv://<username>:<password>@cluster0.xxxxx.mongodb.net/company_platform?retryWrites=true&w=majority
-JWT_SECRET=super_secret_jwt_key_breakfast_2026_xyz
-JWT_EXPIRES_IN=24h
-CLIENT_URL=https://break-fast-management.vercel.app
-CORS_ORIGIN=https://break-fast-management.vercel.app
-```
-
-### 2. Database Seeding
-
-Run the production seed script:
+### 1. Clone & Set Up Backend
 
 ```bash
 cd backend
-npm run seed
+
+# Create virtual environment
+python -m venv venv
+
+# Activate virtual environment
+# Windows:
+.\venv\Scripts\activate
+# Linux/macOS:
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
 ```
 
-Initial Production Accounts Created:
-- **Vasudev Kava (`vasudev`)**: `IT_ADMIN`, `BREAKFAST_ADMIN`, `EMPLOYEE`
-- **Faiz Saiyad (`faiz`)**: `BREAKFAST_ADMIN`, `EMPLOYEE`
-- **Rajneesh Prasad (`rajneesh`)**: `CEO`, `EMPLOYEE`
-- **Jyoti Dutta (`jyoti`)**: `EMPLOYEE`
-- **Hritika (`hritika`)**: `EMPLOYEE`
-- **Nisha (`nisha`)**: `EMPLOYEE`
-- **Himani (`himani`)**: `EMPLOYEE`
-- **Shahil (`shahil`)**: `EMPLOYEE`
-- **Finance Manager (`finance.manager`)**: `FINANCE_MANAGER`, `EMPLOYEE`
+### 2. Configure Environment Variables
 
-> Note: Initial passwords follow `<FIRST_NAME> + 123` (e.g. `Vasudev123`, `Faiz123`). Password change is forced upon first login.
+Copy the example template:
+```bash
+cp .env.example .env
+```
 
-### 3. Build & Run
+Configure your `.env` file:
+```env
+DATABASE_URL=postgresql+psycopg2://postgres:postgres@localhost:5432/breakfast_db
+JWT_SECRET=super_secret_jwt_key_revy_breakfast_32chars
+JWT_ACCESS_TOKEN_EXPIRE_MINUTES=1440
+CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+APP_TIMEZONE=Asia/Kolkata
+HOST=0.0.0.0
+PORT=5000
+```
+*(Note: If PostgreSQL is not running locally, the application automatically falls back to local SQLite `breakfast.db` for instant development).*
+
+### 3. Run Database Migrations (Alembic)
 
 ```bash
-# Frontend build test
-cd frontend
-npm run build
-
-# Backend start
-cd ../backend
-npm start
+# Upgrade database to latest revision
+alembic upgrade head
 ```
 
-- **Frontend Application**: `http://localhost:3000`
-- **Backend API**: `http://localhost:5000`
-- **OpenAPI / Swagger Docs**: `http://localhost:5000/api/docs`
+### 4. Seed Development Accounts & Initial Settings
+
+```bash
+python seed/seed_development.py
+```
+
+This creates platform roles, permissions, breakfast settings, departments, and 9 standard accounts:
+- `vasudev` (IT Admin) — `Vasudev123`
+- `faiz` (Breakfast Admin) — `Faiz123`
+- `rajneesh` (Breakfast Admin) — `Rajneesh123`
+- `jyoti` (Normal Employee) — `Jyoti123`
+- `finance.manager` (Finance Manager) — `Finance123`
+- Additional test employee accounts
+
+### 5. Start Backend Server
+
+```bash
+uvicorn app.main:app --host 0.0.0.0 --port 5000 --reload
+```
+Interactive API Documentation will be available at:
+- Swagger UI: `http://localhost:5000/docs`
+- ReDoc: `http://localhost:5000/redoc`
+- Health check: `http://localhost:5000/api/health`
+
+### 6. Set Up and Run React Frontend
+
+```bash
+cd ../frontend
+
+# Install dependencies
+npm install
+
+# Start Vite dev server
+npm run dev
+```
+Open `http://localhost:5173` in your browser.
 
 ---
 
-## 🔐 Roles & Permission Matrix Summary
+## 🧪 Running Automated Tests
 
-| Role | Purpose | Key Permissions | Employee CRUD Access |
-| :--- | :--- | :--- | :--- |
-| **IT_ADMIN** | System infrastructure, users, audit, settings | Full access (`*`) | **YES** |
-| **CEO** | Executive analytics & management | `breakfast.dashboard.view`, `breakfast.report`, `breakfast.employee.*` | **YES** |
-| **BREAKFAST_ADMIN** | Operational daily entries, additional orders, money ledger | `breakfast.view`, `breakfast.manage`, `breakfast.money.*`, `breakfast.employee.read` | **NO** (Read-Only) |
-| **FINANCE_MANAGER** | Finance fund approvals, money provisions, financial reporting | `finance.breakfast_fund.*`, `breakfast.money.view`, `breakfast.money.report` | **NO** |
-| **EMPLOYEE** | Personal daily breakfast form | `breakfast.view_own`, `breakfast.submit`, `breakfast.history_own` | **NO** |
+A comprehensive Pytest test suite validates all workflows, RBAC enforcement, financial calculations, and reports:
+
+```bash
+cd backend
+pytest -v tests
+```
+
+### Test Coverage Highlights:
+- **Authentication**: Login, invalid credentials, password change enforcement, role validation.
+- **Breakfast Workflow**: Daily submission cutoff checks, multi-day absence submission, response aggregation.
+- **Daily Entry & Orders**: Daily breakfast entry expense calculation, additional order creation, order deletion reversal.
+- **Financial Ledger**: End-to-end fund request lifecycle (`Draft` → `Approved` → `Provided` → `Verified`), manual expense deduction, shortfall safety checks, daily/monthly statements.
+- **Employee CRUD**: Soft deactivation, designation updates, password reset.
+- **Holidays & Settings**: Public holidays, dynamic cutoff time updates, reason catalog.
+- **Reporting & Excel**: Monthly summary matrices, CEO dashboard, formatted `.xlsx` export.
 
 ---
 
-## ✅ Production Acceptance Criteria Completed
+## 🐳 Docker & Containerization
 
-- [x] Login page has zero test user cards, demo credentials, or hardcoded passwords
-- [x] Username + Password login enforcement (Employee ID not used for login)
-- [x] Show/hide password control on login page
-- [x] Role selector in top-right header for multi-role users (`[ Notifications ] [ Role: ... ▼ ] [ Profile ▼ ]`)
-- [x] Initial passwords follow `<USER_NAME> + 123` hashed with bcrypt
-- [x] `forcePasswordChange: true` flow implemented for first-time logins
-- [x] Debugging code, `console.log` dev dumps, and temporary test routes removed
-- [x] Production error handling (safe API JSON output, hidden stack traces)
-- [x] Fresh DB starts with 0 financial transactions (Balance = ₹0, Received = ₹0, Spent = ₹0)
-- [x] Maximum Current Balance threshold configured at ₹2,500
-- [x] Breakfast Money summary cards displaying ONLY: Current Balance, Total Received, Total Spent
-- [x] Unified All Orders page (`/admin/orders`) combining Daily Entry and Additional Orders
-- [x] Sunday and Public Holiday automatic non-working day calendar logic
-- [x] Month-wise working days calculation formula (`Calendar Days - Sundays - Public Holidays`)
-- [x] Breakfast Admin role strictly restricted from Employee CRUD, Audit Logs, and System Settings
-- [x] Production `.env.example` created and `.env` added to `.gitignore`
-- [x] Production build (`npm run build`) passing cleanly
+Run the entire stack (FastAPI, PostgreSQL, Redis, and React Frontend) with a single command:
+
+```bash
+docker-compose up --build
+```
+
+Services exposed:
+- **Frontend**: `http://localhost:5173`
+- **FastAPI Backend**: `http://localhost:5000`
+- **PostgreSQL**: `localhost:5432`
+- **Redis**: `localhost:6379`
+
+To run in the background:
+```bash
+docker-compose up -d
+```
+
+To stop containers:
+```bash
+docker-compose down -v
+```
+
+---
+
+## 🔄 MongoDB → PostgreSQL Data Migration
+
+To migrate existing production records from MongoDB to the normalized PostgreSQL schema without data loss:
+
+```bash
+cd backend
+python scripts/migrate_mongodb_to_postgresql.py --mongo-uri "mongodb+srv://user:pass@cluster.mongodb.net/company_platform" --db-name company_platform
+```
+
+### Migration Verification Pipeline:
+1. Validates connection to MongoDB and PostgreSQL.
+2. Migrates platform permissions, roles, and departments.
+3. Maps MongoDB `ObjectId` strings to relational entities.
+4. Migrates Users and Employees, preserving password hashes and active status.
+5. Migrates Settings, Reasons, and Public Holidays.
+6. Migrates Breakfast Responses, Multi-day Absences, and Daily Records.
+7. Migrates Daily Breakfast Entries and Additional Orders.
+8. Migrates Fund Requests and authoritative Financial Ledger Transactions.
+9. Migrates Audit Logs.
+10. Validates foreign key constraints, transaction balance sums, and prints a detailed summary report.
+
+---
+
+## 🔐 Role-Based Access Control (RBAC)
+
+Authorization is enforced server-side via granular permissions rather than hardcoded role strings:
+
+| Permission Code | Description | Default Roles |
+|---|---|---|
+| `breakfast.view_own` | View own daily breakfast form and history | EMPLOYEE |
+| `breakfast.submit` | Submit YES/NO breakfast response | EMPLOYEE |
+| `breakfast.manage` | Manage company records, daily entries, orders | BREAKFAST_ADMIN |
+| `breakfast.money.request` | Request money from Finance | BREAKFAST_ADMIN |
+| `breakfast.money.receive` | Record funds received | BREAKFAST_ADMIN |
+| `finance.breakfast_fund.approve` | Approve breakfast fund request | FINANCE_MANAGER |
+| `finance.breakfast_fund.provide` | Provide funds for approved request | FINANCE_MANAGER |
+| `breakfast.employee.create` | Add new employees to system | IT_ADMIN |
+| `breakfast.dashboard.view` | Access CEO / Executive analytics | CEO |
+| `*` | Full system access | IT_ADMIN |
+
+Active role switching via the `X-Role-Used` header allows users with multiple roles to switch contexts dynamically without re-authenticating.
+
+---
+
+## ☁️ Azure Cloud Deployment Guide
+
+The application is structured for native deployment to Microsoft Azure:
+
+### 1. PostgreSQL Database
+- Provision an **Azure Database for PostgreSQL Flexible Server**.
+- Set the connection string in App Service:
+  ```text
+  DATABASE_URL=postgresql+psycopg2://<admin>:<password>@<server-name>.postgres.database.azure.com:5432/<dbname>?sslmode=require
+  ```
+
+### 2. FastAPI Backend
+- Deploy to **Azure App Service (Linux, Python 3.10+)**.
+- Startup command:
+  ```bash
+  alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 5000
+  ```
+
+### 3. React Frontend
+- Deploy the `frontend/dist` bundle to **Azure Static Web Apps**.
+- Configure `staticwebapp.config.json` with fallback routing to `index.html`.
+
+### 4. File Storage
+- Configure `AZURE_STORAGE_CONNECTION_STRING` and `AZURE_STORAGE_CONTAINER` in environment variables.
+- The `app.files` module automatically routes uploads to **Azure Blob Storage**.
+
+### 5. Microsoft 365 / Entra ID SSO
+- Register an app in **Microsoft Entra ID**.
+- Configure `ENTRA_CLIENT_ID`, `ENTRA_TENANT_ID`, and `ENTRA_CLIENT_SECRET`.
+
+---
+
+## 📄 License & Confidentiality
+
+Proprietary software of **REVY Environmental Solutions**. All rights reserved.
