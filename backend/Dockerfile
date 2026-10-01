@@ -38,4 +38,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:5000/api/health || exit 1
 
 # Start script: run migrations and start uvicorn
-CMD ["sh", "-c", "alembic upgrade head && python seed/seed_development.py && uvicorn app.main:app --host 0.0.0.0 --port 5000"]
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 5000"]

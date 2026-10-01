@@ -68,6 +68,12 @@ class SaveDailyEntryRequest(BaseModel):
     source_id: Optional[str] = None
     breakfastItems: Optional[List[ItemInput]] = []
     commonItems: Optional[List[ItemInput]] = []
+    totalQuantity: Optional[Union[float, int, str]] = None
+    total_quantity: Optional[Union[float, int, str]] = None
+    actualResponseQuantity: Optional[Union[float, int, str]] = None
+    actual_response_quantity: Optional[Union[float, int, str]] = None
+    employeeRequestQuantity: Optional[Union[float, int, str]] = None
+    employee_request_quantity: Optional[Union[float, int, str]] = None
 
 class AdditionalOrderRequest(BaseModel):
     businessDate: str
@@ -75,6 +81,8 @@ class AdditionalOrderRequest(BaseModel):
     orderTime: Optional[str] = None
     breakfastItems: Optional[List[ItemInput]] = []
     commonItems: Optional[List[ItemInput]] = []
+    totalQuantity: Optional[Union[float, int, str]] = None
+    total_quantity: Optional[Union[float, int, str]] = None
 
 class CreateBreakfastRecordRequest(BaseModel):
     businessDate: Optional[str] = None
@@ -194,15 +202,32 @@ def serialize_daily_entry(e: Optional[BreakfastDailyEntry]):
     if not e:
         return None
     is_historical = getattr(e, "record_type", "CURRENT") == "HISTORICAL"
+    summary = dict(e.summary or {})
+    actual_qty = summary.get("actualResponseQuantity", summary.get("actualTakenCount", 0))
+    taking_cnt = summary.get("employeeRequestQuantity", summary.get("takingCount", 0))
+    if "actualResponseQuantity" not in summary:
+        summary["actualResponseQuantity"] = float(actual_qty)
+    if "employeeRequestQuantity" not in summary:
+        summary["employeeRequestQuantity"] = float(taking_cnt)
+    if "totalQuantity" not in summary:
+        summary["totalQuantity"] = float(actual_qty)
+
+    tot_qty = getattr(e, "total_quantity", None)
+    if tot_qty is None:
+        tot_qty = summary.get("totalQuantity", float(actual_qty))
+
     return {
         "_id": e.id,
         "id": e.id,
         "businessDate": e.business_date,
         "employeeSnapshot": [] if is_historical else (e.employee_snapshot or []),
-        "summary": e.summary or {},
+        "summary": summary,
         "breakfastItems": e.breakfast_items or [],
         "commonItems": e.common_items or [],
         "totalCost": e.total_cost,
+        "totalQuantity": tot_qty,
+        "actualResponseQuantity": summary.get("actualResponseQuantity", float(actual_qty)),
+        "employeeRequestQuantity": summary.get("employeeRequestQuantity", float(taking_cnt)),
         "recordType": getattr(e, "record_type", "CURRENT"),
         "isHistorical": is_historical,
         "paidBy": getattr(e, "paid_by", None),
@@ -216,6 +241,9 @@ def serialize_daily_entry(e: Optional[BreakfastDailyEntry]):
     }
 
 def serialize_additional_order(o: BreakfastAdditionalOrder):
+    tot_qty = getattr(o, "total_quantity", None)
+    if tot_qty is None:
+        tot_qty = sum(float(i.get("quantity") or 0) for i in (o.breakfast_items or []))
     return {
         "_id": o.id,
         "id": o.id,
@@ -228,6 +256,7 @@ def serialize_additional_order(o: BreakfastAdditionalOrder):
         "breakfastItems": o.breakfast_items or [],
         "commonItems": o.common_items or [],
         "totalCost": o.total_cost,
+        "totalQuantity": tot_qty,
         "createdBy": o.created_by,
         "updatedBy": o.updated_by,
         "createdAt": o.created_at.isoformat() if o.created_at else None,
@@ -564,7 +593,10 @@ def get_admin_summary(
             "pendingCount": pending_count,
             "expectedBreakfastCount": 0 if is_holiday else yes_count,
             "actuallyTakenCount": taken_count,
-            "actuallyNotTakenCount": not_taken_count
+            "actuallyNotTakenCount": not_taken_count,
+            "employeeRequestQuantity": float(yes_count),
+            "actualResponseQuantity": float(taken_count),
+            "totalQuantity": float(taken_count)
         }
     }
 
@@ -762,7 +794,15 @@ def get_daily_entry(
         "applicableEmployees": emp_data["applicableEmployees"] if not is_entry_historical else [],
         "permExcludedEmployees": emp_data["permExcludedEmployees"] if not is_entry_historical else [],
         "leaveExcludedEmployees": emp_data["leaveExcludedEmployees"] if not is_entry_historical else [],
-        "summary": emp_data["summary"] if not is_entry_historical else {"applicableCount": 0, "takingCount": 0, "isHistorical": True},
+        "summary": emp_data["summary"] if not is_entry_historical else {
+            "applicableCount": 0,
+            "takingCount": 0,
+            "employeeRequestQuantity": 0.0,
+            "actualTakenCount": 0,
+            "actualResponseQuantity": 0.0,
+            "totalQuantity": 0.0,
+            "isHistorical": True
+        },
         "fundMetrics": fund_metrics
     }
 
@@ -786,6 +826,14 @@ def save_daily_entry(
 
     emp_data = bf_service.get_daily_breakfast_employees(b_date, db)
     taking_count = emp_data["summary"]["takingCount"]
+    actual_response_qty = emp_data["summary"].get("actualResponseQuantity", emp_data["summary"].get("actualTakenCount", 0))
+
+    # Total quantity is based on Actual Response Quantity
+    total_qty_input = payload.totalQuantity if payload.totalQuantity is not None else payload.total_quantity
+    try:
+        total_quantity = float(total_qty_input) if total_qty_input is not None and str(total_qty_input).strip() != "" else float(actual_response_qty)
+    except (ValueError, TypeError):
+        total_quantity = float(actual_response_qty)
 
     processed_bf = []
     items_total = 0.0
@@ -794,15 +842,15 @@ def save_daily_entry(
             price = float(item.unitPrice or 0)
             qty_raw = item.quantity
             try:
-                qty_num = float(qty_raw) if qty_raw is not None and str(qty_raw).strip() != "" else float(taking_count)
+                qty_num = float(qty_raw) if qty_raw is not None and str(qty_raw).strip() != "" else float(actual_response_qty)
             except (ValueError, TypeError):
-                qty_num = 1.0
-            tot = float(item.total) if item.total is not None and item.total > 0 else (price * qty_num)
+                qty_num = float(actual_response_qty) if actual_response_qty > 0 else 1.0
+            tot = round(float(item.total) if item.total is not None and item.total > 0 else (price * qty_num), 2)
             items_total += tot
             processed_bf.append({
                 "name": item.name.strip(),
                 "unitPrice": price,
-                "quantity": qty_raw if qty_raw is not None else taking_count,
+                "quantity": qty_num,
                 "total": tot
             })
 
@@ -816,16 +864,16 @@ def save_daily_entry(
                 qty_num = float(qty_raw) if qty_raw is not None and str(qty_raw).strip() != "" else 1.0
             except (ValueError, TypeError):
                 qty_num = 1.0
-            tot = float(item.total) if item.total is not None and item.total > 0 else (price * qty_num)
+            tot = round(float(item.total) if item.total is not None and item.total > 0 else (price * qty_num), 2)
             common_total += tot
             processed_cm.append({
                 "name": item.name.strip(),
                 "unitPrice": price,
-                "quantity": qty_raw if qty_raw is not None else 1.0,
+                "quantity": qty_num,
                 "total": tot
             })
 
-    total_cost = items_total + common_total
+    total_cost = round(items_total + common_total, 2)
 
     # Process money ledger ONLY for current operational records, NOT historical
     if rec_type != "HISTORICAL":
@@ -840,13 +888,27 @@ def save_daily_entry(
     action = "DAILY_ENTRY_UPDATED" if entry else "DAILY_ENTRY_CREATED"
     before_state = serialize_daily_entry(entry)
 
+    entry_summary = dict(emp_data["summary"]) if rec_type != "HISTORICAL" else {
+        "applicableCount": 0,
+        "takingCount": 0,
+        "employeeRequestQuantity": 0.0,
+        "actualTakenCount": 0,
+        "actualResponseQuantity": 0.0,
+        "totalQuantity": 0.0,
+        "isHistorical": True
+    }
+    entry_summary["totalQuantity"] = total_quantity
+    entry_summary["actualResponseQuantity"] = float(actual_response_qty)
+    entry_summary["employeeRequestQuantity"] = float(taking_count)
+
     if entry:
         if rec_type != "HISTORICAL":
             entry.employee_snapshot = emp_data["applicableEmployees"]
-            entry.summary = emp_data["summary"]
+            entry.summary = entry_summary
         else:
             entry.employee_snapshot = []
-            entry.summary = {"applicableCount": 0, "takingCount": 0, "isHistorical": True}
+            entry.summary = entry_summary
+        entry.total_quantity = total_quantity
         entry.record_type = rec_type
         entry.paid_by = paid_by
         entry.payment_type = payment_type
@@ -860,10 +922,11 @@ def save_daily_entry(
         entry = BreakfastDailyEntry(
             business_date=b_date,
             employee_snapshot=[] if rec_type == "HISTORICAL" else emp_data["applicableEmployees"],
-            summary={"applicableCount": 0, "takingCount": 0, "isHistorical": True} if rec_type == "HISTORICAL" else emp_data["summary"],
+            summary=entry_summary,
             breakfast_items=processed_bf,
             common_items=processed_cm,
             total_cost=total_cost,
+            total_quantity=total_quantity,
             record_type=rec_type,
             paid_by=paid_by,
             payment_type=payment_type,
@@ -1234,6 +1297,9 @@ def get_all_orders(
             "takingEmployeeCount": (entry.summary or {}).get("takingCount", 0),
             "notTakingEmployeeCount": (entry.summary or {}).get("notTakingCount", 0),
             "noResponseEmployeeCount": (entry.summary or {}).get("noResponseCount", 0),
+            "employeeRequestQuantity": (entry.summary or {}).get("employeeRequestQuantity", (entry.summary or {}).get("takingCount", 0)),
+            "actualResponseQuantity": (entry.summary or {}).get("actualResponseQuantity", (entry.summary or {}).get("actualTakenCount", 0)),
+            "totalQuantity": getattr(entry, "total_quantity", None) or (entry.summary or {}).get("totalQuantity", (entry.summary or {}).get("actualResponseQuantity", 0)),
             "employeeSnapshot": entry.employee_snapshot or [],
             "breakfastItems": entry.breakfast_items or [],
             "commonItems": entry.common_items or [],

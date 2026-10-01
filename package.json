@@ -5,7 +5,7 @@
   "main": "backend/src/index.js",
   "scripts": {
     "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
-    "seed": "cd backend && npm run seed",
+    "seed": "python backend/seed/seed_development.py",
     "test": "cd backend && npm test",
     "dev:backend": "cd backend && npm run dev",
     "dev:frontend": "cd frontend && npm run dev",

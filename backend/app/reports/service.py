@@ -247,13 +247,20 @@ class ReportService:
 
         order_summary = []
         for de in daily_entries:
+            summary = de.summary or {}
+            actual_qty = summary.get("actualResponseQuantity", summary.get("actualTakenCount", 0))
+            req_qty = summary.get("employeeRequestQuantity", summary.get("takingCount", 0))
+            tot_qty = getattr(de, "total_quantity", None) or summary.get("totalQuantity", actual_qty)
             order_summary.append({
                 "orderId": f"DAILY-{de.business_date}",
                 "businessDate": de.business_date,
                 "orderType": "DAILY BREAKFAST",
                 "orderTitle": f"Daily Breakfast ({de.business_date})",
                 "orderTime": "10:00 AM",
-                "applicableCount": (de.summary or {}).get("applicableCount", 0),
+                "applicableCount": summary.get("applicableCount", 0),
+                "employeeRequestQuantity": float(req_qty),
+                "actualResponseQuantity": float(actual_qty),
+                "totalQuantity": float(tot_qty),
                 "isHistorical": getattr(de, "record_type", "CURRENT") == "HISTORICAL",
                 "breakfastItems": format_items(de.breakfast_items),
                 "commonItems": format_items(de.common_items),
@@ -360,6 +367,7 @@ class ReportService:
         ).all()
         today_yes = sum(1 for r in today_records if r.employee_id and (r.response in ["YES", "TAKING"] or r.employee_response == "TAKING"))
         today_no = sum(1 for r in today_records if r.employee_id and (r.response in ["NO", "NOT_TAKING"] or r.employee_response == "NOT_TAKING"))
+        today_taken = sum(1 for r in today_records if r.employee_id and r.actual_status == "TAKEN")
         today_responded = {r.employee_id.upper() for r in today_records if r.employee_id}
         today_pending = max(0, normal_count - len(today_responded))
 
@@ -407,6 +415,10 @@ class ReportService:
                 "permNotTakingCount": perm_not_taking_count,
                 "todayYes": today_yes,
                 "todayNo": today_no,
+                "todayTaken": today_taken,
+                "employeeRequestQuantity": float(today_yes),
+                "actualResponseQuantity": float(today_taken),
+                "totalQuantity": float(today_taken),
                 "todayPending": today_pending,
                 "todayCost": today_cost,
                 "totalMonthlyCost": total_monthly_cost,

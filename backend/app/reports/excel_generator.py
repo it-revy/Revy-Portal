@@ -135,7 +135,7 @@ def generate_report_excel(data: dict) -> io.BytesIO:
     ws3["A1"] = "BREAKFAST ORDER SUMMARY"
     ws3["A1"].font = title_font
 
-    headers3 = ["Order ID", "Date", "Order Type", "Order Title", "Time", "Count", "Items", "Total Cost"]
+    headers3 = ["Order ID", "Date", "Order Type", "Order Title", "Time", "Headcount", "Total Qty (Actual)", "Items", "Total Cost"]
     ws3.append([])
     ws3.append([])
     ws3.append(headers3)
@@ -147,6 +147,9 @@ def generate_report_excel(data: dict) -> io.BytesIO:
 
     for order in data.get("orderSummary", []):
         items_str = f"BF: {order.get('breakfastItems', '')} | Common: {order.get('commonItems', '')}"
+        tot_qty = order.get("totalQuantity")
+        if tot_qty is None:
+            tot_qty = order.get("actualResponseQuantity", order.get("applicableCount", 0))
         ws3.append([
             order.get("orderId"),
             order.get("businessDate"),
@@ -154,11 +157,12 @@ def generate_report_excel(data: dict) -> io.BytesIO:
             order.get("orderTitle"),
             order.get("orderTime"),
             order.get("applicableCount", 0),
+            tot_qty,
             items_str,
             order.get("totalCost", 0)
         ])
         curr_row = ws3[ws3.max_row]
-        curr_row[7].number_format = '"₹"#,##0.00'
+        curr_row[8].number_format = '"₹"#,##0.00'
         for cell in curr_row:
             cell.border = thin_border
 

@@ -91,8 +91,8 @@ const DailyEntryPage = () => {
 
   // Breakfast Item Handlers
   const addBreakfastItem = () => {
-    const takingCount = data?.summary?.takingCount || 0;
-    setBreakfastItems([...breakfastItems, { name: '', unitPrice: 0, quantity: takingCount }]);
+    const actualResponseQty = data?.summary?.actualResponseQuantity ?? data?.summary?.actualTakenCount ?? 0;
+    setBreakfastItems([...breakfastItems, { name: '', unitPrice: 0, quantity: actualResponseQty }]);
   };
 
   const updateBreakfastItem = (index, field, value) => {
@@ -120,24 +120,26 @@ const DailyEntryPage = () => {
     setCommonItems(commonItems.filter((_, i) => i !== index));
   };
 
-  // Calculations
-  const takingCount = data?.summary?.takingCount || 0;
+  // Quantities & Calculations
+  const employeeRequestQuantity = data?.summary?.employeeRequestQuantity ?? data?.summary?.takingCount ?? 0;
+  const actualResponseQuantity = data?.summary?.actualResponseQuantity ?? data?.summary?.actualTakenCount ?? 0;
+  const totalQuantity = data?.summary?.totalQuantity ?? actualResponseQuantity;
 
-  const itemsTotal = breakfastItems.reduce((sum, item) => {
+  const itemsTotal = Number(breakfastItems.reduce((sum, item) => {
     if (!item.name || !item.name.trim()) return sum;
-    const price = Number(item.unitPrice) || 0;
-    const qty = item.quantity !== undefined && item.quantity !== '' ? Number(item.quantity) : takingCount;
+    const price = parseFloat(item.unitPrice) || 0;
+    const qty = item.quantity !== undefined && item.quantity !== '' ? parseFloat(item.quantity) : actualResponseQuantity;
     return sum + (price * qty);
-  }, 0);
+  }, 0).toFixed(2));
 
-  const commonTotal = commonItems.reduce((sum, item) => {
+  const commonTotal = Number(commonItems.reduce((sum, item) => {
     if (!item.name || !item.name.trim()) return sum;
-    const price = Number(item.unitPrice) || 0;
-    const qty = Number(item.quantity) || 1;
+    const price = parseFloat(item.unitPrice) || 0;
+    const qty = item.quantity !== undefined && item.quantity !== '' ? parseFloat(item.quantity) : 1;
     return sum + (price * qty);
-  }, 0);
+  }, 0).toFixed(2));
 
-  const grandTotal = itemsTotal + commonTotal;
+  const grandTotal = Number((itemsTotal + commonTotal).toFixed(2));
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -148,7 +150,10 @@ const DailyEntryPage = () => {
       const res = await API.post('/breakfast/daily-entry', {
         businessDate: selectedDate,
         breakfastItems,
-        commonItems
+        commonItems,
+        totalQuantity,
+        actualResponseQuantity,
+        employeeRequestQuantity
       });
 
       if (res.data.success) {
@@ -275,13 +280,31 @@ const DailyEntryPage = () => {
           <Users size={32} color="var(--accent-primary)" opacity={0.8} />
         </div>
 
+        <div className="glass-panel metric-card" style={{ padding: '1rem', borderLeft: '4px solid #3b82f6' }}>
+          <div>
+            <div className="metric-label">EMPLOYEE REQUEST QTY</div>
+            <div className="metric-val" style={{ color: '#2563eb' }}>{employeeRequestQuantity}</div>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Requested TAKING</span>
+          </div>
+          <CheckCircle2 size={32} color="#2563eb" opacity={0.8} />
+        </div>
+
         <div className="glass-panel metric-card" style={{ padding: '1rem', borderLeft: '4px solid var(--success)' }}>
           <div>
-            <div className="metric-label">TAKING</div>
-            <div className="metric-val" style={{ color: 'var(--success)' }}>{summary.takingCount || 0}</div>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Confirmed Request</span>
+            <div className="metric-label">ACTUAL RESPONSE QTY</div>
+            <div className="metric-val" style={{ color: 'var(--success)' }}>{actualResponseQuantity}</div>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Actually Served / Taken</span>
           </div>
           <CheckCircle2 size={32} color="var(--success)" opacity={0.8} />
+        </div>
+
+        <div className="glass-panel metric-card" style={{ padding: '1rem', borderLeft: '4px solid #059669', background: 'linear-gradient(135deg, rgba(5, 150, 105, 0.08) 0%, rgba(16, 185, 129, 0.02) 100%)' }}>
+          <div>
+            <div className="metric-label" style={{ fontWeight: 700, color: '#059669' }}>TOTAL QUANTITY</div>
+            <div className="metric-val" style={{ color: '#059669', fontWeight: 800 }}>{totalQuantity}</div>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Based on Actual Response</span>
+          </div>
+          <FileCheck size={32} color="#059669" opacity={0.8} />
         </div>
 
         <div className="glass-panel metric-card" style={{ padding: '1rem', borderLeft: '4px solid var(--danger)' }}>
@@ -490,7 +513,7 @@ const DailyEntryPage = () => {
                 Breakfast Items <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>(Optional — Per Taking Employee)</span>
               </h3>
               <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                Items calculated by Unit Price × Quantity (Default quantity: {takingCount} taking employees)
+                Items calculated by Unit Price × Quantity (Default quantity: {actualResponseQuantity} actual response quantity served)
               </p>
             </div>
             <button type="button" className="btn btn-secondary" onClick={addBreakfastItem} style={{ fontSize: '0.8rem' }}>
@@ -504,9 +527,9 @@ const DailyEntryPage = () => {
             </div>
           ) : (
             breakfastItems.map((item, idx) => {
-              const price = Number(item.unitPrice) || 0;
-              const qty = item.quantity !== undefined && item.quantity !== '' ? Number(item.quantity) : takingCount;
-              const itemTotal = price * qty;
+              const price = parseFloat(item.unitPrice) || 0;
+              const qty = item.quantity !== undefined && item.quantity !== '' ? parseFloat(item.quantity) : actualResponseQuantity;
+              const itemTotal = Number((price * qty).toFixed(2));
 
               return (
                 <div key={idx} className="item-input-row">
@@ -525,7 +548,7 @@ const DailyEntryPage = () => {
                     <input
                       type="number"
                       min="0"
-                      step="1"
+                      step="any"
                       className="form-input"
                       value={item.unitPrice}
                       onChange={(e) => updateBreakfastItem(idx, 'unitPrice', e.target.value)}
@@ -536,8 +559,9 @@ const DailyEntryPage = () => {
                     <input
                       type="number"
                       min="0"
+                      step="any"
                       className="form-input"
-                      placeholder={`${takingCount}`}
+                      placeholder={`${actualResponseQuantity}`}
                       value={item.quantity}
                       onChange={(e) => updateBreakfastItem(idx, 'quantity', e.target.value)}
                     />
@@ -582,9 +606,9 @@ const DailyEntryPage = () => {
             </div>
           ) : (
             commonItems.map((item, idx) => {
-              const price = Number(item.unitPrice) || 0;
-              const qty = Number(item.quantity) || 1;
-              const itemTotal = price * qty;
+              const price = parseFloat(item.unitPrice) || 0;
+              const qty = item.quantity !== undefined && item.quantity !== '' ? parseFloat(item.quantity) : 1;
+              const itemTotal = Number((price * qty).toFixed(2));
 
               return (
                 <div key={idx} className="item-input-row">
@@ -603,7 +627,7 @@ const DailyEntryPage = () => {
                     <input
                       type="number"
                       min="0"
-                      step="1"
+                      step="any"
                       className="form-input"
                       value={item.unitPrice}
                       onChange={(e) => updateCommonItem(idx, 'unitPrice', e.target.value)}
@@ -613,8 +637,10 @@ const DailyEntryPage = () => {
                     <label className="form-label" style={{ fontSize: '0.75rem' }}>Quantity</label>
                     <input
                       type="number"
-                      min="1"
+                      min="0"
+                      step="any"
                       className="form-input"
+                      placeholder="1"
                       value={item.quantity}
                       onChange={(e) => updateCommonItem(idx, 'quantity', e.target.value)}
                     />
@@ -641,14 +667,20 @@ const DailyEntryPage = () => {
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1.5rem' }}>
             <div>
               <span style={{ fontSize: '0.8rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>
-                DAILY ENTRY FINANCIAL SUMMARY ({selectedDate})
+                DAILY ENTRY FINANCIAL & QUANTITY SUMMARY ({selectedDate})
               </span>
-              <div style={{ display: 'flex', gap: '1.5rem', marginTop: '0.5rem', fontSize: '0.9rem', flexWrap: 'wrap' }}>
-                <div>Breakfast Cost: <strong style={{ color: '#38bdf8' }}>₹{grandTotal}</strong></div>
+              <div style={{ display: 'flex', gap: '1.25rem', marginTop: '0.5rem', fontSize: '0.9rem', flexWrap: 'wrap' }}>
+                <div>Total Quantity: <strong style={{ color: '#38bdf8' }}>{totalQuantity}</strong> <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>(Actual)</span></div>
+                <div style={{ borderLeft: '1px solid #334155', paddingLeft: '1rem' }}>
+                  Request Quantity: <strong style={{ color: '#a5b4fc' }}>{employeeRequestQuantity}</strong>
+                </div>
+                <div style={{ borderLeft: '1px solid #334155', paddingLeft: '1rem' }}>
+                  Breakfast Cost: <strong style={{ color: '#38bdf8' }}>₹{grandTotal}</strong>
+                </div>
                 <div style={{ borderLeft: '1px solid #334155', paddingLeft: '1rem' }}>
                   Current Fund Balance: <strong style={{ color: '#facc15' }}>₹{currentFundBalance.toLocaleString('en-IN')}</strong>
                 </div>
-                <div>
+                <div style={{ borderLeft: '1px solid #334155', paddingLeft: '1rem' }}>
                   Balance After Entry: <strong style={{ color: balanceAfterEntry >= 0 ? '#4ade80' : '#f87171' }}>
                     ₹{balanceAfterEntry.toLocaleString('en-IN')}
                   </strong>
@@ -658,6 +690,7 @@ const DailyEntryPage = () => {
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
               <div style={{ textAlign: 'right' }}>
+                <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>TOTAL QUANTITY: <strong style={{ color: '#38bdf8' }}>{totalQuantity}</strong></span>
                 <span style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'block' }}>DAILY ENTRY TOTAL</span>
                 <span style={{ fontSize: '1.8rem', fontWeight: 800, color: '#4ade80' }}>₹{grandTotal}</span>
               </div>

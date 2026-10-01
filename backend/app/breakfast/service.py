@@ -81,6 +81,10 @@ def get_daily_breakfast_employees(business_date: str, db: Session) -> Dict[str, 
             "reasonText": reason_text
         })
 
+    actual_taken_count = sum(1 for e in employee_statuses if e["actualStatus"] == "TAKEN")
+    actual_not_taken_count = sum(1 for e in employee_statuses if e["actualStatus"] == "NOT_TAKEN")
+    actual_no_response_count = sum(1 for e in employee_statuses if e["actualStatus"] == "NO_RESPONSE")
+
     return {
         "applicableEmployees": employee_statuses,
         "permExcludedEmployees": [{"employeeId": e.employee_id, "name": e.name, "department": e.department} for e in perm_excluded],
@@ -92,7 +96,13 @@ def get_daily_breakfast_employees(business_date: str, db: Session) -> Dict[str, 
             "applicableCount": len(applicable),
             "takingCount": taking_count,
             "notTakingCount": not_taking_count,
-            "noResponseCount": no_response_count
+            "noResponseCount": no_response_count,
+            "employeeRequestQuantity": float(taking_count),
+            "actualResponseQuantity": float(actual_taken_count),
+            "totalQuantity": float(actual_taken_count),
+            "actualTakenCount": actual_taken_count,
+            "actualNotTakenCount": actual_not_taken_count,
+            "actualNoResponseCount": actual_no_response_count
         }
     }
 

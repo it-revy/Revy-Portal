@@ -1,5 +1,5 @@
 import uuid
-from typing import Optional, List
+from typing import Optional, List, Union
 from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -18,7 +18,7 @@ class OrderItemInput(BaseModel):
     employeeId: Optional[str] = None
     itemName: str
     price: float
-    quantity: Optional[int] = 1
+    quantity: Optional[Union[float, int, str]] = 1.0
 
 class CreateOrderRequest(BaseModel):
     businessDate: Optional[str] = None
@@ -115,8 +115,8 @@ def create_order(
     created_items = []
     for item in payload.items:
         price = float(item.price)
-        quantity = int(item.quantity or 1)
-        total = price * quantity
+        quantity = float(item.quantity or 1.0)
+        total = round(price * quantity, 2)
 
         emp_name = None
         if item.orderType == "INDIVIDUAL" and item.employeeId:

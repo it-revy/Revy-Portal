@@ -198,21 +198,21 @@ const AdditionalOrdersPage = () => {
   const currentFundBalance = data?.fundMetrics?.currentBalance || 0;
 
   // Calculate live preview totals for the modal
-  const liveBreakfastTotal = breakfastItems.reduce((sum, item) => {
+  const liveBreakfastTotal = Number(breakfastItems.reduce((sum, item) => {
     if (!item.name.trim()) return sum;
-    const price = Number(item.unitPrice) || 0;
-    const qty = item.quantity !== undefined && item.quantity !== '' ? Number(item.quantity) : applicableCount;
+    const price = parseFloat(item.unitPrice) || 0;
+    const qty = item.quantity !== undefined && item.quantity !== '' ? parseFloat(item.quantity) : applicableCount;
     return sum + (price * qty);
-  }, 0);
+  }, 0).toFixed(2));
 
-  const liveCommonTotal = commonItems.reduce((sum, item) => {
+  const liveCommonTotal = Number(commonItems.reduce((sum, item) => {
     if (!item.name.trim()) return sum;
-    const price = Number(item.unitPrice) || 0;
-    const qty = Number(item.quantity) || 1;
+    const price = parseFloat(item.unitPrice) || 0;
+    const qty = item.quantity !== undefined && item.quantity !== '' ? parseFloat(item.quantity) : 1;
     return sum + (price * qty);
-  }, 0);
+  }, 0).toFixed(2));
 
-  const liveOrderTotal = liveBreakfastTotal + liveCommonTotal;
+  const liveOrderTotal = Number((liveBreakfastTotal + liveCommonTotal).toFixed(2));
 
   // Filter orders by search term
   const filteredOrders = (data?.orders || []).filter(ord => {
@@ -638,6 +638,7 @@ const AdditionalOrdersPage = () => {
                       <input
                         type="number"
                         min="0"
+                        step="any"
                         className="form-input"
                         placeholder="Price (₹)"
                         value={item.unitPrice}
@@ -647,6 +648,7 @@ const AdditionalOrdersPage = () => {
                       <input
                         type="number"
                         min="0"
+                        step="any"
                         className="form-input"
                         placeholder={`Qty (${applicableCount})`}
                         value={item.quantity}
@@ -676,9 +678,9 @@ const AdditionalOrdersPage = () => {
                 </div>
 
                 {commonItems.map((item, idx) => {
-                  const price = Number(item.unitPrice) || 0;
-                  const qty = Number(item.quantity) || 1;
-                  const total = price * qty;
+                  const price = parseFloat(item.unitPrice) || 0;
+                  const qty = item.quantity !== undefined && item.quantity !== '' ? parseFloat(item.quantity) : 1;
+                  const total = Number((price * qty).toFixed(2));
                   return (
                     <div key={idx} className="item-input-row">
                       <input
@@ -692,6 +694,7 @@ const AdditionalOrdersPage = () => {
                       <input
                         type="number"
                         min="0"
+                        step="any"
                         className="form-input"
                         placeholder="Price (₹)"
                         value={item.unitPrice}
@@ -700,7 +703,8 @@ const AdditionalOrdersPage = () => {
                       />
                       <input
                         type="number"
-                        min="1"
+                        min="0"
+                        step="any"
                         className="form-input"
                         placeholder="Qty (1)"
                         value={item.quantity}
