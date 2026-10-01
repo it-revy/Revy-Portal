@@ -33,9 +33,10 @@ def get_daily_breakfast_employees(business_date: str, db: Session) -> Dict[str, 
             applicable.append(emp)
 
     daily_records = db.query(BreakfastRecord).filter(
-        BreakfastRecord.business_date == business_date
+        BreakfastRecord.business_date == business_date,
+        BreakfastRecord.record_type == "CURRENT"
     ).all()
-    record_map = {r.employee_id.upper(): r for r in daily_records}
+    record_map = {r.employee_id.upper(): r for r in daily_records if r.employee_id}
 
     taking_count = 0
     not_taking_count = 0

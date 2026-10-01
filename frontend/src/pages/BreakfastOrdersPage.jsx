@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import API from '../services/api';
 import Modal from '../components/Modal';
+import HistoricalRecordEditModal from '../components/HistoricalRecordEditModal';
 import {
   FileText,
   Search,
@@ -19,7 +20,8 @@ import {
   ChevronRight,
   Receipt,
   X,
-  Layers
+  Layers,
+  Edit2
 } from 'lucide-react';
 
 const BreakfastOrdersPage = () => {
@@ -28,6 +30,10 @@ const BreakfastOrdersPage = () => {
   const [pagination, setPagination] = useState({ total: 0, page: 1, limit: 20, totalPages: 1 });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Historical Record Edit State
+  const [editingHistoricalRecord, setEditingHistoricalRecord] = useState(null);
+  const [showHistoricalEditModal, setShowHistoricalEditModal] = useState(false);
 
   // Filter States
   const [searchTerm, setSearchTerm] = useState('');
@@ -204,6 +210,7 @@ const BreakfastOrdersPage = () => {
               <option value="ALL">All Order Types</option>
               <option value="DAILY_ENTRY">Daily Breakfast</option>
               <option value="ADDITIONAL_ORDER">Additional Order</option>
+              <option value="HISTORICAL">Historical Breakfast</option>
             </select>
           </div>
 
@@ -312,7 +319,10 @@ const BreakfastOrdersPage = () => {
                           </div>
                         </td>
                         <td>
-                          <span className={`badge ${order.orderType === 'DAILY_ENTRY' ? 'badge-info' : 'badge-role'}`} style={{
+                          <span className={`badge ${
+                            order.orderType === 'HISTORICAL' ? 'badge-historical' :
+                            order.orderType === 'DAILY_ENTRY' ? 'badge-info' : 'badge-role'
+                          }`} style={order.orderType === 'HISTORICAL' ? { fontSize: '0.7rem' } : {
                             background: order.orderType === 'DAILY_ENTRY' ? '#e0f2fe' : '#f3e8ff',
                             color: order.orderType === 'DAILY_ENTRY' ? '#0369a1' : '#6b21a8',
                             borderColor: order.orderType === 'DAILY_ENTRY' ? '#bae6fd' : '#e9d5ff',
@@ -329,10 +339,16 @@ const BreakfastOrdersPage = () => {
                           <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{order.orderTime || '12:00'}</span>
                         </td>
                         <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem' }}>
-                            <Users size={14} color="var(--text-muted)" />
-                            <span>{order.applicableEmployeeCount || 0} employees</span>
-                          </div>
+                          {order.orderType === 'HISTORICAL' ? (
+                            <span style={{ fontSize: '0.8rem', color: '#7c3aed', fontWeight: 600 }}>
+                              Not Recorded
+                            </span>
+                          ) : (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.85rem' }}>
+                              <Users size={14} color="var(--text-muted)" />
+                              <span>{order.applicableEmployeeCount || 0} employees</span>
+                            </div>
+                          )}
                         </td>
                         <td>
                           <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
@@ -352,14 +368,29 @@ const BreakfastOrdersPage = () => {
                             <CheckCircle2 size={12} /> {order.status}
                           </span>
                         </td>
-                        <td style={{ textAlign: 'right' }}>
-                          <button
-                            className="btn btn-secondary"
-                            onClick={() => handleOpenDetails(order)}
-                            style={{ padding: '0.35rem 0.75rem', fontSize: '0.8rem' }}
-                          >
-                            <Eye size={14} /> View Details
-                          </button>
+                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.35rem' }}>
+                            <button
+                              className="btn btn-secondary"
+                              onClick={() => handleOpenDetails(order)}
+                              style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem' }}
+                            >
+                              <Eye size={13} /> View
+                            </button>
+                            {order.isHistorical && (
+                              <button
+                                className="btn btn-secondary"
+                                onClick={() => {
+                                  setEditingHistoricalRecord(order);
+                                  setShowHistoricalEditModal(true);
+                                }}
+                                style={{ padding: '0.35rem 0.65rem', fontSize: '0.8rem', color: '#7c3aed', borderColor: '#d8b4fe' }}
+                                title="Edit Historical Record"
+                              >
+                                <Edit2 size={13} /> Edit
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -372,14 +403,20 @@ const BreakfastOrdersPage = () => {
           {/* MOBILE CARDS VIEW (Visible on mobile screens) */}
           <div className="mobile-only mobile-card-list" style={{ marginBottom: '1.5rem' }}>
             {orders.map(order => (
-              <div key={order._id} className="glass-panel" style={{ padding: '1.25rem', borderLeft: `5px solid ${order.orderType === 'DAILY_ENTRY' ? '#0284c7' : '#8b5cf6'}` }}>
+              <div key={order._id} className="glass-panel" style={{
+                padding: '1.25rem',
+                borderLeft: `5px solid ${order.orderType === 'HISTORICAL' ? '#7c3aed' : order.orderType === 'DAILY_ENTRY' ? '#0284c7' : '#8b5cf6'}`
+              }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
                   <div>
                     <span style={{ fontSize: '0.75rem', fontFamily: 'monospace', fontWeight: 700, color: 'var(--accent-primary)' }}>{order.orderId}</span>
                     <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: '0.2rem 0' }}>{order.orderTitle}</h3>
                     <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Date: {formatDateDisplay(order.businessDate)}</div>
                   </div>
-                  <span className={`badge ${order.orderType === 'DAILY_ENTRY' ? 'badge-info' : 'badge-role'}`} style={{ fontSize: '0.7rem' }}>
+                  <span className={`badge ${
+                    order.orderType === 'HISTORICAL' ? 'badge-historical' :
+                    order.orderType === 'DAILY_ENTRY' ? 'badge-info' : 'badge-role'
+                  }`} style={{ fontSize: '0.7rem' }}>
                     {order.orderTypeLabel}
                   </span>
                 </div>
@@ -391,15 +428,29 @@ const BreakfastOrdersPage = () => {
                   </div>
                   <div>
                     <span style={{ color: 'var(--text-muted)', display: 'block' }}>Employees</span>
-                    <strong>{order.applicableEmployeeCount} Persons</strong>
+                    <strong>{order.orderType === 'HISTORICAL' ? 'Not Recorded' : `${order.applicableEmployeeCount} Persons`}</strong>
                   </div>
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>By: {order.createdBy}</span>
-                  <button className="btn btn-secondary" onClick={() => handleOpenDetails(order)} style={{ padding: '0.4rem 0.85rem', fontSize: '0.8rem' }}>
-                    <Eye size={14} /> View Details
-                  </button>
+                  <div style={{ display: 'flex', gap: '0.35rem' }}>
+                    <button className="btn btn-secondary" onClick={() => handleOpenDetails(order)} style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem' }}>
+                      <Eye size={14} /> View
+                    </button>
+                    {order.isHistorical && (
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => {
+                          setEditingHistoricalRecord(order);
+                          setShowHistoricalEditModal(true);
+                        }}
+                        style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', color: '#7c3aed', borderColor: '#d8b4fe' }}
+                      >
+                        <Edit2 size={13} /> Edit
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}
@@ -445,8 +496,8 @@ const BreakfastOrdersPage = () => {
           <div style={{ padding: '0.25rem' }}>
             {/* Header info card */}
             <div style={{
-              background: selectedOrder.orderType === 'DAILY_ENTRY' ? '#f0f9ff' : '#faf5ff',
-              border: `1px solid ${selectedOrder.orderType === 'DAILY_ENTRY' ? '#bae6fd' : '#e9d5ff'}`,
+              background: selectedOrder.orderType === 'HISTORICAL' ? '#faf5ff' : selectedOrder.orderType === 'DAILY_ENTRY' ? '#f0f9ff' : '#faf5ff',
+              border: `1px solid ${selectedOrder.orderType === 'HISTORICAL' ? '#d8b4fe' : selectedOrder.orderType === 'DAILY_ENTRY' ? '#bae6fd' : '#e9d5ff'}`,
               borderRadius: 'var(--radius-sm)',
               padding: '1.25rem',
               marginBottom: '1.25rem'
@@ -455,7 +506,10 @@ const BreakfastOrdersPage = () => {
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
                     <span style={{ fontSize: '0.8rem', fontFamily: 'monospace', fontWeight: 800, color: 'var(--accent-primary)' }}>{selectedOrder.orderId}</span>
-                    <span className={`badge ${selectedOrder.orderType === 'DAILY_ENTRY' ? 'badge-info' : 'badge-role'}`}>
+                    <span className={`badge ${
+                      selectedOrder.orderType === 'HISTORICAL' ? 'badge-historical' :
+                      selectedOrder.orderType === 'DAILY_ENTRY' ? 'badge-info' : 'badge-role'
+                    }`}>
                       {selectedOrder.orderTypeLabel}
                     </span>
                   </div>
@@ -463,7 +517,7 @@ const BreakfastOrdersPage = () => {
                   <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', display: 'flex', gap: '1rem', flexWrap: 'wrap', marginTop: '0.35rem' }}>
                     <span>📅 Date: <strong>{formatDateDisplay(selectedOrder.businessDate)}</strong></span>
                     <span>⏰ Time: <strong>{selectedOrder.orderTime || '12:00'}</strong></span>
-                    <span>👥 Applicable: <strong>{selectedOrder.applicableEmployeeCount} Employees</strong></span>
+                    <span>👥 {selectedOrder.orderType === 'HISTORICAL' ? <strong style={{ color: '#7c3aed' }}>Employee: Not Recorded</strong> : <>Applicable: <strong>{selectedOrder.applicableEmployeeCount} Employees</strong></>}</span>
                   </div>
                 </div>
 
@@ -475,6 +529,16 @@ const BreakfastOrdersPage = () => {
                 </div>
               </div>
             </div>
+
+            {selectedOrder.isHistorical && (
+              <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 'var(--radius-sm)', padding: '0.85rem 1rem', marginBottom: '1.25rem', fontSize: '0.85rem' }}>
+                <div style={{ display: 'flex', gap: '1.5rem', flexWrap: 'wrap' }}>
+                  <div>Paid By: <strong style={{ color: 'var(--text-primary)' }}>{selectedOrder.paidBy || 'Not Specified'}</strong></div>
+                  <div>Payment Type: <strong style={{ color: 'var(--text-primary)' }}>{selectedOrder.paymentType || 'Not Specified'}</strong></div>
+                  {selectedOrder.sourceId && <div>Source ID: <strong style={{ color: '#7c3aed', fontFamily: 'monospace' }}>{selectedOrder.sourceId}</strong></div>}
+                </div>
+              </div>
+            )}
 
             {/* Breakfast Items Breakdown */}
             <div style={{ marginBottom: '1.25rem' }}>
@@ -572,13 +636,43 @@ const BreakfastOrdersPage = () => {
               </div>
             </div>
 
-            <div style={{ marginTop: '1.25rem', textAlign: 'right' }}>
+            <div style={{ marginTop: '1.25rem', display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+              {selectedOrder.isHistorical && (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setEditingHistoricalRecord(selectedOrder);
+                    setShowHistoricalEditModal(true);
+                  }}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#7c3aed', borderColor: '#d8b4fe' }}
+                >
+                  <Edit2 size={14} /> Edit Historical Record
+                </button>
+              )}
               <button className="btn btn-primary" onClick={() => setShowDetailsModal(false)}>
                 Close Details
               </button>
             </div>
           </div>
         </Modal>
+      )}
+
+      {/* HISTORICAL RECORD EDIT MODAL */}
+      {showHistoricalEditModal && editingHistoricalRecord && (
+        <HistoricalRecordEditModal
+          isOpen={showHistoricalEditModal}
+          onClose={() => {
+            setShowHistoricalEditModal(false);
+            setEditingHistoricalRecord(null);
+          }}
+          record={editingHistoricalRecord}
+          onSaved={() => {
+            setShowHistoricalEditModal(false);
+            setShowDetailsModal(false);
+            fetchOrders();
+          }}
+        />
       )}
     </div>
   );

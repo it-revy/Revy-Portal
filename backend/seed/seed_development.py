@@ -325,6 +325,10 @@ def seed_database():
                 user.roles = [role_map[rc] for rc in acc["roles"] if rc in role_map]
                 db.add(user)
                 db.flush()
+            else:
+                user.password_hash = get_password_hash(acc["initialPasswordText"])
+                user.roles = [role_map[rc] for rc in acc["roles"] if rc in role_map]
+                db.flush()
 
             if not emp:
                 emp = Employee(

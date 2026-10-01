@@ -407,13 +407,25 @@ const ReportsPage = () => {
           {/* TAB 2: EMPLOYEE MONTHLY REPORT */}
           {activeTab === 'employee_report' && (
             <div className="glass-panel" style={{ padding: '1.5rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
                 <h3 style={{ fontSize: '1.1rem', margin: 0, fontWeight: 700 }}>
                   EMPLOYEE MONTHLY ATTENDANCE REPORT ({employeeReport.length} Employees)
                 </h3>
                 <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                   Department: {department}
                 </span>
+              </div>
+
+              <div style={{
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                borderRadius: 'var(--radius-sm)',
+                padding: '0.65rem 1rem',
+                marginBottom: '1rem',
+                fontSize: '0.8rem',
+                color: 'var(--text-secondary)'
+              }}>
+                ℹ️ Individual attendance counts strictly track employee-attributed breakfast entries. Historical records without employee tracking (<code>employee_id = null</code>) are excluded from employee attendance metrics and accounted for in financial expense summaries.
               </div>
 
               <div className="table-container">
@@ -515,12 +527,21 @@ const ReportsPage = () => {
                           <td><strong style={{ color: 'var(--text-primary)' }}>{ord.orderId}</strong></td>
                           <td>{ord.businessDate}</td>
                           <td>
-                            <span className={`badge ${ord.orderType === 'DAILY BREAKFAST' ? 'badge-primary' : 'badge-info'}`}>
+                            <span className={`badge ${
+                              ord.orderType === 'HISTORICAL BREAKFAST' ? 'badge-historical' :
+                              ord.orderType === 'DAILY BREAKFAST' ? 'badge-primary' : 'badge-info'
+                            }`}>
                               {ord.orderType}
                             </span>
                           </td>
                           <td>{ord.orderTitle}</td>
-                          <td style={{ textAlign: 'right' }}>{ord.applicableCount}</td>
+                          <td style={{ textAlign: 'right' }}>
+                            {ord.orderType === 'HISTORICAL BREAKFAST' ? (
+                              <span style={{ fontSize: '0.75rem', color: '#7c3aed', fontWeight: 600 }}>Not Recorded</span>
+                            ) : (
+                              ord.applicableCount
+                            )}
+                          </td>
                           <td style={{ fontSize: '0.82rem', maxWidth: '240px' }}>{ord.breakfastItems || '-'}</td>
                           <td style={{ fontSize: '0.82rem', maxWidth: '200px' }}>{ord.commonItems || '-'}</td>
                           <td style={{ textAlign: 'right', fontWeight: 700, color: 'var(--accent-primary)' }}>

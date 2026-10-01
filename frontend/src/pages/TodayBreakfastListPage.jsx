@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import API from '../services/api';
 import Drawer from '../components/Drawer';
 import { useAuth } from '../context/AuthContext';
+import HistoricalRecordCard from '../components/HistoricalRecordCard';
 import { Utensils, CheckCircle2, XCircle, Search, Eye, History, Shield, Edit2, AlertCircle } from 'lucide-react';
 
 const TodayBreakfastListPage = () => {
@@ -22,12 +23,9 @@ const TodayBreakfastListPage = () => {
   const [editingStatus, setEditingStatus] = useState('TAKEN');
   const [updating, setUpdating] = useState(false);
   const [message, setMessage] = useState(null);
-
-  useEffect(() => {
-    fetchList();
-  }, [selectedDate, department]);
-
   const [dayStatus, setDayStatus] = useState(null);
+  const [historicalRecords, setHistoricalRecords] = useState([]);
+  const [hasHistorical, setHasHistorical] = useState(false);
 
   useEffect(() => {
     fetchList();
@@ -40,6 +38,8 @@ const TodayBreakfastListPage = () => {
       if (res.data.success) {
         setList(res.data.allList || []);
         setDayStatus(res.data.dayStatus || null);
+        setHistoricalRecords(res.data.historicalRecords || []);
+        setHasHistorical(!!res.data.hasHistorical);
       }
     } catch (err) {
       console.error('Failed to fetch list:', err);
@@ -149,6 +149,31 @@ const TodayBreakfastListPage = () => {
         }}>
           {message.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
           {message.text}
+        </div>
+      )}
+
+      {hasHistorical && historicalRecords.length > 0 && (
+        <div style={{ marginBottom: '1.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span className="badge badge-historical" style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}>
+                HISTORICAL BREAKFAST RECORD
+              </span>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                ({historicalRecords.length} historical record{historicalRecords.length > 1 ? 's' : ''} for {selectedDate})
+              </span>
+            </div>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              Employee Not Recorded • Stored expense & quantity data
+            </span>
+          </div>
+          {historicalRecords.map((hr, idx) => (
+            <HistoricalRecordCard
+              key={hr.id || hr.recordId || idx}
+              record={hr}
+              onRecordUpdated={fetchList}
+            />
+          ))}
         </div>
       )}
 

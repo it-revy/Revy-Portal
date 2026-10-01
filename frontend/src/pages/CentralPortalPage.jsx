@@ -16,7 +16,6 @@ import {
   Info,
   CheckCircle2,
   X,
-  Building2,
   ShieldCheck
 } from 'lucide-react';
 
@@ -165,8 +164,8 @@ export default function CentralPortalPage() {
       <header className="portal-topbar">
         <div className="portal-topbar-inner">
           <div className="portal-brand-block">
-            <div className="portal-brand-logo">
-              <Building2 size={22} color="#ffffff" />
+            <div className="portal-brand-logo" style={{ background: '#ffffff', border: '1px solid #e2e8f0', overflow: 'hidden', padding: '3px' }}>
+              <img src="/favicon.png" alt="REVY Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
             </div>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>

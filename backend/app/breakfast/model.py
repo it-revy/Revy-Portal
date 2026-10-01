@@ -50,23 +50,42 @@ class BreakfastRecord(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     record_id = Column(String(100), unique=True, index=True, nullable=False)
-    employee_id = Column(String(50), nullable=False, index=True)
+    employee_id = Column(String(50), nullable=True, index=True)
+    employee_name = Column(String(150), nullable=True)
     business_date = Column(String(10), nullable=False, index=True)  # YYYY-MM-DD
-    response = Column(String(20), nullable=False)  # YES / NO / TAKING / NOT_TAKING
-    employee_response = Column(String(20), default="TAKING", nullable=False)
+    record_type = Column(String(20), default="CURRENT", nullable=False, index=True)  # CURRENT, HISTORICAL
+
+    # Historical / Daily item details
+    snack = Column(String(150), nullable=True)
+    snack_quantity = Column(String(50), nullable=True)  # e.g. "400GM", "500GM", "1kg", "4pkt"
+    snack_cost = Column(Float, default=0.0, nullable=True)
+    fruit = Column(String(150), nullable=True)
+    fruit_quantity = Column(String(50), nullable=True)  # e.g. "1kg", "750GM", "5PKT"
+    fruit_cost = Column(Float, default=0.0, nullable=True)
+    total_cost = Column(Float, default=0.0, nullable=True)
+    paid_by = Column(String(100), nullable=True)
+    payment_type = Column(String(50), nullable=True)  # Cash, GPay, Bank Transfer, etc.
+
+    # Source & duplicate tracking
+    source = Column(String(50), default="EMPLOYEE", nullable=False)  # EMPLOYEE, ADMIN, HISTORICAL_IMPORT
+    source_id = Column(String(100), nullable=True, index=True)  # e.g. HIST-2026-06-23-001
+    external_reference = Column(String(100), nullable=True, index=True)
+
+    # Response & status
+    response = Column(String(20), default="TAKING", nullable=True)  # YES / NO / TAKING / NOT_TAKING / HISTORICAL
+    employee_response = Column(String(20), default="TAKING", nullable=True)
     actual_status = Column(String(20), nullable=True)  # TAKEN / NOT_TAKEN / NO_RESPONSE / NO_SHOW
     actual_status_source = Column(String(30), default="EMPLOYEE_RESPONSE", nullable=False)
     reason_code = Column(String(50), nullable=True)
     reason_text = Column(Text, nullable=True)
-    source = Column(String(30), default="EMPLOYEE", nullable=False)
     submitted_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     history = Column(JSON, default=list)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
-        UniqueConstraint("employee_id", "business_date", name="uq_breakfast_record_emp_date"),
         Index("ix_record_emp_date", "employee_id", "business_date"),
+        Index("ix_record_type_date", "record_type", "business_date"),
     )
 
 
@@ -95,6 +114,11 @@ class BreakfastDailyEntry(Base):
     breakfast_items = Column(JSON, default=list)
     common_items = Column(JSON, default=list)
     total_cost = Column(Float, default=0.0, nullable=False)
+    record_type = Column(String(20), default="CURRENT", nullable=False, index=True)  # CURRENT, HISTORICAL
+    paid_by = Column(String(100), nullable=True)
+    payment_type = Column(String(50), nullable=True)
+    source = Column(String(50), default="OPERATIONAL", nullable=False)
+    source_id = Column(String(100), nullable=True, index=True)
     created_by = Column(String(150), nullable=False)
     updated_by = Column(String(150), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

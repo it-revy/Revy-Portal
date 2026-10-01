@@ -107,12 +107,22 @@ class ReportService:
             adjustments = sum(t.amount for t in txns if t.type == "ADJUSTMENT")
             reversals = sum(t.amount for t in txns if t.type == "REVERSAL")
 
-            total_spent = expenses - (adjustments + reversals)
+            operational_spent = expenses - (adjustments + reversals)
+
+            # Historical records in this month
+            hist_recs = self.db.query(BreakfastRecord).filter(
+                BreakfastRecord.business_date >= s_date,
+                BreakfastRecord.business_date <= e_date,
+                BreakfastRecord.record_type == "HISTORICAL"
+            ).all()
+            historical_spent = sum(float(r.total_cost or 0.0) for r in hist_recs)
+
+            total_spent = operational_spent + historical_spent
 
             end_txn = self.db.query(BreakfastMoneyTransaction).filter(
                 BreakfastMoneyTransaction.transaction_date <= e_date
             ).order_by(desc(BreakfastMoneyTransaction.created_at)).first()
-            closing_bal = float(end_txn.balance_after_transaction) if end_txn else (running_opening_balance + received - total_spent)
+            closing_bal = float(end_txn.balance_after_transaction) if end_txn else (running_opening_balance + received - operational_spent)
 
             monthly_summary.append({
                 "year": m_obj["year"],
@@ -122,41 +132,53 @@ class ReportService:
                 "openingBalance": running_opening_balance,
                 "moneyReceived": received,
                 "totalSpent": total_spent,
+                "operationalSpent": operational_spent,
+                "historicalSpent": historical_spent,
                 "closingBalance": closing_bal
             })
             running_opening_balance = closing_bal
 
         tot_received = sum(r["moneyReceived"] for r in monthly_summary)
         tot_spent = sum(r["totalSpent"] for r in monthly_summary)
+        tot_hist = sum(r["historicalSpent"] for r in monthly_summary)
+        tot_op = sum(r["operationalSpent"] for r in monthly_summary)
         final_closing = monthly_summary[-1]["closingBalance"] if monthly_summary else running_opening_balance
 
         yearly_total = {
             "totalMoneyReceived": tot_received,
             "totalSpent": tot_spent,
+            "totalOperationalSpent": tot_op,
+            "totalHistoricalSpent": tot_hist,
             "closingBalance": final_closing
         }
 
-        # 2. Employee Monthly Report
+        # 2. Employee Monthly Report (strictly CURRENT records with known employees)
         emp_q = self.db.query(Employee).filter(Employee.is_hard_deleted == False)
         if selected_dept and selected_dept != "ALL":
             emp_q = emp_q.filter(Employee.department == selected_dept)
         employees = emp_q.order_by(Employee.employee_id.asc()).all()
 
-        emp_target_months = [selected_month] if (selected_month and selected_month != "ALL") else [m["yearMonth"] for m in months_to_process]
+        if selected_month and selected_month != "ALL":
+            target_ym = selected_month if "-" in selected_month else f"{selected_year}-{selected_month.zfill(2)}"
+            emp_target_months = [target_ym]
+        else:
+            emp_target_months = [m["yearMonth"] for m in months_to_process]
         month_summaries = {ym: get_month_calendar_summary(ym, self.db) for ym in emp_target_months}
 
         all_leaves = self.db.query(BreakfastNonParticipationPeriod).all()
 
-        rec_q = self.db.query(BreakfastRecord)
+        rec_q = self.db.query(BreakfastRecord).filter(BreakfastRecord.record_type == "CURRENT")
         if selected_month and selected_month != "ALL":
-            rec_q = rec_q.filter(BreakfastRecord.business_date.like(f"{selected_month}%"))
+            target_prefix = selected_month if "-" in selected_month else f"{selected_year}-{selected_month.zfill(2)}"
+            rec_q = rec_q.filter(BreakfastRecord.business_date.like(f"{target_prefix}%"))
         elif selected_year != "all":
             rec_q = rec_q.filter(BreakfastRecord.business_date.like(f"{selected_year}%"))
         records = rec_q.all()
 
         emp_records_map = {}
         for r in records:
-            emp_records_map.setdefault(r.employee_id.upper(), []).append(r)
+            if r.employee_id:
+                emp_records_map.setdefault(r.employee_id.upper(), []).append(r)
 
         employee_report = []
         for emp in employees:
@@ -203,15 +225,20 @@ class ReportService:
         # 3. Order Summary
         daily_q = self.db.query(BreakfastDailyEntry)
         add_q = self.db.query(BreakfastAdditionalOrder)
+        hist_q = self.db.query(BreakfastRecord).filter(BreakfastRecord.record_type == "HISTORICAL")
+
         if selected_month and selected_month != "ALL":
             daily_q = daily_q.filter(BreakfastDailyEntry.business_date.like(f"{selected_month}%"))
             add_q = add_q.filter(BreakfastAdditionalOrder.business_date.like(f"{selected_month}%"))
+            hist_q = hist_q.filter(BreakfastRecord.business_date.like(f"{selected_month}%"))
         elif selected_year != "all":
             daily_q = daily_q.filter(BreakfastDailyEntry.business_date.like(f"{selected_year}%"))
             add_q = add_q.filter(BreakfastAdditionalOrder.business_date.like(f"{selected_year}%"))
+            hist_q = hist_q.filter(BreakfastRecord.business_date.like(f"{selected_year}%"))
 
         daily_entries = daily_q.order_by(desc(BreakfastDailyEntry.business_date)).all()
         additional_orders = add_q.order_by(desc(BreakfastAdditionalOrder.business_date)).all()
+        hist_entries = hist_q.order_by(desc(BreakfastRecord.business_date)).all()
 
         def format_items(items):
             if not items:
@@ -224,9 +251,10 @@ class ReportService:
                 "orderId": f"DAILY-{de.business_date}",
                 "businessDate": de.business_date,
                 "orderType": "DAILY BREAKFAST",
-                "orderTitle": "Daily Breakfast Entry",
+                "orderTitle": f"Daily Breakfast ({de.business_date})",
                 "orderTime": "10:00 AM",
                 "applicableCount": (de.summary or {}).get("applicableCount", 0),
+                "isHistorical": getattr(de, "record_type", "CURRENT") == "HISTORICAL",
                 "breakfastItems": format_items(de.breakfast_items),
                 "commonItems": format_items(de.common_items),
                 "totalCost": de.total_cost or 0.0,
@@ -242,11 +270,40 @@ class ReportService:
                 "orderTitle": ao.order_title or "Additional Order",
                 "orderTime": ao.order_time or "",
                 "applicableCount": ao.applicable_employee_count or 0,
+                "isHistorical": False,
                 "breakfastItems": format_items(ao.breakfast_items),
                 "commonItems": format_items(ao.common_items),
                 "totalCost": ao.total_cost or 0.0,
                 "createdBy": ao.created_by or "System",
                 "createdAt": ao.created_at.isoformat() if ao.created_at else None
+            })
+
+        for hr in hist_entries:
+            bf_str = f"Snack: {hr.snack} ({hr.snack_quantity or ''}) ₹{hr.snack_cost or 0}" if hr.snack else ""
+            cm_str = f"Fruit: {hr.fruit} ({hr.fruit_quantity or ''}) ₹{hr.fruit_cost or 0}" if hr.fruit else ""
+            order_summary.append({
+                "orderId": hr.source_id or hr.record_id,
+                "businessDate": hr.business_date,
+                "orderType": "HISTORICAL BREAKFAST",
+                "orderTitle": f"Historical Breakfast ({hr.business_date})",
+                "orderTime": "12:00 PM",
+                "applicableCount": 0,
+                "isHistorical": True,
+                "recordType": "HISTORICAL",
+                "employeeName": "Not Recorded",
+                "breakfastItems": bf_str,
+                "commonItems": cm_str,
+                "snack": hr.snack,
+                "snackQuantity": hr.snack_quantity,
+                "snackCost": hr.snack_cost or 0.0,
+                "fruit": hr.fruit,
+                "fruitQuantity": hr.fruit_quantity,
+                "fruitCost": hr.fruit_cost or 0.0,
+                "paidBy": hr.paid_by,
+                "paymentType": hr.payment_type,
+                "totalCost": hr.total_cost or 0.0,
+                "createdBy": f"{hr.paid_by} ({hr.payment_type})" if (hr.paid_by and hr.payment_type) else (hr.paid_by or "Historical Import"),
+                "createdAt": hr.created_at.isoformat() if hr.created_at else None
             })
 
         order_summary.sort(key=lambda o: o["businessDate"], reverse=True)
@@ -298,15 +355,17 @@ class ReportService:
         perm_not_taking_count = sum(1 for e in active_emps if e.breakfast_participation_type == "PERMANENT_NOT_TAKING")
 
         today_records = self.db.query(BreakfastRecord).filter(
-            BreakfastRecord.business_date == today_str
+            BreakfastRecord.business_date == today_str,
+            BreakfastRecord.record_type == "CURRENT"
         ).all()
-        today_yes = sum(1 for r in today_records if r.response in ["YES", "TAKING"] or r.employee_response == "TAKING")
-        today_no = sum(1 for r in today_records if r.response in ["NO", "NOT_TAKING"] or r.employee_response == "NOT_TAKING")
-        today_responded = {r.employee_id.upper() for r in today_records}
+        today_yes = sum(1 for r in today_records if r.employee_id and (r.response in ["YES", "TAKING"] or r.employee_response == "TAKING"))
+        today_no = sum(1 for r in today_records if r.employee_id and (r.response in ["NO", "NOT_TAKING"] or r.employee_response == "NOT_TAKING"))
+        today_responded = {r.employee_id.upper() for r in today_records if r.employee_id}
         today_pending = max(0, normal_count - len(today_responded))
 
         month_records = self.db.query(BreakfastRecord).filter(
-            BreakfastRecord.business_date.like(f"{current_month}%")
+            BreakfastRecord.business_date.like(f"{current_month}%"),
+            BreakfastRecord.record_type == "CURRENT"
         ).all()
 
         daily_entries = self.db.query(BreakfastDailyEntry).filter(
@@ -326,6 +385,8 @@ class ReportService:
         reason_distribution = {}
 
         for r in month_records:
+            if not r.employee_id or r.record_type == "HISTORICAL":
+                continue
             if r.business_date not in daily_trend_map:
                 daily_trend_map[r.business_date] = {"date": r.business_date, "yes": 0, "no": 0}
             trend_item = daily_trend_map[r.business_date]

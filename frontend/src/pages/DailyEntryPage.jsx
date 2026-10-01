@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import HistoricalRecordCard from '../components/HistoricalRecordCard';
 import {
   Calendar,
   Users,
@@ -205,6 +206,31 @@ const DailyEntryPage = () => {
           </div>
         </div>
       </div>
+
+      {data?.hasHistorical && data?.historicalRecords?.length > 0 && (
+        <div style={{ marginBottom: '1.5rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span className="badge badge-historical" style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}>
+                HISTORICAL BREAKFAST RECORD
+              </span>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                ({data.historicalRecords.length} historical {data.historicalRecords.length === 1 ? 'entry' : 'entries'} on {selectedDate})
+              </span>
+            </div>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+              Employee Not Recorded • Preserved expense & quantity data
+            </span>
+          </div>
+          {data.historicalRecords.map((hr, idx) => (
+            <HistoricalRecordCard
+              key={hr.id || hr.recordId || idx}
+              record={hr}
+              onRecordUpdated={fetchDailyEntryData}
+            />
+          ))}
+        </div>
+      )}
 
       {isExisting && (
         <div style={{

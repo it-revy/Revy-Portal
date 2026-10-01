@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { Coffee, Eye, EyeOff, AlertCircle, ShieldCheck } from 'lucide-react';
+import { Eye, EyeOff, AlertCircle, ShieldCheck } from 'lucide-react';
 
 const LoginPage = () => {
   const [username, setUsername] = useState('');
@@ -44,16 +44,20 @@ const LoginPage = () => {
       <div className="panel-card" style={{ width: '100%', maxWidth: '420px', padding: '2rem 1.5rem', background: '#ffffff', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-md)' }}>
         <div style={{ textAlign: 'center', marginBottom: '1.75rem' }}>
           <div style={{
-            width: '52px',
-            height: '52px',
-            borderRadius: '10px',
-            background: '#2563eb',
+            width: '56px',
+            height: '56px',
+            borderRadius: '12px',
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.06)',
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
-            marginBottom: '0.85rem'
+            marginBottom: '0.85rem',
+            overflow: 'hidden',
+            padding: '4px'
           }}>
-            <Coffee size={28} color="white" />
+            <img src="/favicon.png" alt="REVY Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
           </div>
           <h1 style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)' }}>REVY Management Portal</h1>
           <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
