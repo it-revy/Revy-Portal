@@ -97,6 +97,15 @@ def get_employee_business_day_status(employee_id: str, date_str: str, db: Sessio
 
     is_permanent_not_taking = (employee.breakfast_participation_type == "PERMANENT_NOT_TAKING")
 
+    # Check for temporary one-day request
+    from app.breakfast.model import BreakfastTemporaryRequest
+    temp_request = db.query(BreakfastTemporaryRequest).filter(
+        BreakfastTemporaryRequest.employee_id == employee.employee_id,
+        BreakfastTemporaryRequest.requested_date == date_str,
+        BreakfastTemporaryRequest.status != "CANCELLED"
+    ).first()
+    has_temp_request = bool(temp_request)
+
     leave_period = db.query(BreakfastNonParticipationPeriod).filter(
         BreakfastNonParticipationPeriod.employee_id == employee.employee_id,
         BreakfastNonParticipationPeriod.from_date <= date_str,
@@ -104,12 +113,20 @@ def get_employee_business_day_status(employee_id: str, date_str: str, db: Sessio
     ).first()
 
     is_employee_leave = bool(leave_period)
-    is_applicable = base_status["isWorkingDay"] and (not is_employee_leave) and (not is_permanent_not_taking)
+    is_applicable = base_status["isWorkingDay"] and (not is_employee_leave) and ((not is_permanent_not_taking) or has_temp_request)
 
     return {
         **base_status,
         "isEmployeeLeave": is_employee_leave,
         "leaveReason": leave_period.reason_text if leave_period else None,
         "isPermanentNotTaking": is_permanent_not_taking,
+        "hasTemporaryRequest": has_temp_request,
+        "temporaryRequest": {
+            "requestId": temp_request.request_id,
+            "quantity": float(temp_request.quantity),
+            "status": temp_request.status,
+            "notes": temp_request.notes
+        } if temp_request else None,
         "isApplicableForBreakfast": is_applicable
     }
+

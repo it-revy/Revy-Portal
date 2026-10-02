@@ -99,7 +99,8 @@ export const SYSTEM_MODULES = [
   }
 ];
 
-export const getBreakfastDestination = (hasPermission) => {
+export const getBreakfastDestination = (hasPermission, hasRole = () => false) => {
+  if (hasRole('FINANCE_MANAGER') || hasRole('Finance Manager')) return '/finance/fund-requests';
   if (hasPermission('breakfast.view')) return '/admin/dashboard';
   if (hasPermission('breakfast.dashboard.view')) return '/ceo-dashboard';
   if (hasPermission('finance.breakfast_fund.view')) return '/finance/fund-requests';
@@ -107,13 +108,14 @@ export const getBreakfastDestination = (hasPermission) => {
 };
 
 export default function CentralPortalPage() {
-  const { user, logout, hasPermission } = useAuth();
+  const { user, logout, hasPermission, hasRole } = useAuth();
   const navigate = useNavigate();
   const [inactiveModal, setInactiveModal] = useState(null);
 
   // Check if user has permission to access Breakfast module
   const hasBreakfastAccess = () => {
     if (!user) return false;
+    if (hasRole('FINANCE_MANAGER') || hasRole('Finance Manager')) return true;
     const breakfastPerms = [
       '*',
       'breakfast.view',
@@ -132,7 +134,7 @@ export default function CentralPortalPage() {
   const handleModuleClick = (mod) => {
     if (mod.id === 'breakfast') {
       if (canAccessBreakfast) {
-        const targetRoute = getBreakfastDestination(hasPermission);
+        const targetRoute = getBreakfastDestination(hasPermission, hasRole);
         navigate(targetRoute);
       } else {
         setInactiveModal({

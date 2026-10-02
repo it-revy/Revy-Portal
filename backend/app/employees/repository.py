@@ -59,4 +59,37 @@ class EmployeeRepository:
         return query.order_by(Employee.employee_id.asc()).all()
 
     def get_roles_by_codes(self, role_codes: List[str]) -> List[Role]:
-        return self.db.query(Role).filter(Role.code.in_(role_codes)).all()
+        from app.roles.model import Role, Permission
+        norm_codes = [c.strip() for c in role_codes if c and c.strip()]
+        lookup_codes = set(norm_codes) | {c.upper().replace(" ", "_") for c in norm_codes}
+        roles = self.db.query(Role).filter(
+            or_(
+                Role.code.in_(lookup_codes),
+                Role.name.in_(norm_codes)
+            )
+        ).all()
+        # If FINANCE_MANAGER was requested and not found in DB, auto-create it with permissions
+        has_fin = any(c.upper() in ["FINANCE_MANAGER", "FINANCE MANAGER"] for c in norm_codes)
+        if has_fin and not any(r.code == "FINANCE_MANAGER" for r in roles):
+            fin_role = self.db.query(Role).filter(Role.code == "FINANCE_MANAGER").first()
+            if not fin_role:
+                fin_role = Role(
+                    code="FINANCE_MANAGER",
+                    name="Finance Manager",
+                    description="Manages fund approvals, provisions, and financial reports"
+                )
+                perms = self.db.query(Permission).filter(
+                    Permission.code.in_([
+                        "finance.breakfast_fund.view", "finance.breakfast_fund.request.view",
+                        "finance.breakfast_fund.request.approve", "finance.breakfast_fund.request.reject",
+                        "finance.breakfast_fund.provide", "finance.breakfast_fund.report",
+                        "breakfast.money.view", "breakfast.money.report", "breakfast.view_own",
+                        "breakfast.submit", "breakfast.history_own"
+                    ])
+                ).all()
+                fin_role.permissions = perms
+                self.db.add(fin_role)
+                self.db.flush()
+            roles.append(fin_role)
+        return roles
+

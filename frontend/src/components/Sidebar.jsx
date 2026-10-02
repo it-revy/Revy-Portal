@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 
 const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
-  const { hasPermission } = useAuth();
+  const { hasPermission, hasRole } = useAuth();
   const location = useLocation();
 
   const isBreakfastPath = [
@@ -324,7 +324,7 @@ const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
         )}
 
         {/* Finance Fund Requests */}
-        {hasPermission('finance.breakfast_fund.view') && (
+        {(hasPermission('finance.breakfast_fund.view') || hasRole('FINANCE_MANAGER') || hasRole('Finance Manager')) && (
           <NavLink
             to="/finance/fund-requests"
             onClick={handleLinkClick}

@@ -336,11 +336,27 @@ const EmployeeManagementPage = () => {
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
-                        {emp.roles?.map(r => (
-                          <span key={r} className="badge badge-role">
-                            {r.replace('_', ' ')}
-                          </span>
-                        ))}
+                        {emp.roles?.map(r => {
+                          const isFinance = (r === 'FINANCE_MANAGER' || r === 'Finance Manager');
+                          return (
+                            <span
+                              key={r}
+                              className="badge"
+                              style={isFinance ? {
+                                background: 'rgba(16, 185, 129, 0.15)',
+                                color: '#34d399',
+                                border: '1px solid rgba(16, 185, 129, 0.35)',
+                                fontWeight: 600
+                              } : {
+                                background: 'rgba(59, 130, 246, 0.1)',
+                                color: '#93c5fd',
+                                border: '1px solid rgba(59, 130, 246, 0.25)'
+                              }}
+                            >
+                              {r.replace('_', ' ')}
+                            </span>
+                          );
+                        })}
                       </div>
                     </td>
                     <td>
@@ -519,7 +535,7 @@ const EmployeeManagementPage = () => {
                   Assign Roles (Multi-Select Support)
                 </label>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                  {['EMPLOYEE', 'BREAKFAST_ADMIN', 'IT_ADMIN', 'CEO'].map(role => (
+                  {['EMPLOYEE', 'BREAKFAST_ADMIN', 'FINANCE_MANAGER', 'IT_ADMIN', 'CEO'].map(role => (
                     <label key={role} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem' }}>
                       <input
                         type="checkbox"
@@ -527,7 +543,7 @@ const EmployeeManagementPage = () => {
                         onChange={() => handleRoleToggle(role)}
                         style={{ width: '16px', height: '16px', accentColor: 'var(--accent-primary)' }}
                       />
-                      {role.replace('_', ' ')}
+                      {role === 'FINANCE_MANAGER' ? 'Finance Manager' : role.replace('_', ' ')}
                     </label>
                   ))}
                 </div>

@@ -48,4 +48,6 @@ def get_db():
 
 def init_db():
     """Create all tables in database if not created (useful for tests/quickstart)"""
+    import app.models  # noqa: F401
     Base.metadata.create_all(bind=engine)
+

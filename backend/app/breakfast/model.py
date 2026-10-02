@@ -235,3 +235,23 @@ class BreakfastFundRequest(Base):
     difference_reported = Column(JSON, default=dict)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+
+class BreakfastTemporaryRequest(Base):
+    __tablename__ = "breakfast_temporary_requests"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    request_id = Column(String(100), unique=True, index=True, nullable=False)
+    employee_id = Column(String(50), nullable=False, index=True)
+    employee_name = Column(String(150), nullable=False)
+    requested_date = Column(String(10), nullable=False, index=True)  # YYYY-MM-DD
+    quantity = Column(Float, default=1.0, nullable=False)
+    status = Column(String(50), default="CONFIRMED", nullable=False, index=True)  # CONFIRMED, CANCELLED
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        Index("ix_temp_req_emp_date", "employee_id", "requested_date"),
+    )
+

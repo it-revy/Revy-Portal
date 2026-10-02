@@ -1,7 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { Utensils, CheckCircle2, XCircle, Clock, AlertTriangle, History, CalendarRange, Edit3 } from 'lucide-react';
+import {
+  Utensils,
+  CheckCircle2,
+  XCircle,
+  Clock,
+  AlertTriangle,
+  History,
+  CalendarRange,
+  Edit3,
+  Calendar,
+  Trash2,
+  PlusCircle,
+  HelpCircle,
+  Info
+} from 'lucide-react';
 
 const EmployeeDailyPage = () => {
   const { user } = useAuth();
@@ -12,22 +26,31 @@ const EmployeeDailyPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [editingMode, setEditingMode] = useState(false);
 
-  // Single Day Form State
+  // Single Day Form State (for normal participants)
   const [response, setResponse] = useState('YES');
   const [reasonCode, setReasonCode] = useState('');
   const [reasonText, setReasonText] = useState('');
 
-  // Multi-Day Absence Form State
+  // Multi-Day Absence Form State (for normal participants)
   const [fromDate, setFromDate] = useState(new Date().toISOString().substring(0, 10));
   const [toDate, setToDate] = useState(new Date().toISOString().substring(0, 10));
   const [multiReasonCode, setMultiReasonCode] = useState('ON_LEAVE');
   const [multiReasonText, setMultiReasonText] = useState('');
+
+  // Permanent Non-Taker Specific-Date Request State
+  const [tempRequests, setTempRequests] = useState([]);
+  const [tempDate, setTempDate] = useState(new Date().toISOString().substring(0, 10));
+  const [tempQuantity, setTempQuantity] = useState(1.0);
+  const [tempNotes, setTempNotes] = useState('');
+  const [editingTempReq, setEditingTempReq] = useState(null);
+  const [tempSubmitting, setTempSubmitting] = useState(false);
 
   const [message, setMessage] = useState(null);
 
   useEffect(() => {
     fetchTodayStatus();
     fetchHistory();
+    fetchTemporaryRequests();
   }, []);
 
   const fetchTodayStatus = async () => {
@@ -35,6 +58,9 @@ const EmployeeDailyPage = () => {
       const res = await API.get('/breakfast/today');
       if (res.data.success) {
         setStatusData(res.data);
+        if (res.data.businessDate) {
+          setTempDate(res.data.businessDate);
+        }
         if (res.data.todayRecord) {
           setResponse(res.data.todayRecord.response === 'NO' ? 'NO' : 'YES');
           setReasonCode(res.data.todayRecord.reasonCode || '');
@@ -56,6 +82,17 @@ const EmployeeDailyPage = () => {
       }
     } catch (err) {
       console.error('Failed to fetch history:', err);
+    }
+  };
+
+  const fetchTemporaryRequests = async () => {
+    try {
+      const res = await API.get('/breakfast/temporary-requests');
+      if (res.data.success) {
+        setTempRequests(res.data.requests || []);
+      }
+    } catch (err) {
+      console.error('Failed to fetch temporary requests:', err);
     }
   };
 
@@ -87,6 +124,7 @@ const EmployeeDailyPage = () => {
         setEditingMode(false);
         fetchTodayStatus();
         fetchHistory();
+        fetchTemporaryRequests();
       }
     } catch (err) {
       setMessage({
@@ -136,12 +174,121 @@ const EmployeeDailyPage = () => {
     }
   };
 
+  // Specific-Date Request for Permanent Non-Takers
+  const handleTemporaryRequestSubmit = async (e) => {
+    e.preventDefault();
+    setMessage(null);
+
+    const qty = parseFloat(tempQuantity);
+    if (isNaN(qty) || qty <= 0) {
+      setMessage({ type: 'danger', text: 'Please specify a valid quantity greater than 0.' });
+      return;
+    }
+
+    if (!tempDate) {
+      setMessage({ type: 'danger', text: 'Please select a date for the breakfast request.' });
+      return;
+    }
+
+    // Check duplicate if not editing existing
+    if (!editingTempReq) {
+      const existing = tempRequests.find(r => r.requestedDate === tempDate && r.status !== 'CANCELLED');
+      if (existing) {
+        setMessage({
+          type: 'danger',
+          text: `A breakfast request already exists for date ${tempDate} (${existing.quantity} portions). You can edit or cancel that request below instead of creating a duplicate.`
+        });
+        return;
+      }
+    }
+
+    setTempSubmitting(true);
+    try {
+      if (editingTempReq) {
+        const res = await API.put(`/breakfast/temporary-requests/${editingTempReq.requestId}`, {
+          quantity: qty,
+          notes: tempNotes
+        });
+        if (res.data.success) {
+          setMessage({ type: 'success', text: res.data.message || 'Request updated successfully' });
+          setEditingTempReq(null);
+          setTempNotes('');
+          fetchTemporaryRequests();
+          fetchTodayStatus();
+          fetchHistory();
+        }
+      } else {
+        const res = await API.post('/breakfast/temporary-request', {
+          requestedDate: tempDate,
+          quantity: qty,
+          notes: tempNotes
+        });
+        if (res.data.success) {
+          setMessage({ type: 'success', text: res.data.message || 'Specific-date request submitted successfully' });
+          setTempNotes('');
+          fetchTemporaryRequests();
+          fetchTodayStatus();
+          fetchHistory();
+        }
+      }
+    } catch (err) {
+      setMessage({
+        type: 'danger',
+        text: err.response?.data?.message || 'Failed to submit specific-date request.'
+      });
+    } finally {
+      setTempSubmitting(false);
+    }
+  };
+
+  const handleStartEditTempReq = (req) => {
+    setEditingTempReq(req);
+    setTempDate(req.requestedDate);
+    setTempQuantity(req.quantity);
+    setTempNotes(req.notes || '');
+    window.scrollTo({ top: 300, behavior: 'smooth' });
+  };
+
+  const handleCancelEditingTempReq = () => {
+    setEditingTempReq(null);
+    setTempNotes('');
+    setTempQuantity(1.0);
+    if (statusData?.businessDate) {
+      setTempDate(statusData.businessDate);
+    }
+  };
+
+  const handleCancelTempRequest = async (requestId, reqDate) => {
+    if (!window.confirm(`Are you sure you want to cancel your breakfast request for ${reqDate}?`)) {
+      return;
+    }
+    try {
+      const res = await API.delete(`/breakfast/temporary-requests/${requestId}`);
+      if (res.data.success) {
+        setMessage({ type: 'success', text: res.data.message || 'Request cancelled successfully' });
+        if (editingTempReq && editingTempReq.requestId === requestId) {
+          handleCancelEditingTempReq();
+        }
+        fetchTemporaryRequests();
+        fetchTodayStatus();
+        fetchHistory();
+      }
+    } catch (err) {
+      setMessage({
+        type: 'danger',
+        text: err.response?.data?.message || 'Failed to cancel request.'
+      });
+    }
+  };
+
   if (loading) {
     return <div className="page-body">Loading today's status...</div>;
   }
 
   const isPerm = statusData?.participationType === 'PERMANENT_NOT_TAKING';
   const hasExistingResponse = !!statusData?.todayRecord;
+  const existingReqForSelectedDate = tempRequests.find(r => r.requestedDate === tempDate && r.status !== 'CANCELLED');
+  const todayTempReq = tempRequests.find(r => r.requestedDate === statusData?.businessDate && r.status !== 'CANCELLED');
 
   return (
     <div className="page-body">
@@ -210,18 +357,277 @@ const EmployeeDailyPage = () => {
         </div>
       )}
 
+      {/* ===================== PERMANENT NON-TAKER VIEW ===================== */}
       {isPerm ? (
-        <div className="panel-card" style={{ padding: '2rem', textAlign: 'center', marginBottom: '1.5rem' }}>
-          <AlertTriangle size={40} color="var(--warning)" style={{ marginBottom: '0.75rem' }} />
-          <h2>Permanent Non-Breakfast Participant</h2>
-          <p style={{ color: 'var(--text-secondary)', maxWidth: '500px', margin: '0.5rem auto 1.25rem auto', fontSize: '0.875rem' }}>
-            Your account is set to <strong>PERMANENT_NOT_TAKING</strong>. You are automatically preserved in monthly reports with 0 breakfasts taken.
-          </p>
-          <span className="badge badge-warning" style={{ fontSize: '0.8rem', padding: '0.4rem 0.8rem' }}>
-            Report Status: Preserved (0 Breakfasts)
-          </span>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', marginBottom: '1.5rem' }}>
+          {/* Permanent Non-Taker Profile Notice Card */}
+          <div className="panel-card" style={{ padding: '1.5rem', borderLeft: '4px solid var(--warning)' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.4rem' }}>
+                  <AlertTriangle size={20} color="var(--warning)" />
+                  <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Permanent Non-Breakfast Participant</h3>
+                  <span className="badge badge-warning" style={{ fontSize: '0.75rem' }}>
+                    PERMANENT_NOT_TAKING
+                  </span>
+                </div>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: 0, maxWidth: '700px' }}>
+                  Your employee profile is permanently set to <strong>Non-Taker</strong>. You are normally excluded from regular breakfast catering. However, you can submit a <strong>one-day request for any specific date</strong> when you wish to have breakfast. Your permanent Non-Taker status remains unchanged.
+                </p>
+              </div>
+
+              {todayTempReq && (
+                <div style={{
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  padding: '0.75rem 1rem',
+                  borderRadius: 'var(--radius-sm)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.5rem'
+                }}>
+                  <CheckCircle2 size={18} color="#10b981" />
+                  <div>
+                    <span style={{ fontSize: '0.7rem', color: '#10b981', fontWeight: 600, display: 'block' }}>TODAY'S ONE-DAY REQUEST</span>
+                    <strong style={{ color: '#065f46', fontSize: '0.85rem' }}>
+                      {todayTempReq.quantity} Portion{todayTempReq.quantity !== 1 ? 's' : ''} Confirmed
+                    </strong>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* One-Day Request Form Card */}
+          <div className="panel-card" style={{ padding: '1.75rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div>
+                <h2 style={{ fontSize: '1.15rem', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+                  <Calendar size={20} color="var(--accent-primary)" />
+                  {editingTempReq ? `Edit Request for ${editingTempReq.requestedDate}` : 'Request Breakfast for a Specific Date'}
+                </h2>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.2rem', margin: 0 }}>
+                  Submitting this request will include you in the breakfast count <strong>for this specific date only</strong>.
+                </p>
+              </div>
+              {editingTempReq && (
+                <button className="btn btn-secondary" onClick={handleCancelEditingTempReq} style={{ fontSize: '0.8rem' }}>
+                  Cancel Edit
+                </button>
+              )}
+            </div>
+
+            {/* Warning if request already exists for selected date (when not editing) */}
+            {!editingTempReq && existingReqForSelectedDate && (
+              <div style={{
+                background: 'rgba(59, 130, 246, 0.1)',
+                border: '1px solid rgba(59, 130, 246, 0.25)',
+                padding: '0.85rem 1rem',
+                borderRadius: 'var(--radius-sm)',
+                marginBottom: '1.25rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: '0.75rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Info size={18} color="#2563eb" />
+                  <div>
+                    <strong style={{ fontSize: '0.85rem', color: 'var(--text-primary)' }}>
+                      Request Already Active for {tempDate}
+                    </strong>
+                    <span style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      Status: <strong>{existingReqForSelectedDate.status}</strong> • Quantity: <strong>{existingReqForSelectedDate.quantity} portion(s)</strong>
+                      {existingReqForSelectedDate.notes ? ` • Note: ${existingReqForSelectedDate.notes}` : ''}
+                    </span>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ fontSize: '0.75rem', padding: '0.35rem 0.65rem' }}
+                    onClick={() => handleStartEditTempReq(existingReqForSelectedDate)}
+                  >
+                    <Edit3 size={13} /> Edit Quantity
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ fontSize: '0.75rem', padding: '0.35rem 0.65rem', color: 'var(--danger-text)' }}
+                    onClick={() => handleCancelTempRequest(existingReqForSelectedDate.requestId, existingReqForSelectedDate.requestedDate)}
+                  >
+                    <Trash2 size={13} /> Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <form onSubmit={handleTemporaryRequestSubmit}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600 }}>
+                    Requested Date *
+                  </label>
+                  <input
+                    type="date"
+                    className="form-input"
+                    value={tempDate}
+                    onChange={(e) => setTempDate(e.target.value)}
+                    disabled={!!editingTempReq}
+                    required
+                  />
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'block' }}>
+                    Select the exact date you need breakfast
+                  </span>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600 }}>
+                    Quantity (Portions) *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.5"
+                    min="0.5"
+                    max="10.0"
+                    className="form-input"
+                    value={tempQuantity}
+                    onChange={(e) => setTempQuantity(e.target.value)}
+                    required
+                  />
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'block' }}>
+                    Supports decimal values (e.g. 1, 1.5, 2)
+                  </span>
+                </div>
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                <label className="form-label">
+                  Reason / Notes (Optional)
+                </label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="e.g. Early client meeting, Team training breakfast, Celebration"
+                  value={tempNotes}
+                  onChange={(e) => setTempNotes(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={tempSubmitting || (!editingTempReq && !!existingReqForSelectedDate)}
+                  style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                >
+                  <PlusCircle size={16} />
+                  {tempSubmitting
+                    ? 'Processing...'
+                    : editingTempReq
+                    ? 'Save Updated Quantity'
+                    : 'Submit Specific-Date Request'}
+                </button>
+                {editingTempReq && (
+                  <button type="button" className="btn btn-secondary" onClick={handleCancelEditingTempReq}>
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
+
+          {/* Specific-Date Requests History Table */}
+          <div className="panel-card" style={{ padding: '1.5rem' }}>
+            <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', fontSize: '1.05rem', margin: '0 0 1rem 0' }}>
+              <CalendarRange size={18} color="var(--accent-primary)" />
+              My Specific-Date Breakfast Requests
+            </h3>
+
+            <div className="table-container">
+              <table className="custom-table">
+                <thead>
+                  <tr>
+                    <th>Requested Date</th>
+                    <th>Quantity</th>
+                    <th>Status</th>
+                    <th>Created At</th>
+                    <th>Notes</th>
+                    <th style={{ textAlign: 'right' }}>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {tempRequests.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem' }}>
+                        No specific-date breakfast requests submitted yet. Use the form above to request breakfast for a chosen date.
+                      </td>
+                    </tr>
+                  ) : (
+                    tempRequests.map(req => {
+                      const isConfirmed = req.status === 'CONFIRMED';
+                      return (
+                        <tr key={req.requestId || req.id}>
+                          <td>
+                            <strong style={{ color: 'var(--text-primary)' }}>{req.requestedDate}</strong>
+                          </td>
+                          <td>
+                            <span className="badge badge-secondary" style={{ fontWeight: 600 }}>
+                              {req.quantity} {req.quantity === 1 ? 'Portion' : 'Portions'}
+                            </span>
+                          </td>
+                          <td>
+                            <span className={`badge ${isConfirmed ? 'badge-success' : 'badge-danger'}`}>
+                              {req.status}
+                            </span>
+                          </td>
+                          <td>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                              {req.createdAt ? new Date(req.createdAt).toLocaleDateString() : '—'}
+                            </span>
+                          </td>
+                          <td>
+                            <span style={{ fontSize: '0.85rem' }}>
+                              {req.notes || '—'}
+                            </span>
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            {isConfirmed ? (
+                              <div style={{ display: 'inline-flex', gap: '0.4rem' }}>
+                                <button
+                                  className="btn btn-secondary"
+                                  style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                                  onClick={() => handleStartEditTempReq(req)}
+                                  title="Edit Quantity / Notes"
+                                >
+                                  <Edit3 size={13} /> Edit
+                                </button>
+                                <button
+                                  className="btn btn-secondary"
+                                  style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem', color: 'var(--danger-text)' }}
+                                  onClick={() => handleCancelTempRequest(req.requestId, req.requestedDate)}
+                                  title="Cancel Request"
+                                >
+                                  <Trash2 size={13} /> Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Cancelled</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       ) : (
+        /* ===================== REGULAR TAKER VIEW ===================== */
         <div className="panel-card" style={{ padding: '1.5rem', marginBottom: '1.5rem' }}>
           {/* Sub Tab Switcher */}
           <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.6rem', flexWrap: 'wrap' }}>
@@ -459,7 +865,7 @@ const EmployeeDailyPage = () => {
                 </tr>
               ) : (
                 history.map(rec => (
-                  <tr key={rec._id}>
+                  <tr key={rec._id || rec.id}>
                     <td><strong style={{ color: 'var(--text-primary)' }}>{rec.businessDate}</strong></td>
                     <td>
                       <span className={`badge ${rec.response === 'YES' ? 'badge-success' : 'badge-danger'}`}>

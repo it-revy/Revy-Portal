@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_permission, CurrentUser
-from app.core.exceptions import ValidationError, NotFoundError
+from app.core.exceptions import ValidationError, NotFoundError, PermissionDeniedError
 from app.employees.model import Employee
 from app.breakfast.model import (
     BreakfastRecord,
@@ -17,7 +17,8 @@ from app.breakfast.model import (
     BreakfastNonParticipationPeriod,
     BreakfastDailyEntry,
     BreakfastAdditionalOrder,
-    PublicHoliday
+    PublicHoliday,
+    BreakfastTemporaryRequest
 )
 from app.breakfast import service as bf_service
 from app.breakfast import money_service
@@ -38,7 +39,19 @@ class SubmitBreakfastRequest(BaseModel):
     reasonCode: Optional[str] = None
     reasonText: Optional[str] = None
 
+class CreateTemporaryBreakfastRequest(BaseModel):
+    employeeId: Optional[str] = None
+    requestedDate: str
+    quantity: Optional[Union[float, int, str]] = 1.0
+    notes: Optional[str] = None
+
+class UpdateTemporaryBreakfastRequest(BaseModel):
+    quantity: Optional[Union[float, int, str]] = None
+    notes: Optional[str] = None
+    status: Optional[str] = None
+
 class MultiDayAbsenceRequest(BaseModel):
+
     fromDate: str
     toDate: str
     reasonCode: str
@@ -263,6 +276,23 @@ def serialize_additional_order(o: BreakfastAdditionalOrder):
         "updatedAt": o.updated_at.isoformat() if o.updated_at else None
     }
 
+def serialize_temporary_request(req: BreakfastTemporaryRequest):
+    if not req:
+        return None
+    return {
+        "_id": req.id,
+        "id": req.id,
+        "requestId": req.request_id,
+        "employeeId": req.employee_id,
+        "employeeName": req.employee_name,
+        "requestedDate": req.requested_date,
+        "quantity": float(req.quantity) if req.quantity is not None else 1.0,
+        "status": req.status,
+        "notes": req.notes or "",
+        "createdAt": req.created_at.isoformat() if req.created_at else None,
+        "updatedAt": req.updated_at.isoformat() if req.updated_at else None
+    }
+
 # 1. Personal Breakfast Status (Today)
 @router.get("/today")
 def get_today_status(
@@ -292,11 +322,19 @@ def get_today_status(
         BreakfastRecord.business_date == active_date_str
     ).first()
 
+    temp_req = db.query(BreakfastTemporaryRequest).filter(
+        BreakfastTemporaryRequest.employee_id == current_user.employee_id,
+        BreakfastTemporaryRequest.requested_date == active_date_str,
+        BreakfastTemporaryRequest.status != "CANCELLED"
+    ).first()
+
     reasons = db.query(BreakfastReason).filter(BreakfastReason.is_active == True).order_by(BreakfastReason.display_order.asc()).all()
     formatted_reasons = [
         {"_id": r.id, "id": r.id, "code": r.code, "label": r.label, "isCustomAllowed": r.is_custom_allowed}
         for r in reasons
     ]
+
+    is_perm = (current_user.breakfast_participation_type == "PERMANENT_NOT_TAKING")
 
     return {
         "success": True,
@@ -308,9 +346,11 @@ def get_today_status(
         "employeeId": current_user.employee_id,
         "name": current_user.name,
         "participationType": current_user.breakfast_participation_type,
+        "isPermanentNotTaking": is_perm,
         "isPublicHoliday": bool(is_holiday),
         "holidayName": is_holiday.name if is_holiday else None,
         "todayRecord": serialize_record(today_record),
+        "temporaryRequest": serialize_temporary_request(temp_req),
         "reasons": formatted_reasons
     }
 
@@ -322,8 +362,7 @@ def submit_daily_breakfast(
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    if current_user.breakfast_participation_type == "PERMANENT_NOT_TAKING":
-        raise ValidationError("Your account is set to PERMANENT_NOT_TAKING. You do not submit daily responses.")
+    is_perm = (current_user.breakfast_participation_type == "PERMANENT_NOT_TAKING")
 
     today_dt = get_kolkata_now()
     settings = db.query(BreakfastSetting).first()
@@ -341,20 +380,58 @@ def submit_daily_breakfast(
     normalized_resp = "YES" if resp in ["YES", "TAKING"] else "NO"
     emp_resp = "TAKING" if normalized_resp == "YES" else "NOT_TAKING"
 
+    # Handle Permanent Non-Taker Exception
+    if is_perm:
+        if normalized_resp == "YES":
+            existing_temp = db.query(BreakfastTemporaryRequest).filter(
+                BreakfastTemporaryRequest.employee_id == current_user.employee_id,
+                BreakfastTemporaryRequest.requested_date == target_date_str,
+                BreakfastTemporaryRequest.status != "CANCELLED"
+            ).first()
+            if not existing_temp:
+                req_id = f"REQ-{target_date_str.replace('-', '')}-{uuid.uuid4().hex[:4].upper()}"
+                existing_temp = BreakfastTemporaryRequest(
+                    request_id=req_id,
+                    employee_id=current_user.employee_id,
+                    employee_name=current_user.name,
+                    requested_date=target_date_str,
+                    quantity=1.0,
+                    status="CONFIRMED",
+                    notes="Daily submit one-day request"
+                )
+                db.add(existing_temp)
+                db.flush()
+        else:
+            existing_temp = db.query(BreakfastTemporaryRequest).filter(
+                BreakfastTemporaryRequest.employee_id == current_user.employee_id,
+                BreakfastTemporaryRequest.requested_date == target_date_str,
+                BreakfastTemporaryRequest.status != "CANCELLED"
+            ).first()
+            if existing_temp:
+                existing_temp.status = "CANCELLED"
+                db.flush()
+
     final_reason_code = None
     final_reason_text = None
 
     if normalized_resp == "NO":
-        if not payload.reasonCode:
-            raise ValidationError("Please select a reason for not taking breakfast")
-        final_reason_code = payload.reasonCode
-        if payload.reasonCode == "OTHER":
-            if not payload.reasonText or not payload.reasonText.strip():
-                raise ValidationError('Reason text is mandatory when "Other" is selected')
-            final_reason_text = payload.reasonText.strip()
+        if is_perm:
+            final_reason_code = "PERMANENT_NOT_TAKING"
+            final_reason_text = "Permanent Non-Participant"
         else:
-            r_doc = db.query(BreakfastReason).filter(BreakfastReason.code == payload.reasonCode).first()
-            final_reason_text = r_doc.label if r_doc else payload.reasonCode
+            if not payload.reasonCode:
+                raise ValidationError("Please select a reason for not taking breakfast")
+            final_reason_code = payload.reasonCode
+            if payload.reasonCode == "OTHER":
+                if not payload.reasonText or not payload.reasonText.strip():
+                    raise ValidationError('Reason text is mandatory when "Other" is selected')
+                final_reason_text = payload.reasonText.strip()
+            else:
+                r_doc = db.query(BreakfastReason).filter(BreakfastReason.code == payload.reasonCode).first()
+                final_reason_text = r_doc.label if r_doc else payload.reasonCode
+    elif is_perm:
+        final_reason_code = "ONE_DAY_REQUEST"
+        final_reason_text = "One-day breakfast request"
 
     existing_record = db.query(BreakfastRecord).filter(
         BreakfastRecord.employee_id == current_user.employee_id,
@@ -380,6 +457,8 @@ def submit_daily_breakfast(
         existing_record.history = hist
         existing_record.response = normalized_resp
         existing_record.employee_response = emp_resp
+        existing_record.actual_status = "TAKEN" if normalized_resp == "YES" else "NOT_TAKEN"
+        existing_record.source = "TEMPORARY_REQUEST" if is_perm else "EMPLOYEE"
         existing_record.reason_code = final_reason_code
         existing_record.reason_text = final_reason_text
     else:
@@ -390,10 +469,10 @@ def submit_daily_breakfast(
             business_date=target_date_str,
             response=normalized_resp,
             employee_response=emp_resp,
-            actual_status=None,
+            actual_status="TAKEN" if normalized_resp == "YES" else "NOT_TAKEN",
             reason_code=final_reason_code,
             reason_text=final_reason_text,
-            source="EMPLOYEE",
+            source="TEMPORARY_REQUEST" if is_perm else "EMPLOYEE",
             submitted_at=datetime.now(timezone.utc),
             history=[]
         )
@@ -412,17 +491,274 @@ def submit_daily_breakfast(
             "recordId": existing_record.record_id,
             "targetEmployeeId": current_user.employee_id,
             "targetEmployeeName": current_user.name,
-            "details": f"Response for {target_info['displayString']}: {normalized_resp}"
+            "details": f"Response for {target_info['displayString']}: {normalized_resp}" + (" (Permanent Non-Taker one-day exception)" if is_perm else "")
         },
         before_state=before_state,
         after_state=after_state
     )
 
+    msg = f"Breakfast response for {target_info['displayString']} saved successfully"
+    if is_perm and normalized_resp == "YES":
+        msg = f"One-day breakfast request confirmed for {target_info['displayString']}. Your permanent non-taker profile status remains unchanged."
+
     return {
         "success": True,
-        "message": f"Breakfast response for {target_info['displayString']} saved successfully",
+        "message": msg,
         "record": after_state
     }
+
+# 2b. Specific-Date Breakfast Request for Permanent Non-Takers
+@router.post("/temporary-request")
+def create_temporary_breakfast_request(
+    payload: CreateTemporaryBreakfastRequest,
+    request: Request,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    req_date = payload.requestedDate.strip()
+    if not req_date or len(req_date) != 10:
+        raise ValidationError("Valid requestedDate (YYYY-MM-DD) is required")
+    try:
+        datetime.strptime(req_date, "%Y-%m-%d")
+    except ValueError:
+        raise ValidationError("Invalid date format. Expected YYYY-MM-DD")
+
+    try:
+        qty = float(payload.quantity) if payload.quantity is not None else 1.0
+        if qty <= 0:
+            raise ValueError()
+    except (ValueError, TypeError):
+        raise ValidationError("Quantity must be a positive number")
+
+    target_emp_id = current_user.employee_id
+    target_emp_name = current_user.name
+    if payload.employeeId and ("BREAKFAST_ADMIN" in current_user.roles or "IT_ADMIN" in current_user.roles or "*" in current_user.permissions):
+        target_emp = db.query(Employee).filter(Employee.employee_id == payload.employeeId.upper()).first()
+        if target_emp:
+            target_emp_id = target_emp.employee_id
+            target_emp_name = target_emp.name
+
+    # Prevent duplicate requests for the same date
+    existing_req = db.query(BreakfastTemporaryRequest).filter(
+        BreakfastTemporaryRequest.employee_id == target_emp_id,
+        BreakfastTemporaryRequest.requested_date == req_date,
+        BreakfastTemporaryRequest.status != "CANCELLED"
+    ).first()
+
+    if existing_req:
+        raise ValidationError(
+            f"A breakfast request already exists for date {req_date} "
+            f"(Status: {existing_req.status}, Quantity: {existing_req.quantity}). "
+            f"You can modify or cancel your existing request instead of submitting a duplicate."
+        )
+
+    req_id = f"REQ-{req_date.replace('-', '')}-{uuid.uuid4().hex[:4].upper()}"
+    new_req = BreakfastTemporaryRequest(
+        request_id=req_id,
+        employee_id=target_emp_id,
+        employee_name=target_emp_name,
+        requested_date=req_date,
+        quantity=qty,
+        status="CONFIRMED",
+        notes=payload.notes.strip() if payload.notes else ""
+    )
+    db.add(new_req)
+
+    # Sync corresponding BreakfastRecord for req_date
+    rec = db.query(BreakfastRecord).filter(
+        BreakfastRecord.employee_id == target_emp_id,
+        BreakfastRecord.business_date == req_date
+    ).first()
+
+    if rec:
+        rec.response = "YES"
+        rec.employee_response = "TAKING"
+        rec.actual_status = "TAKEN"
+        rec.source = "TEMPORARY_REQUEST"
+        rec.reason_code = "ONE_DAY_REQUEST"
+        rec.reason_text = f"One-day request ({qty} portions)"
+    else:
+        rec_id = f"BRK-{req_date.replace('-', '')}-{target_emp_id}"
+        rec = BreakfastRecord(
+            record_id=rec_id,
+            employee_id=target_emp_id,
+            business_date=req_date,
+            response="YES",
+            employee_response="TAKING",
+            actual_status="TAKEN",
+            source="TEMPORARY_REQUEST",
+            reason_code="ONE_DAY_REQUEST",
+            reason_text=f"One-day request ({qty} portions)",
+            submitted_at=datetime.now(timezone.utc),
+            history=[]
+        )
+        db.add(rec)
+
+    db.commit()
+    db.refresh(new_req)
+
+    serialized = serialize_temporary_request(new_req)
+
+    audit_service = AuditService(db)
+    audit_service.log(
+        action="TEMPORARY_BREAKFAST_REQUEST_CREATED",
+        request=request,
+        target_info={
+            "requestId": new_req.request_id,
+            "targetEmployeeId": target_emp_id,
+            "targetEmployeeName": target_emp_name,
+            "requestedDate": req_date,
+            "quantity": qty,
+            "details": f"One-day breakfast request for {req_date} with quantity {qty}"
+        },
+        after_state=serialized
+    )
+
+    return {
+        "success": True,
+        "message": f"One-day breakfast request for {req_date} ({qty} portion{'s' if qty != 1 else ''}) submitted successfully. Your permanent non-taker status remains unchanged.",
+        "request": serialized,
+        "data": serialized
+    }
+
+@router.get("/temporary-requests")
+def get_temporary_breakfast_requests(
+    employee_id: Optional[str] = Query(None),
+    date: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    query = db.query(BreakfastTemporaryRequest)
+    is_admin = ("*" in current_user.permissions or "breakfast.view" in current_user.permissions)
+    if not is_admin:
+        query = query.filter(BreakfastTemporaryRequest.employee_id == current_user.employee_id)
+    elif employee_id:
+        query = query.filter(BreakfastTemporaryRequest.employee_id == employee_id.upper())
+
+    if date:
+        query = query.filter(BreakfastTemporaryRequest.requested_date == date)
+    if status and status != "ALL":
+        query = query.filter(BreakfastTemporaryRequest.status == status)
+
+    requests = query.order_by(desc(BreakfastTemporaryRequest.requested_date)).all()
+    return {
+        "success": True,
+        "requests": [serialize_temporary_request(r) for r in requests]
+    }
+
+@router.put("/temporary-requests/{request_id}")
+def update_temporary_breakfast_request(
+    request_id: str,
+    payload: UpdateTemporaryBreakfastRequest,
+    request: Request,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    temp_req = db.query(BreakfastTemporaryRequest).filter(
+        BreakfastTemporaryRequest.request_id == request_id
+    ).first()
+    if not temp_req:
+        raise NotFoundError("Temporary breakfast request not found")
+
+    is_admin = ("*" in current_user.permissions or "breakfast.manage" in current_user.permissions)
+    if not is_admin and temp_req.employee_id != current_user.employee_id:
+        raise PermissionDeniedError("Cannot modify another employee's request")
+
+    if payload.quantity is not None:
+        try:
+            qty = float(payload.quantity)
+            if qty <= 0:
+                raise ValueError()
+            temp_req.quantity = qty
+        except (ValueError, TypeError):
+            raise ValidationError("Quantity must be a positive number")
+
+    if payload.notes is not None:
+        temp_req.notes = payload.notes.strip()
+
+    if payload.status is not None:
+        temp_req.status = payload.status
+
+    rec = db.query(BreakfastRecord).filter(
+        BreakfastRecord.employee_id == temp_req.employee_id,
+        BreakfastRecord.business_date == temp_req.requested_date
+    ).first()
+
+    if rec:
+        if temp_req.status == "CANCELLED":
+            rec.response = "NO"
+            rec.employee_response = "NOT_TAKING"
+            rec.actual_status = "NOT_TAKEN"
+            rec.reason_code = "CANCELLED_REQUEST"
+            rec.reason_text = "Temporary request cancelled"
+        else:
+            rec.response = "YES"
+            rec.employee_response = "TAKING"
+            rec.actual_status = "TAKEN"
+            rec.reason_text = f"One-day request ({temp_req.quantity} portions)"
+
+    db.commit()
+    db.refresh(temp_req)
+
+    serialized = serialize_temporary_request(temp_req)
+    return {
+        "success": True,
+        "message": f"Temporary request {temp_req.request_id} updated successfully",
+        "request": serialized,
+        "data": serialized
+    }
+
+@router.delete("/temporary-requests/{request_id}")
+def delete_temporary_breakfast_request(
+    request_id: str,
+    request: Request,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    temp_req = db.query(BreakfastTemporaryRequest).filter(
+        BreakfastTemporaryRequest.request_id == request_id
+    ).first()
+    if not temp_req:
+        raise NotFoundError("Temporary breakfast request not found")
+
+    is_admin = ("*" in current_user.permissions or "breakfast.manage" in current_user.permissions)
+    if not is_admin and temp_req.employee_id != current_user.employee_id:
+        raise PermissionDeniedError("Cannot cancel another employee's request")
+
+    temp_req.status = "CANCELLED"
+
+    rec = db.query(BreakfastRecord).filter(
+        BreakfastRecord.employee_id == temp_req.employee_id,
+        BreakfastRecord.business_date == temp_req.requested_date
+    ).first()
+    if rec:
+        rec.response = "NO"
+        rec.employee_response = "NOT_TAKING"
+        rec.actual_status = "NOT_TAKEN"
+        rec.reason_code = "CANCELLED_REQUEST"
+        rec.reason_text = "Temporary request cancelled"
+
+    db.commit()
+    db.refresh(temp_req)
+    serialized = serialize_temporary_request(temp_req)
+
+    return {
+        "success": True,
+        "message": f"Temporary breakfast request for {temp_req.requested_date} cancelled successfully",
+        "request": serialized,
+        "data": serialized
+    }
+
+@router.put("/temporary-requests/{request_id}/cancel")
+def cancel_temporary_breakfast_request(
+    request_id: str,
+    request: Request,
+    current_user: CurrentUser = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    return delete_temporary_breakfast_request(request_id, request, current_user, db)
+
 
 # 3. Multi-Day Absence Submission
 @router.post("/multi-day-absence")
@@ -566,13 +902,9 @@ def get_admin_summary(
         BreakfastRecord.business_date == target_date,
         BreakfastRecord.record_type == "CURRENT"
     ).all()
-    yes_count = sum(1 for r in today_recs if r.employee_id and (r.response in ["YES", "TAKING"] or r.employee_response == "TAKING"))
-    no_count = sum(1 for r in today_recs if r.employee_id and (r.response in ["NO", "NOT_TAKING"] or r.employee_response == "NOT_TAKING"))
-    taken_count = sum(1 for r in today_recs if r.employee_id and r.actual_status == "TAKEN")
-    not_taken_count = sum(1 for r in today_recs if r.employee_id and r.actual_status == "NOT_TAKEN")
 
-    responded_ids = {r.employee_id.upper() for r in today_recs if r.employee_id}
-    pending_count = sum(1 for e in normal_emps if e.employee_id.upper() not in responded_ids)
+    emp_data = bf_service.get_daily_breakfast_employees(target_date, db)
+    summary = emp_data["summary"]
 
     settings = db.query(BreakfastSetting).first()
     cutoff_time = settings.cutoff_time if settings else "12:00"
@@ -585,18 +917,19 @@ def get_admin_summary(
         "cutoffTime": cutoff_time,
         "isCutoffPassed": is_after_cutoff(cutoff_time),
         "metrics": {
-            "totalActive": len(active_emps),
+            "totalActive": summary["totalActive"],
             "normalEmployeesCount": len(normal_emps),
-            "permanentNotTakingCount": len(perm_emps),
-            "takingBreakfastCount": yes_count,
-            "notTakingBreakfastCount": no_count,
-            "pendingCount": pending_count,
-            "expectedBreakfastCount": 0 if is_holiday else yes_count,
-            "actuallyTakenCount": taken_count,
-            "actuallyNotTakenCount": not_taken_count,
-            "employeeRequestQuantity": float(yes_count),
-            "actualResponseQuantity": float(taken_count),
-            "totalQuantity": float(taken_count)
+            "permanentNotTakingCount": summary["permanentNotTaking"],
+            "takingBreakfastCount": summary["takingCount"],
+            "notTakingBreakfastCount": summary["notTakingCount"],
+            "pendingCount": summary["noResponseCount"],
+            "expectedBreakfastCount": 0 if is_holiday else summary["takingCount"],
+            "actuallyTakenCount": summary["actualTakenCount"],
+            "actuallyNotTakenCount": summary["actualNotTakenCount"],
+            "employeeRequestQuantity": float(summary["employeeRequestQuantity"]),
+            "actualResponseQuantity": float(summary["actualResponseQuantity"]),
+            "totalQuantity": float(summary["totalQuantity"]),
+            "temporaryRequestsCount": summary["temporaryRequestsCount"]
         }
     }
 
@@ -631,18 +964,32 @@ def get_admin_daily_records(
     record_map = {r.employee_id.upper(): r for r in records if r.employee_id and r.record_type == "CURRENT"}
     historical_records = [serialize_record(r) for r in records if r.record_type == "HISTORICAL"]
 
+    temp_requests = db.query(BreakfastTemporaryRequest).filter(
+        BreakfastTemporaryRequest.requested_date == target_date,
+        BreakfastTemporaryRequest.status != "CANCELLED"
+    ).all()
+    temp_req_map = {tr.employee_id.upper(): tr for tr in temp_requests}
+
     all_list = []
     for emp in employees:
         rec = record_map.get(emp.employee_id.upper())
         is_perm = (emp.breakfast_participation_type == "PERMANENT_NOT_TAKING")
+        temp_req = temp_req_map.get(emp.employee_id.upper())
 
         emp_response = "NO_RESPONSE"
         act_status = "NO_RESPONSE"
-        act_source = rec.actual_status_source if rec else "EMPLOYEE_RESPONSE"
+        act_source = rec.actual_status_source if rec else ("TEMPORARY_REQUEST" if temp_req else "EMPLOYEE_RESPONSE")
 
-        if is_perm:
+        if temp_req:
+            emp_response = "TAKING"
+            act_status = rec.actual_status if (rec and rec.actual_status) else "TAKEN"
+            r_code = "ONE_DAY_REQUEST"
+            r_text = f"One-Day Request ({temp_req.quantity} portions)"
+        elif is_perm:
             emp_response = "NOT_TAKING"
             act_status = "NOT_TAKEN"
+            r_code = "PERMANENT_NOT_TAKING"
+            r_text = "Permanent Non-Participant"
         elif rec:
             if rec.response in ["YES", "TAKING"] or rec.employee_response == "TAKING":
                 emp_response = "TAKING"
@@ -653,6 +1000,11 @@ def get_admin_daily_records(
             else:
                 emp_response = "NO_RESPONSE"
                 act_status = rec.actual_status or "NO_RESPONSE"
+            r_code = rec.reason_code
+            r_text = rec.reason_text
+        else:
+            r_code = None
+            r_text = None
 
         all_list.append({
             "employeeId": emp.employee_id,
@@ -661,12 +1013,15 @@ def get_admin_daily_records(
             "department": emp.department,
             "designation": emp.designation,
             "participationType": emp.breakfast_participation_type,
+            "isTemporaryRequest": bool(temp_req),
+            "temporaryRequestId": temp_req.request_id if temp_req else None,
+            "requestedQuantity": float(temp_req.quantity) if temp_req else (1.0 if emp_response == "TAKING" else 0.0),
             "employeeResponse": emp_response,
             "actualStatus": act_status,
             "actualStatusSource": act_source,
-            "reasonCode": rec.reason_code if rec else ("PERMANENT_NOT_TAKING" if is_perm else None),
-            "reasonText": rec.reason_text if rec else ("Permanent Non-Participant" if is_perm else None),
-            "source": rec.source if rec else "EMPLOYEE"
+            "reasonCode": r_code,
+            "reasonText": r_text,
+            "source": "TEMPORARY_REQUEST" if temp_req else (rec.source if rec else "EMPLOYEE")
         })
 
     return {
@@ -677,6 +1032,7 @@ def get_admin_daily_records(
         "historicalRecords": historical_records,
         "hasHistorical": len(historical_records) > 0
     }
+
 
 # 7. Update Actual Status (Override)
 @router.put("/actual-status")

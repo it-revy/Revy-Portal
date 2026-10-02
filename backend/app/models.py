@@ -17,7 +17,8 @@ from app.breakfast.model import (
     BreakfastOrder,
     BreakfastOrderItem,
     BreakfastMoneyTransaction,
-    BreakfastFundRequest
+    BreakfastFundRequest,
+    BreakfastTemporaryRequest
 )
 
 __all__ = [
@@ -42,5 +43,7 @@ __all__ = [
     "BreakfastOrder",
     "BreakfastOrderItem",
     "BreakfastMoneyTransaction",
-    "BreakfastFundRequest"
+    "BreakfastFundRequest",
+    "BreakfastTemporaryRequest"
 ]
+

@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from app.core.database import get_db
-from app.core.dependencies import require_permission, CurrentUser
+from app.core.dependencies import require_permission, require_any_permission, CurrentUser
 from app.core.exceptions import ValidationError, NotFoundError
 from app.breakfast.model import BreakfastMoneyTransaction, BreakfastFundRequest
 from app.breakfast import money_service
@@ -108,7 +108,7 @@ def serialize_transaction(t: BreakfastMoneyTransaction):
 
 @router.get("/balance")
 def get_money_balance(
-    current_user: CurrentUser = Depends(require_permission("breakfast.money.view")),
+    current_user: CurrentUser = Depends(require_any_permission(["breakfast.money.view", "finance.breakfast_fund.view"])),
     db: Session = Depends(get_db)
 ):
     metrics = money_service.get_money_balance_metrics(db)
@@ -158,7 +158,7 @@ def post_create_fund_request(
 def get_fund_requests_controller(
     status: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
-    current_user: CurrentUser = Depends(require_permission("breakfast.money.view")),
+    current_user: CurrentUser = Depends(require_any_permission(["breakfast.money.view", "finance.breakfast_fund.view", "finance.breakfast_fund.request.view"])),
     db: Session = Depends(get_db)
 ):
     requests = money_service.get_fund_requests(status=status, search=search, db=db)
@@ -171,7 +171,7 @@ def get_fund_requests_controller(
 
 @router.get("/requests/active")
 def get_active_fund_request_controller(
-    current_user: CurrentUser = Depends(require_permission("breakfast.money.view")),
+    current_user: CurrentUser = Depends(require_any_permission(["breakfast.money.view", "finance.breakfast_fund.view"])),
     db: Session = Depends(get_db)
 ):
     active_req = money_service.get_active_fund_request(db)
