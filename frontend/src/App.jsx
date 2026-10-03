@@ -26,7 +26,7 @@ import FinanceManagerPage from './pages/FinanceManagerPage';
 import ForcePasswordChangeModal from './components/ForcePasswordChangeModal';
 
 const ProtectedLayout = ({ children, requiredPermission }) => {
-  const { user, loading, hasPermission } = useAuth();
+  const { user, loading, hasPermission, hasRole } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   if (loading) {
@@ -38,6 +38,10 @@ const ProtectedLayout = ({ children, requiredPermission }) => {
   }
 
   const checkPermission = () => {
+    if (hasRole('FINANCE_MANAGER') || hasRole('Finance Manager')) {
+      if (typeof requiredPermission === 'string' && (requiredPermission.startsWith('finance.') || requiredPermission.startsWith('breakfast.money.'))) return true;
+      if (Array.isArray(requiredPermission) && requiredPermission.some(p => p.startsWith('finance.') || p.startsWith('breakfast.money.'))) return true;
+    }
     if (!requiredPermission) {
       // Require at least basic breakfast access for breakfast routes
       const baseBreakfastPerms = [
@@ -50,7 +54,7 @@ const ProtectedLayout = ({ children, requiredPermission }) => {
         'breakfast.dashboard.view',
         'finance.breakfast_fund.view'
       ];
-      return baseBreakfastPerms.some(p => hasPermission(p));
+      return baseBreakfastPerms.some(p => hasPermission(p)) || hasRole('FINANCE_MANAGER') || hasRole('Finance Manager');
     }
     if (Array.isArray(requiredPermission)) {
       return requiredPermission.some(p => hasPermission(p));
@@ -94,7 +98,7 @@ const ProtectedLayout = ({ children, requiredPermission }) => {
 };
 
 function AppRoutes() {
-  const { user, hasPermission, loading } = useAuth();
+  const { user, hasPermission, hasRole, loading } = useAuth();
 
   if (loading) {
     return (
@@ -145,7 +149,7 @@ function AppRoutes() {
         element={
           user ? (
             canAccessBreakfast() ? (
-              <Navigate to={getBreakfastDestination(hasPermission)} replace />
+              <Navigate to={getBreakfastDestination(hasPermission, hasRole)} replace />
             ) : (
               <Navigate to="/portal" replace />
             )

@@ -476,3 +476,15 @@ def get_monthly_statement(
     target_month = month or get_kolkata_date_string()[:7]
     stmt = money_service.get_monthly_money_statement(target_month, db)
     return {"success": True, "statement": stmt}
+
+finance_router = APIRouter(prefix="/finance", tags=["Finance"])
+
+@finance_router.get("/fund-requests")
+def get_finance_fund_requests(
+    status: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+    current_user: CurrentUser = Depends(require_any_permission(["finance.breakfast_fund.view", "finance.breakfast_fund.request.view", "breakfast.money.view"])),
+    db: Session = Depends(get_db)
+):
+    return get_fund_requests_controller(status=status, search=search, current_user=current_user, db=db)
+

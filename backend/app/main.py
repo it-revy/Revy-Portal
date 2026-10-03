@@ -15,7 +15,7 @@ from app.core.exceptions import AppException
 from app.auth.router import router as auth_router
 from app.employees.router import router as employees_router
 from app.breakfast.router import router as breakfast_router
-from app.breakfast.money_router import router as breakfast_money_router
+from app.breakfast.money_router import router as breakfast_money_router, finance_router
 from app.breakfast.settings_router import router as settings_router
 from app.breakfast.holiday_router import router as holiday_router
 from app.breakfast.order_router import router as order_router
@@ -44,7 +44,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
-    allow_origin_regex=r"^https://[a-zA-Z0-9_-]+\.vercel\.app$",
+    allow_origin_regex=r"^(https://[a-zA-Z0-9_-]+\.vercel\.app|http://(localhost|127\.0\.0\.1)(:\d+)?)$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -129,7 +129,10 @@ for prefix in ["/api/v1", "/api"]:
     app.include_router(holiday_router, prefix=prefix)
     app.include_router(order_router, prefix=prefix)
     app.include_router(notifications_router, prefix=prefix)
+    app.include_router(finance_router, prefix=prefix)
 
 if __name__ == "__main__":
+    import os
     import uvicorn
-    uvicorn.run("app.main:app", host="0.0.0.0", port=5000, reload=True)
+    port = int(os.environ.get("PORT", 5001))
+    uvicorn.run("app.main:app", host="0.0.0.0", port=port, reload=True)

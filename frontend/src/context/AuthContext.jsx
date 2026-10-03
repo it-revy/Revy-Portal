@@ -3,6 +3,11 @@ import API from '../services/api';
 
 const AuthContext = createContext();
 
+const ROLE_PRIORITY = ['IT_ADMIN', 'CEO', 'FINANCE_MANAGER', 'BREAKFAST_ADMIN', 'EMPLOYEE'];
+const pickPrimaryRole = (roles = []) => {
+  return ROLE_PRIORITY.find(r => roles.includes(r)) || roles[0] || 'EMPLOYEE';
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(localStorage.getItem('token') || null);
@@ -24,9 +29,9 @@ export const AuthProvider = ({ children }) => {
         const userData = res.data.user;
         setUser(userData);
         if (!activeRole || !userData.roles.includes(activeRole)) {
-          const defaultRole = userData.roles[0];
-          setActiveRole(defaultRole);
-          localStorage.setItem('activeRole', defaultRole);
+          const primaryRole = pickPrimaryRole(userData.roles);
+          setActiveRole(primaryRole);
+          localStorage.setItem('activeRole', primaryRole);
         }
       }
     } catch (err) {
@@ -42,11 +47,12 @@ export const AuthProvider = ({ children }) => {
       const res = await API.post('/auth/login', { username: usernameInput, password });
       if (res.data.success) {
         const { token: newToken, user: userData } = res.data;
+        const primaryRole = pickPrimaryRole(userData.roles);
         localStorage.setItem('token', newToken);
-        localStorage.setItem('activeRole', userData.roles[0]);
+        localStorage.setItem('activeRole', primaryRole);
         setToken(newToken);
         setUser(userData);
-        setActiveRole(userData.roles[0]);
+        setActiveRole(primaryRole);
         return { success: true };
       }
       return { success: false, message: res.data.message || 'Login failed' };
@@ -126,7 +132,9 @@ export const AuthProvider = ({ children }) => {
 
   const hasRole = (role) => {
     if (!user || !user.roles) return false;
-    return user.roles.includes(role);
+    if (user.roles.includes(role)) return true;
+    const normTarget = String(role).toLowerCase().replace(/[\s_-]+/g, '');
+    return user.roles.some(r => String(r).toLowerCase().replace(/[\s_-]+/g, '') === normTarget);
   };
 
   return (

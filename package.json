@@ -4,10 +4,11 @@
   "description": "Production-ready enterprise Breakfast Management System and shared company platform core",
   "main": "backend/src/index.js",
   "scripts": {
+    "start": "cd backend && uvicorn app.main:app --host 0.0.0.0 --port 5001",
     "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
     "seed": "python backend/seed/seed_development.py",
-    "test": "cd backend && npm test",
-    "dev:backend": "cd backend && npm run dev",
+    "test": "cd backend && pytest -v tests",
+    "dev:backend": "cd backend && uvicorn app.main:app --host 0.0.0.0 --port 5001 --reload",
     "dev:frontend": "cd frontend && npm run dev",
     "build": "cd frontend && npm run build"
   },

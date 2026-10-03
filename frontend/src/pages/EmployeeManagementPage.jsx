@@ -19,6 +19,7 @@ import {
 const EmployeeManagementPage = () => {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
@@ -68,15 +69,23 @@ const EmployeeManagementPage = () => {
   }, [search, departmentFilter, statusFilter, participationFilter]);
 
   const fetchEmployees = async () => {
+    setLoading(true);
+    setError(null);
     try {
       const res = await API.get(
-        `/employees?search=${search}&department=${departmentFilter}&status=${statusFilter}&participationType=${participationFilter}`
+        `/employees?search=${encodeURIComponent(search)}&department=${encodeURIComponent(departmentFilter)}&status=${encodeURIComponent(statusFilter)}&participationType=${encodeURIComponent(participationFilter)}`
       );
-      if (res.data.success) {
-        setEmployees(res.data.employees);
+      if (res.data && res.data.success) {
+        setEmployees(res.data.employees || []);
+      } else {
+        setError(res.data?.message || 'Unable to load employees. Please try again.');
+        setEmployees([]);
       }
     } catch (err) {
       console.error('Failed to fetch employees:', err);
+      const msg = err.response?.data?.message || err.message || 'Unable to load employees. Please try again.';
+      setError(msg);
+      setEmployees([]);
     } finally {
       setLoading(false);
     }
@@ -103,6 +112,7 @@ const EmployeeManagementPage = () => {
   const handleOpenEditModal = (emp) => {
     setModalMode('EDIT');
     setSelectedEmp(emp);
+    const isPnt = ['PERMANENT_NOT_TAKING', 'PERMANENT_NON_TAKER', 'NON_TAKER'].includes((emp.breakfastParticipationType || '').toUpperCase());
     setFormData({
       employeeId: emp.employeeId,
       username: emp.username || '',
@@ -112,7 +122,7 @@ const EmployeeManagementPage = () => {
       phone: emp.phone || '',
       department: emp.department,
       designation: emp.designation,
-      breakfastParticipationType: emp.breakfastParticipationType,
+      breakfastParticipationType: isPnt ? 'PERMANENT_NON_TAKER' : 'NORMAL',
       status: emp.status,
       roles: emp.roles || ['EMPLOYEE']
     });
@@ -281,6 +291,10 @@ const EmployeeManagementPage = () => {
           <option value="Engineering">Engineering</option>
           <option value="Research & Development">Research & Development</option>
           <option value="Executive Office">Executive Office</option>
+          <option value="Finance & Accounts">Finance & Accounts</option>
+          <option value="Quality Assurance">Quality Assurance</option>
+          <option value="Human Resources">Human Resources</option>
+          <option value="Operations">Operations</option>
         </select>
 
         <select className="form-select" style={{ flex: '1 1 140px', width: 'auto', minWidth: '130px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
@@ -291,10 +305,34 @@ const EmployeeManagementPage = () => {
 
         <select className="form-select" style={{ flex: '1 1 160px', width: 'auto', minWidth: '140px' }} value={participationFilter} onChange={(e) => setParticipationFilter(e.target.value)}>
           <option value="ALL">All Participation</option>
-          <option value="NORMAL">Normal</option>
-          <option value="PERMANENT_NOT_TAKING">Permanent Not Taking</option>
+          <option value="NORMAL">Regular Taker</option>
+          <option value="PERMANENT_NON_TAKER">Permanent Non-Taker</option>
         </select>
       </div>
+
+      {/* Error Banner when actions fail but employees exist */}
+      {error && employees.length > 0 && (
+        <div style={{
+          background: 'rgba(239, 68, 68, 0.15)',
+          border: '1px solid rgba(239, 68, 68, 0.3)',
+          color: '#fca5a5',
+          padding: '0.75rem 1rem',
+          borderRadius: 'var(--radius-sm)',
+          marginBottom: '1rem',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          fontSize: '0.875rem'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <AlertCircle size={18} color="#ef4444" />
+            <span>{error}</span>
+          </div>
+          <button onClick={() => setError(null)} style={{ background: 'none', border: 'none', color: '#fca5a5', cursor: 'pointer' }}>
+            <X size={16} />
+          </button>
+        </div>
+      )}
 
       {/* Employees Table */}
       <div className="glass-panel" style={{ padding: '1.75rem' }}>
@@ -304,8 +342,9 @@ const EmployeeManagementPage = () => {
               <tr>
                 <th>Employee ID</th>
                 <th>Username</th>
-                <th>Name</th>
-                <th>Department / Designation</th>
+                <th>Employee Name</th>
+                <th>Department</th>
+                <th>Designation</th>
                 <th>Assigned Roles</th>
                 <th>Breakfast Type</th>
                 <th>Status</th>
@@ -314,9 +353,29 @@ const EmployeeManagementPage = () => {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="8" style={{ textAlign: 'center', padding: '2rem' }}>Loading employees...</td></tr>
+                <tr>
+                  <td colSpan="9" style={{ textAlign: 'center', padding: '2.5rem' }}>
+                    <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.75rem', color: 'var(--text-secondary)' }}>
+                      <div className="spinner" style={{ width: '18px', height: '18px', border: '2px solid rgba(255,255,255,0.2)', borderTopColor: 'var(--accent-primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                      <span>Loading employees...</span>
+                    </div>
+                  </td>
+                </tr>
+              ) : error ? (
+                <tr>
+                  <td colSpan="9" style={{ textAlign: 'center', padding: '2.5rem' }}>
+                    <div style={{ maxWidth: '440px', margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
+                      <AlertCircle size={32} color="var(--danger)" />
+                      <strong style={{ color: 'var(--text-primary)', fontSize: '1rem' }}>Unable to load employees.</strong>
+                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: 0 }}>{error}</p>
+                      <button className="btn btn-secondary" style={{ marginTop: '0.5rem' }} onClick={fetchEmployees}>
+                        Please try again
+                      </button>
+                    </div>
+                  </td>
+                </tr>
               ) : employees.length === 0 ? (
-                <tr><td colSpan="8" style={{ textAlign: 'center', padding: '2rem' }}>No employees found.</td></tr>
+                <tr><td colSpan="9" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>No employees found.</td></tr>
               ) : (
                 employees.map(emp => (
                   <tr key={emp.employeeId}>
@@ -332,7 +391,9 @@ const EmployeeManagementPage = () => {
                     </td>
                     <td>
                       <div>{emp.department}</div>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{emp.designation}</span>
+                    </td>
+                    <td>
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{emp.designation}</span>
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
@@ -360,8 +421,8 @@ const EmployeeManagementPage = () => {
                       </div>
                     </td>
                     <td>
-                      <span className={`badge ${emp.breakfastParticipationType === 'NORMAL' ? 'badge-success' : 'badge-warning'}`}>
-                        {emp.breakfastParticipationType}
+                      <span className={`badge ${['NORMAL', 'REGULAR', 'REGULAR_TAKER'].includes((emp.breakfastParticipationType || '').toUpperCase()) ? 'badge-success' : 'badge-warning'}`}>
+                        {['NORMAL', 'REGULAR', 'REGULAR_TAKER'].includes((emp.breakfastParticipationType || '').toUpperCase()) ? 'Regular Taker' : 'Permanent Non-Taker'}
                       </span>
                     </td>
                     <td>
@@ -512,8 +573,8 @@ const EmployeeManagementPage = () => {
                     value={formData.breakfastParticipationType}
                     onChange={(e) => setFormData({ ...formData, breakfastParticipationType: e.target.value })}
                   >
-                    <option value="NORMAL">NORMAL (Daily Breakfast Participant)</option>
-                    <option value="PERMANENT_NOT_TAKING">PERMANENT_NOT_TAKING (Opt-out)</option>
+                    <option value="NORMAL">Regular Taker (Normal)</option>
+                    <option value="PERMANENT_NON_TAKER">Permanent Non-Taker (Opt-out)</option>
                   </select>
                 </div>
                 <div className="form-group">

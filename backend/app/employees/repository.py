@@ -1,6 +1,6 @@
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, func
 from app.employees.model import Employee, Department
 from app.users.model import User
 from app.roles.model import Role
@@ -32,11 +32,14 @@ class EmployeeRepository:
         status: Optional[str] = None,
         participation_type: Optional[str] = None
     ) -> List[Employee]:
-        query = self.db.query(Employee).filter(Employee.is_hard_deleted == False)
+        from sqlalchemy.orm import joinedload
+        query = self.db.query(Employee).options(
+            joinedload(Employee.user).joinedload(User.roles)
+        ).filter(Employee.is_hard_deleted == False)
 
         if search and search.strip():
             s = f"%{search.strip()}%"
-            query = query.join(User).filter(
+            query = query.outerjoin(User, Employee.user_id == User.id).filter(
                 or_(
                     User.username.ilike(s),
                     Employee.employee_id.ilike(s),
@@ -47,14 +50,20 @@ class EmployeeRepository:
                 )
             )
 
-        if department and department != "ALL":
-            query = query.filter(Employee.department == department)
+        if department and department.strip() != "ALL":
+            query = query.filter(func.lower(Employee.department) == department.strip().lower())
 
-        if status and status != "ALL":
-            query = query.filter(Employee.status == status)
+        if status and status.strip() != "ALL":
+            query = query.filter(func.lower(Employee.status) == status.strip().lower())
 
-        if participation_type and participation_type != "ALL":
-            query = query.filter(Employee.breakfast_participation_type == participation_type)
+        if participation_type and participation_type.strip() != "ALL":
+            pt = participation_type.strip().upper()
+            if pt in ["PERMANENT_NOT_TAKING", "PERMANENT_NON_TAKER", "NON_TAKER"]:
+                query = query.filter(func.upper(Employee.breakfast_participation_type).in_(["PERMANENT_NOT_TAKING", "PERMANENT_NON_TAKER", "NON_TAKER"]))
+            elif pt in ["NORMAL", "REGULAR", "REGULAR_TAKER"]:
+                query = query.filter(func.upper(Employee.breakfast_participation_type).in_(["NORMAL", "REGULAR", "REGULAR_TAKER"]))
+            else:
+                query = query.filter(func.upper(Employee.breakfast_participation_type) == pt)
 
         return query.order_by(Employee.employee_id.asc()).all()
 

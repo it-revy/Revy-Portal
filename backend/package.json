@@ -3,6 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "seed": "python seed/seed_development.py"
+    "start": "uvicorn app.main:app --host 0.0.0.0 --port 5000",
+    "dev": "uvicorn app.main:app --host 0.0.0.0 --port 5000 --reload",
+    "seed": "python seed/seed_development.py",
+    "test": "pytest -v tests"
   }
 }

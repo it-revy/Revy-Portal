@@ -38,7 +38,7 @@ def get_daily_breakfast_employees(business_date: str, db: Session) -> Dict[str, 
 
     for emp in all_active:
         emp_id_upper = emp.employee_id.upper()
-        is_perm = (emp.breakfast_participation_type == "PERMANENT_NOT_TAKING")
+        is_perm = (emp.breakfast_participation_type or "").upper() in ["PERMANENT_NOT_TAKING", "PERMANENT_NON_TAKER", "NON_TAKER"]
         temp_req = temp_req_map.get(emp_id_upper)
 
         if is_perm and not temp_req:
@@ -49,8 +49,7 @@ def get_daily_breakfast_employees(business_date: str, db: Session) -> Dict[str, 
             applicable.append((emp, temp_req))
 
     daily_records = db.query(BreakfastRecord).filter(
-        BreakfastRecord.business_date == business_date,
-        BreakfastRecord.record_type == "CURRENT"
+        BreakfastRecord.business_date == business_date
     ).all()
     record_map = {r.employee_id.upper(): r for r in daily_records if r.employee_id}
 

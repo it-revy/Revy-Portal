@@ -23,29 +23,69 @@ import {
 const CEOViewPage = () => {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [selectedDate, setSelectedDate] = useState('');
   const [activePeriod, setActivePeriod] = useState('ALL'); // ALL, DAILY, WEEKLY, MONTHLY
 
   useEffect(() => {
     fetchCeoData();
   }, []);
 
-  const fetchCeoData = async () => {
+  const fetchCeoData = async (targetDate) => {
+    setLoading(true);
+    setError(null);
     try {
-      const res = await API.get('/reports/ceo');
+      const url = targetDate ? `/reports/ceo?date=${targetDate}` : '/reports/ceo';
+      const res = await API.get(url);
       if (res.data.success) {
         setReport(res.data);
+        if (!selectedDate && (res.data.selectedDate || res.data.todayDate)) {
+          setSelectedDate(res.data.selectedDate || res.data.todayDate);
+        }
+      } else {
+        setError(res.data.message || 'Unable to load CEO executive management insights.');
       }
     } catch (err) {
       console.error('Failed to fetch CEO report:', err);
+      setError(err.response?.data?.message || 'Unable to load CEO management insights. Please check server connection.');
     } finally {
       setLoading(false);
     }
   };
 
-  if (loading) {
+  const handleDateChange = (newDate) => {
+    setSelectedDate(newDate);
+    fetchCeoData(newDate);
+  };
+
+  const handleResetToday = () => {
+    const today = report?.todayDate || new Date().toISOString().split('T')[0];
+    setSelectedDate(today);
+    fetchCeoData(today);
+  };
+
+  if (loading && !report) {
     return (
-      <div className="page-body" style={{ textAlign: 'center', padding: '3rem' }}>
-        <p style={{ color: 'var(--text-secondary)' }}>Loading executive management insights...</p>
+      <div className="page-body" style={{ textAlign: 'center', padding: '3.5rem' }}>
+        <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: '1rem', color: 'var(--text-secondary)' }}>
+          <div className="spinner" style={{ width: '28px', height: '28px', border: '3px solid rgba(255,255,255,0.2)', borderTopColor: 'var(--accent-primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+          <span>Loading executive management insights...</span>
+        </div>
+      </div>
+    );
+  }
+
+  if (error && !report) {
+    return (
+      <div className="page-body" style={{ textAlign: 'center', padding: '3.5rem' }}>
+        <div style={{ maxWidth: '460px', margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
+          <AlertCircle size={40} color="var(--danger)" />
+          <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Unable to Load CEO Dashboard</h2>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0 }}>{error}</p>
+          <button className="btn btn-primary" onClick={() => fetchCeoData(selectedDate)}>
+            Retry Loading Dashboard
+          </button>
+        </div>
       </div>
     );
   }
@@ -61,9 +101,17 @@ const CEOViewPage = () => {
   const reasons = report?.reasonDistribution || {};
   const tempRequests = report?.temporaryRequests || [];
 
-  const diffVal = summary.quantityDifference || 0;
+  const diffVal = summary.requestActualDifference ?? summary.quantityDifference ?? report?.requestActualDifference ?? 0;
   const isDiffPositive = diffVal > 0;
   const isDiffNegative = diffVal < 0;
+
+  const totalEmployeesVal = summary.totalEmployees ?? report?.totalEmployees ?? 0;
+  const totalRequestsVal = summary.totalRequests ?? summary.totalBreakfastRequestsMonth ?? report?.totalRequests ?? 0;
+  const regularTakersVal = summary.regularTakers ?? summary.totalBreakfastTakers ?? report?.regularTakers ?? 0;
+  const permNonTakersVal = summary.permanentNonTakers ?? summary.totalNonTakers ?? report?.permanentNonTakers ?? 0;
+  const todayReqQtyVal = summary.todayRequestedQty ?? summary.dailyRequestedQuantity ?? report?.todayRequestedQty ?? 0;
+  const todayActServedQtyVal = summary.todayActualServedQty ?? summary.dailyActualQuantity ?? report?.todayActualServedQty ?? 0;
+  const partRateVal = summary.participationRate ?? summary.overallParticipationRate ?? report?.participationRate ?? 0;
 
   return (
     <div className="page-body">
@@ -94,12 +142,42 @@ const CEOViewPage = () => {
           </p>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-          <div className="panel-card" style={{ padding: '0.5rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        {/* Date Selector Filter */}
+        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="panel-card" style={{ padding: '0.4rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Calendar size={16} color="var(--accent-primary)" />
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Today:</span>
-            <strong style={{ fontSize: '0.85rem' }}>{report?.todayDate}</strong>
+            <label htmlFor="ceo-date-selector" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, cursor: 'pointer' }}>
+              Date:
+            </label>
+            <input
+              id="ceo-date-selector"
+              type="date"
+              style={{
+                padding: '0.2rem 0.4rem',
+                fontSize: '0.85rem',
+                border: '1px solid rgba(255, 255, 255, 0.15)',
+                borderRadius: '4px',
+                background: 'rgba(15, 23, 42, 0.8)',
+                color: 'var(--text-primary)',
+                cursor: 'pointer'
+              }}
+              value={selectedDate || report?.selectedDate || report?.todayDate || ''}
+              onChange={(e) => handleDateChange(e.target.value)}
+            />
           </div>
+          {selectedDate && selectedDate !== report?.todayDate && (
+            <button
+              className="btn btn-secondary"
+              style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem' }}
+              onClick={handleResetToday}
+              title="Reset to today's date"
+            >
+              Today
+            </button>
+          )}
+          {loading && (
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Updating...</span>
+          )}
         </div>
       </div>
 
@@ -117,7 +195,7 @@ const CEOViewPage = () => {
           <div>
             <div className="metric-label" style={{ fontSize: '0.7rem' }}>TOTAL EMPLOYEES</div>
             <div className="metric-val" style={{ fontSize: '1.6rem', color: '#60a5fa' }}>
-              {summary.totalEmployees || 0}
+              {totalEmployeesVal}
             </div>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
               Active company workforce
@@ -126,15 +204,15 @@ const CEOViewPage = () => {
           <Users size={32} color="#3b82f6" opacity={0.8} />
         </div>
 
-        {/* 2. Total Breakfast Requests (Month) */}
+        {/* 2. Total Breakfast Requests */}
         <div className="glass-panel metric-card" style={{ padding: '1.25rem', borderLeft: '4px solid #8b5cf6' }}>
           <div>
-            <div className="metric-label" style={{ fontSize: '0.7rem' }}>TOTAL REQUESTS (MONTH)</div>
+            <div className="metric-label" style={{ fontSize: '0.7rem' }}>TOTAL REQUESTS</div>
             <div className="metric-val" style={{ fontSize: '1.6rem', color: '#a78bfa' }}>
-              {summary.totalBreakfastRequestsMonth || 0}
+              {totalRequestsVal}
             </div>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Portions requested this month
+              Portions requested for period
             </span>
           </div>
           <FileSpreadsheet size={32} color="#8b5cf6" opacity={0.8} />
@@ -145,7 +223,7 @@ const CEOViewPage = () => {
           <div>
             <div className="metric-label" style={{ fontSize: '0.7rem' }}>REGULAR TAKERS</div>
             <div className="metric-val" style={{ fontSize: '1.6rem', color: '#34d399' }}>
-              {summary.totalBreakfastTakers || 0}
+              {regularTakersVal}
             </div>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
               Normal daily breakfast participants
@@ -159,7 +237,7 @@ const CEOViewPage = () => {
           <div>
             <div className="metric-label" style={{ fontSize: '0.7rem' }}>PERMANENT NON-TAKERS</div>
             <div className="metric-val" style={{ fontSize: '1.6rem', color: '#fbbf24' }}>
-              {summary.totalNonTakers || 0}
+              {permNonTakersVal}
             </div>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
               Permanent opt-outs (0 by default)
@@ -173,7 +251,7 @@ const CEOViewPage = () => {
           <div>
             <div className="metric-label" style={{ fontSize: '0.7rem' }}>TODAY'S REQUESTED QTY</div>
             <div className="metric-val" style={{ fontSize: '1.6rem', color: '#22d3ee' }}>
-              {summary.dailyRequestedQuantity || 0}
+              {todayReqQtyVal}
             </div>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
               Regular + 1-Day requests
@@ -187,10 +265,10 @@ const CEOViewPage = () => {
           <div>
             <div className="metric-label" style={{ fontSize: '0.7rem' }}>TODAY'S ACTUAL SERVED QTY</div>
             <div className="metric-val" style={{ fontSize: '1.6rem', color: '#10b981' }}>
-              {summary.dailyActualQuantity || 0}
+              {todayActServedQtyVal}
             </div>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Portions actually served / provided
+              Actual response quantity served
             </span>
           </div>
           <CheckCircle2 size={32} color="#10b981" opacity={0.8} />
@@ -237,10 +315,10 @@ const CEOViewPage = () => {
           <div>
             <div className="metric-label" style={{ fontSize: '0.7rem' }}>PARTICIPATION RATE</div>
             <div className="metric-val" style={{ fontSize: '1.6rem', color: '#f472b6' }}>
-              {summary.overallParticipationRate || 0}%
+              {partRateVal}%
             </div>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Avg Month: {summary.avgMonthlyParticipationRate || summary.overallParticipationRate}%
+              Avg Month: {summary.avgMonthlyParticipationRate ?? partRateVal}%
             </span>
           </div>
           <TrendingUp size={32} color="#ec4899" opacity={0.8} />
@@ -268,25 +346,25 @@ const CEOViewPage = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Requested Quantity:</span>
-                <strong>{dailySummary.requestedQuantity ?? summary.dailyRequestedQuantity ?? 0} portions</strong>
+                <strong>{dailySummary.requestedQuantity ?? todayReqQtyVal ?? 0} portions</strong>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Actual Served Quantity:</span>
-                <strong style={{ color: '#10b981' }}>{dailySummary.actualQuantity ?? summary.dailyActualQuantity ?? 0} portions</strong>
+                <strong style={{ color: '#10b981' }}>{dailySummary.actualServedQuantity ?? dailySummary.actualQuantity ?? todayActServedQtyVal ?? 0} portions</strong>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Difference (Variance):</span>
-                <strong style={{ color: (dailySummary.difference || 0) === 0 ? '#10b981' : '#f59e0b' }}>
-                  {dailySummary.difference ?? summary.quantityDifference ?? 0}
+                <strong style={{ color: ((dailySummary.difference ?? diffVal) === 0) ? '#10b981' : '#f59e0b' }}>
+                  {dailySummary.difference ?? diffVal ?? 0}
                 </strong>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Today's Expenditure:</span>
-                <strong style={{ color: 'var(--accent-primary)' }}>₹{dailySummary.cost ?? summary.todayCost ?? 0}</strong>
+                <strong style={{ color: 'var(--accent-primary)' }}>₹{dailySummary.expenditure ?? dailySummary.cost ?? summary.todayCost ?? 0}</strong>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Participation Rate:</span>
-                <strong>{dailySummary.participationRate ?? summary.overallParticipationRate ?? 0}%</strong>
+                <strong>{dailySummary.participationRate ?? partRateVal ?? 0}%</strong>
               </div>
             </div>
           </div>
@@ -304,25 +382,25 @@ const CEOViewPage = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Total Requested Quantity:</span>
-                <strong>{weeklySummary.totalRequestedQuantity || 0} portions</strong>
+                <strong>{weeklySummary.totalRequestedQuantity ?? 0} portions</strong>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Total Actual Served Quantity:</span>
-                <strong style={{ color: '#10b981' }}>{weeklySummary.totalActualQuantity || 0} portions</strong>
+                <strong style={{ color: '#10b981' }}>{weeklySummary.totalActualServedQuantity ?? weeklySummary.totalActualQuantity ?? 0} portions</strong>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Weekly Difference:</span>
-                <strong style={{ color: (weeklySummary.difference || 0) === 0 ? '#10b981' : '#f59e0b' }}>
-                  {weeklySummary.difference || 0}
+                <strong style={{ color: ((weeklySummary.weeklyDifference ?? weeklySummary.difference ?? 0) === 0) ? '#10b981' : '#f59e0b' }}>
+                  {weeklySummary.weeklyDifference ?? weeklySummary.difference ?? 0}
                 </strong>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Total Weekly Spend:</span>
-                <strong style={{ color: 'var(--accent-primary)' }}>₹{weeklySummary.totalCost || 0}</strong>
+                <strong style={{ color: 'var(--accent-primary)' }}>₹{weeklySummary.totalWeeklySpend ?? weeklySummary.totalCost ?? 0}</strong>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Avg Daily Takers:</span>
-                <strong>{weeklySummary.avgDailyTakers || 0} persons/day</strong>
+                <strong>{weeklySummary.averageDailyTakers ?? weeklySummary.avgDailyTakers ?? 0} persons/day</strong>
               </div>
             </div>
           </div>
@@ -340,25 +418,25 @@ const CEOViewPage = () => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Total Month Requested:</span>
-                <strong>{monthlySummary.totalRequestedQuantity || 0} portions</strong>
+                <strong>{monthlySummary.totalMonthRequested ?? monthlySummary.totalRequestedQuantity ?? 0} portions</strong>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Total Month Actual Served:</span>
-                <strong style={{ color: '#10b981' }}>{monthlySummary.totalActualQuantity || 0} portions</strong>
+                <strong style={{ color: '#10b981' }}>{monthlySummary.totalMonthActualServed ?? monthlySummary.totalActualQuantity ?? 0} portions</strong>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Total Month Difference:</span>
-                <strong style={{ color: (monthlySummary.difference || 0) === 0 ? '#10b981' : '#f59e0b' }}>
-                  {monthlySummary.difference || 0}
+                <strong style={{ color: ((monthlySummary.totalMonthDifference ?? monthlySummary.difference ?? 0) === 0) ? '#10b981' : '#f59e0b' }}>
+                  {monthlySummary.totalMonthDifference ?? monthlySummary.difference ?? 0}
                 </strong>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
                 <span style={{ color: 'var(--text-secondary)' }}>Total Monthly Spend:</span>
-                <strong style={{ color: 'var(--accent-primary)' }}>₹{monthlySummary.totalCost || summary.totalMonthlyCost || 0}</strong>
+                <strong style={{ color: 'var(--accent-primary)' }}>₹{monthlySummary.totalMonthlySpend ?? monthlySummary.totalCost ?? summary.totalMonthlyCost ?? 0}</strong>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>Avg Cost Per Meal:</span>
-                <strong>₹{monthlySummary.avgCostPerMeal || summary.avgCostPerMeal || 0}</strong>
+                <span style={{ color: 'var(--text-secondary)' }}>Average Cost Per Meal:</span>
+                <strong>₹{monthlySummary.averageCostPerMeal ?? monthlySummary.avgCostPerMeal ?? summary.avgCostPerMeal ?? 0}</strong>
               </div>
             </div>
           </div>

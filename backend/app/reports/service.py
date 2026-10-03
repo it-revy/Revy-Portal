@@ -1,6 +1,8 @@
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func, distinct, desc
+import app.models  # noqa: F401
+from app.users.model import User  # Ensure User mapper is registered
 from app.breakfast.model import (
     BreakfastMoneyTransaction,
     BreakfastDailyEntry,
@@ -182,7 +184,7 @@ class ReportService:
 
         employee_report = []
         for emp in employees:
-            is_perm = (emp.breakfast_participation_type == "PERMANENT_NOT_TAKING")
+            is_perm = (emp.breakfast_participation_type or "").upper() in ["PERMANENT_NOT_TAKING", "PERMANENT_NON_TAKER", "NON_TAKER"]
             recs = emp_records_map.get(emp.employee_id.upper(), [])
             emp_leaves = [l for l in all_leaves if l.employee_id.upper() == emp.employee_id.upper()]
 
@@ -350,41 +352,57 @@ class ReportService:
             "moneyTransactions": formatted_txns
         }
 
-    def get_ceo_report(self) -> Dict[str, Any]:
+    def get_ceo_report(self, target_date: Optional[str] = None) -> Dict[str, Any]:
         from datetime import datetime, timedelta
         from app.breakfast.model import BreakfastTemporaryRequest
         from app.breakfast import service as bf_service
         from app.breakfast import money_service
 
         today_dt = get_kolkata_now()
-        today_str = get_kolkata_date_string(today_dt)
-        current_month = today_str[:7]
+        today_default_str = get_kolkata_date_string(today_dt)
+        selected_date_str = target_date.strip() if (target_date and len(target_date.strip()) == 10) else today_default_str
+        current_month = selected_date_str[:7]
+        try:
+            selected_dt = datetime.strptime(selected_date_str, "%Y-%m-%d")
+        except Exception:
+            selected_dt = today_dt
+            selected_date_str = today_default_str
+            current_month = selected_date_str[:7]
 
         active_emps = self.db.query(Employee).filter(
             Employee.status == "active",
             Employee.is_hard_deleted == False
         ).all()
         total_employees = len(active_emps)
-        normal_count = sum(1 for e in active_emps if e.breakfast_participation_type == "NORMAL")
-        perm_not_taking_count = sum(1 for e in active_emps if e.breakfast_participation_type == "PERMANENT_NOT_TAKING")
+        normal_count = sum(1 for e in active_emps if (e.breakfast_participation_type or "").upper() in ["NORMAL", "REGULAR", "REGULAR_TAKER"])
+        perm_not_taking_count = sum(1 for e in active_emps if (e.breakfast_participation_type or "").upper() in ["PERMANENT_NOT_TAKING", "PERMANENT_NON_TAKER", "NON_TAKER"])
 
-        # Today's daily breakfast metrics using get_daily_breakfast_employees (incorporates regular + one-day requests)
-        today_bf_data = bf_service.get_daily_breakfast_employees(today_str, self.db)
-        today_summary = today_bf_data["summary"]
+        # Daily breakfast metrics for selected_date_str (incorporates regular + one-day requests)
+        daily_bf_data = bf_service.get_daily_breakfast_employees(selected_date_str, self.db)
+        daily_summary = daily_bf_data["summary"]
 
-        today_req_qty = float(today_summary.get("employeeRequestQuantity", 0.0))
-        today_act_qty = float(today_summary.get("actualResponseQuantity", 0.0))
-        today_diff = round(today_req_qty - today_act_qty, 2)
-        today_taking_count = today_summary.get("takingCount", 0)
-        today_not_taking_count = today_summary.get("notTakingCount", 0)
-        today_pending_count = today_summary.get("noResponseCount", 0)
-        today_temp_req_count = today_summary.get("temporaryRequestsCount", 0)
-        today_participation_rate = round((today_act_qty / normal_count) * 100, 1) if normal_count > 0 else 0.0
+        daily_taking_count = daily_summary.get("takingCount", 0)
+        daily_not_taking_count = daily_summary.get("notTakingCount", 0)
+        daily_pending_count = daily_summary.get("noResponseCount", 0)
+        daily_temp_req_count = daily_summary.get("temporaryRequestsCount", 0)
 
-        # Today's costs
-        today_entry = self.db.query(BreakfastDailyEntry).filter(BreakfastDailyEntry.business_date == today_str).first()
-        today_additional = self.db.query(BreakfastAdditionalOrder).filter(BreakfastAdditionalOrder.business_date == today_str).all()
-        today_cost = round((today_entry.total_cost if today_entry else 0.0) + sum(o.total_cost for o in today_additional), 2)
+        # Selected date's costs and daily entry
+        daily_entry = self.db.query(BreakfastDailyEntry).filter(BreakfastDailyEntry.business_date == selected_date_str).first()
+        daily_additional = self.db.query(BreakfastAdditionalOrder).filter(BreakfastAdditionalOrder.business_date == selected_date_str).all()
+        daily_cost = round((daily_entry.total_cost if daily_entry else 0.0) + sum(o.total_cost for o in daily_additional), 2)
+
+        if daily_entry:
+            daily_act_qty = float(daily_entry.total_quantity if daily_entry.total_quantity is not None else daily_entry.summary.get("actualResponseQuantity", 0.0))
+            if daily_entry.summary and isinstance(daily_entry.summary, dict) and daily_entry.summary.get("employeeRequestQuantity") is not None:
+                daily_req_qty = float(daily_entry.summary.get("employeeRequestQuantity"))
+            else:
+                daily_req_qty = float(daily_summary.get("employeeRequestQuantity", 0.0))
+        else:
+            daily_req_qty = float(daily_summary.get("employeeRequestQuantity", 0.0))
+            daily_act_qty = float(daily_summary.get("actualResponseQuantity", 0.0))
+
+        daily_diff = round(daily_req_qty - daily_act_qty, 2)
+        daily_participation_rate = round((daily_act_qty / normal_count) * 100, 1) if normal_count > 0 else 0.0
 
         # Money ledger metrics
         ledger_metrics = money_service.get_money_balance_metrics(self.db)
@@ -393,8 +411,7 @@ class ReportService:
 
         # Month records, daily entries, and additional orders
         month_records = self.db.query(BreakfastRecord).filter(
-            BreakfastRecord.business_date.like(f"{current_month}%"),
-            BreakfastRecord.record_type == "CURRENT"
+            BreakfastRecord.business_date.like(f"{current_month}%")
         ).all()
 
         month_daily_entries = self.db.query(BreakfastDailyEntry).filter(
@@ -420,9 +437,9 @@ class ReportService:
             2
         )
 
-        # Total breakfast requests in month (regular employee TAKING records + temporary one-day requests)
-        month_yes_recs = [r for r in month_records if r.employee_id and (r.response in ["YES", "TAKING"] or r.employee_response == "TAKING")]
-        total_breakfast_requests_month = len(month_yes_recs) + len(month_temp_requests)
+        # Total breakfast requests in month (regular employee TAKING records + temporary one-day requests, avoiding double counting)
+        regular_yes_recs = [r for r in month_records if r.employee_id and r.source != "TEMPORARY_REQUEST" and (r.response in ["YES", "TAKING"] or r.employee_response == "TAKING")]
+        total_breakfast_requests_month = len(regular_yes_recs) + len(month_temp_requests)
 
         # Unique employees who took breakfast this month
         month_unique_takers = len({r.employee_id.upper() for r in month_records if r.employee_id and r.actual_status == "TAKEN"})
@@ -431,7 +448,7 @@ class ReportService:
         dates_with_activity = sorted(list(
             {r.business_date for r in month_records} |
             {e.business_date for e in month_daily_entries} |
-            {today_str}
+            {selected_date_str}
         ))
 
         daily_comparisons = []
@@ -448,10 +465,10 @@ class ReportService:
 
             day_entry_summary = day_entry.summary if (day_entry and isinstance(day_entry.summary, dict)) else {}
 
-            if d_str == today_str:
-                d_req_qty = today_req_qty
-                d_act_qty = today_act_qty
-                d_not_taking = today_not_taking_count
+            if d_str == selected_date_str:
+                d_req_qty = daily_req_qty
+                d_act_qty = daily_act_qty
+                d_not_taking = daily_not_taking_count
             elif day_entry_summary.get("employeeRequestQuantity") is not None:
                 d_req_qty = float(day_entry_summary.get("employeeRequestQuantity", 0.0))
                 d_act_qty = float(day_entry_summary.get("actualResponseQuantity", day_entry.total_quantity or 0.0))
@@ -498,10 +515,10 @@ class ReportService:
 
         daily_comparisons.sort(key=lambda x: x["date"], reverse=True)
 
-        # Weekly Summary (last 7 days from today)
-        seven_days_ago_dt = today_dt - timedelta(days=6)
+        # Weekly Summary (last 7 days up to selected_date_str)
+        seven_days_ago_dt = selected_dt - timedelta(days=6)
         seven_days_ago_str = get_kolkata_date_string(seven_days_ago_dt)
-        week_items = [c for c in daily_comparisons if seven_days_ago_str <= c["date"] <= today_str]
+        week_items = [c for c in daily_comparisons if seven_days_ago_str <= c["date"] <= selected_date_str]
         week_req = round(sum(c["requestedQuantity"] for c in week_items), 2)
         week_act = round(sum(c["actualQuantity"] for c in week_items), 2)
         week_cost = round(sum(c["dailyCost"] for c in week_items), 2)
@@ -528,7 +545,7 @@ class ReportService:
             else:
                 dept_map[dept]["permNotTaking"] += 1
 
-        for emp_status in today_bf_data.get("applicableEmployees", []):
+        for emp_status in daily_bf_data.get("applicableEmployees", []):
             if emp_status.get("actualStatus") == "TAKEN":
                 d_name = emp_status.get("department") or "General"
                 if d_name in dept_map:
@@ -541,66 +558,107 @@ class ReportService:
             department_breakdown.append(d_info)
         department_breakdown.sort(key=lambda x: x["total"], reverse=True)
 
+        daily_summary_obj = {
+            "date": selected_date_str,
+            "requestedQuantity": daily_req_qty,
+            "actualQuantity": daily_act_qty,
+            "actualServedQuantity": daily_act_qty,
+            "difference": daily_diff,
+            "cost": daily_cost,
+            "expenditure": daily_cost,
+            "participationRate": daily_participation_rate,
+            "optOutCount": daily_not_taking_count,
+            "pendingCount": daily_pending_count
+        }
+
+        weekly_summary_obj = {
+            "startDate": seven_days_ago_str,
+            "endDate": selected_date_str,
+            "totalRequestedQuantity": week_req,
+            "totalActualQuantity": week_act,
+            "totalActualServedQuantity": week_act,
+            "difference": week_diff,
+            "weeklyDifference": week_diff,
+            "totalCost": week_cost,
+            "totalWeeklySpend": week_cost,
+            "activeDays": week_active_days,
+            "avgDailyTakers": week_avg_takers,
+            "averageDailyTakers": week_avg_takers,
+            "avgDailyCost": week_avg_cost
+        }
+
+        monthly_summary_obj = {
+            "month": current_month,
+            "totalRequestedQuantity": round(total_month_requested_qty, 2),
+            "totalMonthRequested": round(total_month_requested_qty, 2),
+            "totalActualQuantity": round(total_month_actual_qty, 2),
+            "totalMonthActualServed": round(total_month_actual_qty, 2),
+            "difference": month_diff,
+            "totalMonthDifference": month_diff,
+            "totalCost": total_monthly_cost,
+            "totalMonthlySpend": total_monthly_cost,
+            "activeDays": active_days_count,
+            "avgDailyTakers": month_avg_daily_takers,
+            "avgDailyCost": month_avg_daily_cost,
+            "avgCostPerMeal": avg_cost_per_meal,
+            "averageCostPerMeal": avg_cost_per_meal
+        }
+
+        avg_monthly_part_rate = round(sum(c["participationRate"] for c in daily_comparisons) / len(daily_comparisons), 1) if daily_comparisons else daily_participation_rate
+
+        executive_summary = {
+            "totalEmployees": total_employees,
+            "totalRequests": total_breakfast_requests_month,
+            "regularTakers": normal_count,
+            "permanentNonTakers": perm_not_taking_count,
+            "todayRequestedQty": daily_req_qty,
+            "todayActualServedQty": daily_act_qty,
+            "requestActualDifference": daily_diff,
+            "participationRate": daily_participation_rate,
+            "normalCount": normal_count,
+            "permNotTakingCount": perm_not_taking_count,
+            "totalBreakfastTakers": normal_count,
+            "totalNonTakers": perm_not_taking_count,
+            "totalBreakfastRequestsMonth": total_breakfast_requests_month,
+            "totalUniqueTakersMonth": month_unique_takers,
+            "dailyRequestedQuantity": daily_req_qty,
+            "dailyActualQuantity": daily_act_qty,
+            "quantityDifference": daily_diff,
+            "todayYes": daily_taking_count,
+            "todayNo": daily_not_taking_count,
+            "todayTaken": int(daily_act_qty),
+            "todayPending": daily_pending_count,
+            "todayTemporaryRequestsCount": daily_temp_req_count,
+            "todayCost": daily_cost,
+            "totalMonthlyCost": total_monthly_cost,
+            "overallParticipationRate": daily_participation_rate,
+            "avgMonthlyParticipationRate": avg_monthly_part_rate,
+            "currentFundBalance": current_balance,
+            "fundLimit": fund_limit,
+            "avgCostPerMeal": avg_cost_per_meal
+        }
+
         return {
+            "success": True,
             "currentMonth": current_month,
-            "todayDate": today_str,
-            "executiveSummary": {
-                "totalEmployees": total_employees,
-                "normalCount": normal_count,
-                "permNotTakingCount": perm_not_taking_count,
-                "totalBreakfastTakers": normal_count,
-                "totalNonTakers": perm_not_taking_count,
-                "totalBreakfastRequestsMonth": total_breakfast_requests_month,
-                "totalUniqueTakersMonth": month_unique_takers,
-                "dailyRequestedQuantity": today_req_qty,
-                "dailyActualQuantity": today_act_qty,
-                "quantityDifference": today_diff,
-                "todayYes": today_taking_count,
-                "todayNo": today_not_taking_count,
-                "todayTaken": int(today_act_qty),
-                "todayPending": today_pending_count,
-                "todayTemporaryRequestsCount": today_temp_req_count,
-                "todayCost": today_cost,
-                "totalMonthlyCost": total_monthly_cost,
-                "overallParticipationRate": today_participation_rate,
-                "avgMonthlyParticipationRate": round(sum(c["participationRate"] for c in daily_comparisons) / len(daily_comparisons), 1) if daily_comparisons else today_participation_rate,
-                "currentFundBalance": current_balance,
-                "fundLimit": fund_limit,
-                "avgCostPerMeal": avg_cost_per_meal
-            },
+            "todayDate": today_default_str,
+            "selectedDate": selected_date_str,
+            "totalEmployees": total_employees,
+            "totalRequests": total_breakfast_requests_month,
+            "regularTakers": normal_count,
+            "permanentNonTakers": perm_not_taking_count,
+            "todayRequestedQty": daily_req_qty,
+            "todayActualServedQty": daily_act_qty,
+            "requestActualDifference": daily_diff,
+            "participationRate": daily_participation_rate,
+            "executiveSummary": executive_summary,
+            "dailySummary": daily_summary_obj,
+            "weeklySummary": weekly_summary_obj,
+            "monthlySummary": monthly_summary_obj,
             "summaries": {
-                "daily": {
-                    "date": today_str,
-                    "requestedQuantity": today_req_qty,
-                    "actualQuantity": today_act_qty,
-                    "difference": today_diff,
-                    "cost": today_cost,
-                    "participationRate": today_participation_rate,
-                    "optOutCount": today_not_taking_count,
-                    "pendingCount": today_pending_count
-                },
-                "weekly": {
-                    "startDate": seven_days_ago_str,
-                    "endDate": today_str,
-                    "totalRequestedQuantity": week_req,
-                    "totalActualQuantity": week_act,
-                    "difference": week_diff,
-                    "totalCost": week_cost,
-                    "activeDays": week_active_days,
-                    "avgDailyTakers": week_avg_takers,
-                    "avgDailyCost": week_avg_cost
-                },
-                "monthly": {
-                    "month": current_month,
-                    "totalRequestedQuantity": round(total_month_requested_qty, 2),
-                    "totalActualQuantity": round(total_month_actual_qty, 2),
-                    "difference": month_diff,
-                    "totalCost": total_monthly_cost,
-                    "activeDays": active_days_count,
-                    "avgDailyTakers": month_avg_daily_takers,
-                    "avgDailyCost": month_avg_daily_cost,
-                    "avgCostPerMeal": avg_cost_per_meal
-                }
+                "daily": daily_summary_obj,
+                "weekly": weekly_summary_obj,
+                "monthly": monthly_summary_obj
             },
             "requestVsActualComparison": daily_comparisons,
             "consumptionTrends": trend_series,

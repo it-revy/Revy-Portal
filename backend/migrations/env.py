@@ -47,30 +47,14 @@ def run_migrations_online() -> None:
     if url.startswith("sqlite"):
         connect_args["check_same_thread"] = False
     
-    try:
-        connectable = create_engine(url, poolclass=pool.NullPool, connect_args=connect_args)
-        with connectable.connect() as connection:
-            context.configure(
-                connection=connection,
-                target_metadata=target_metadata
-            )
-            with context.begin_transaction():
-                context.run_migrations()
-    except Exception as e:
-        # If postgres fails in local dev without postgres credentials, fallback to sqlite
-        if url.startswith("postgresql"):
-            fallback_url = settings.FALLBACK_SQLITE_URL
-            print(f"[Alembic] Connection to PostgreSQL failed ({e}). Using fallback: {fallback_url}")
-            connectable = create_engine(fallback_url, poolclass=pool.NullPool, connect_args={"check_same_thread": False})
-            with connectable.connect() as connection:
-                context.configure(
-                    connection=connection,
-                    target_metadata=target_metadata
-                )
-                with context.begin_transaction():
-                    context.run_migrations()
-        else:
-            raise e
+    connectable = create_engine(url, poolclass=pool.NullPool, connect_args=connect_args)
+    with connectable.connect() as connection:
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata
+        )
+        with context.begin_transaction():
+            context.run_migrations()
 
 
 if context.is_offline_mode():

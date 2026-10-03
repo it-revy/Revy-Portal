@@ -41,9 +41,12 @@ class SubmitBreakfastRequest(BaseModel):
 
 class CreateTemporaryBreakfastRequest(BaseModel):
     employeeId: Optional[str] = None
-    requestedDate: str
+    requestedDate: Optional[str] = None
+    targetDate: Optional[str] = None
+    date: Optional[str] = None
     quantity: Optional[Union[float, int, str]] = 1.0
     notes: Optional[str] = None
+    reason: Optional[str] = None
 
 class UpdateTemporaryBreakfastRequest(BaseModel):
     quantity: Optional[Union[float, int, str]] = None
@@ -69,7 +72,8 @@ class ItemInput(BaseModel):
     total: Optional[float] = None
 
 class SaveDailyEntryRequest(BaseModel):
-    businessDate: str
+    businessDate: Optional[str] = None
+    date: Optional[str] = None
     recordType: Optional[str] = "CURRENT"
     record_type: Optional[str] = None
     paidBy: Optional[str] = None
@@ -286,6 +290,7 @@ def serialize_temporary_request(req: BreakfastTemporaryRequest):
         "employeeId": req.employee_id,
         "employeeName": req.employee_name,
         "requestedDate": req.requested_date,
+        "targetDate": req.requested_date,
         "quantity": float(req.quantity) if req.quantity is not None else 1.0,
         "status": req.status,
         "notes": req.notes or "",
@@ -334,7 +339,7 @@ def get_today_status(
         for r in reasons
     ]
 
-    is_perm = (current_user.breakfast_participation_type == "PERMANENT_NOT_TAKING")
+    is_perm = (current_user.breakfast_participation_type or "").upper() in ["PERMANENT_NOT_TAKING", "PERMANENT_NON_TAKER", "NON_TAKER"]
 
     return {
         "success": True,
@@ -362,7 +367,7 @@ def submit_daily_breakfast(
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    is_perm = (current_user.breakfast_participation_type == "PERMANENT_NOT_TAKING")
+    is_perm = (current_user.breakfast_participation_type or "").upper() in ["PERMANENT_NOT_TAKING", "PERMANENT_NON_TAKER", "NON_TAKER"]
 
     today_dt = get_kolkata_now()
     settings = db.query(BreakfastSetting).first()
@@ -509,15 +514,16 @@ def submit_daily_breakfast(
 
 # 2b. Specific-Date Breakfast Request for Permanent Non-Takers
 @router.post("/temporary-request")
+@router.post("/temporary-requests")
 def create_temporary_breakfast_request(
     payload: CreateTemporaryBreakfastRequest,
     request: Request,
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    req_date = payload.requestedDate.strip()
+    req_date = (payload.requestedDate or payload.targetDate or payload.date or "").strip()
     if not req_date or len(req_date) != 10:
-        raise ValidationError("Valid requestedDate (YYYY-MM-DD) is required")
+        raise ValidationError("Valid requestedDate or targetDate (YYYY-MM-DD) is required")
     try:
         datetime.strptime(req_date, "%Y-%m-%d")
     except ValueError:
@@ -538,7 +544,7 @@ def create_temporary_breakfast_request(
             target_emp_id = target_emp.employee_id
             target_emp_name = target_emp.name
 
-    # Prevent duplicate requests for the same date
+    # Prevent duplicate requests for the same date or update if exists
     existing_req = db.query(BreakfastTemporaryRequest).filter(
         BreakfastTemporaryRequest.employee_id == target_emp_id,
         BreakfastTemporaryRequest.requested_date == req_date,
@@ -546,23 +552,22 @@ def create_temporary_breakfast_request(
     ).first()
 
     if existing_req:
-        raise ValidationError(
-            f"A breakfast request already exists for date {req_date} "
-            f"(Status: {existing_req.status}, Quantity: {existing_req.quantity}). "
-            f"You can modify or cancel your existing request instead of submitting a duplicate."
+        existing_req.quantity = qty
+        existing_req.notes = (payload.notes or payload.reason or "").strip()
+        existing_req.status = "CONFIRMED"
+        req_obj = existing_req
+    else:
+        req_id = f"REQ-{req_date.replace('-', '')}-{uuid.uuid4().hex[:4].upper()}"
+        req_obj = BreakfastTemporaryRequest(
+            request_id=req_id,
+            employee_id=target_emp_id,
+            employee_name=target_emp_name,
+            requested_date=req_date,
+            quantity=qty,
+            status="CONFIRMED",
+            notes=(payload.notes or payload.reason or "").strip()
         )
-
-    req_id = f"REQ-{req_date.replace('-', '')}-{uuid.uuid4().hex[:4].upper()}"
-    new_req = BreakfastTemporaryRequest(
-        request_id=req_id,
-        employee_id=target_emp_id,
-        employee_name=target_emp_name,
-        requested_date=req_date,
-        quantity=qty,
-        status="CONFIRMED",
-        notes=payload.notes.strip() if payload.notes else ""
-    )
-    db.add(new_req)
+        db.add(req_obj)
 
     # Sync corresponding BreakfastRecord for req_date
     rec = db.query(BreakfastRecord).filter(
@@ -595,16 +600,16 @@ def create_temporary_breakfast_request(
         db.add(rec)
 
     db.commit()
-    db.refresh(new_req)
+    db.refresh(req_obj)
 
-    serialized = serialize_temporary_request(new_req)
+    serialized = serialize_temporary_request(req_obj)
 
     audit_service = AuditService(db)
     audit_service.log(
         action="TEMPORARY_BREAKFAST_REQUEST_CREATED",
         request=request,
         target_info={
-            "requestId": new_req.request_id,
+            "requestId": req_obj.request_id,
             "targetEmployeeId": target_emp_id,
             "targetEmployeeName": target_emp_name,
             "requestedDate": req_date,
@@ -895,8 +900,8 @@ def get_admin_summary(
         Employee.status == "active",
         Employee.is_hard_deleted == False
     ).all()
-    normal_emps = [e for e in active_emps if e.breakfast_participation_type == "NORMAL"]
-    perm_emps = [e for e in active_emps if e.breakfast_participation_type == "PERMANENT_NOT_TAKING"]
+    normal_emps = [e for e in active_emps if (e.breakfast_participation_type or "").upper() in ["NORMAL", "REGULAR", "REGULAR_TAKER"]]
+    perm_emps = [e for e in active_emps if (e.breakfast_participation_type or "").upper() in ["PERMANENT_NOT_TAKING", "PERMANENT_NON_TAKER", "NON_TAKER"]]
 
     today_recs = db.query(BreakfastRecord).filter(
         BreakfastRecord.business_date == target_date,
@@ -973,7 +978,7 @@ def get_admin_daily_records(
     all_list = []
     for emp in employees:
         rec = record_map.get(emp.employee_id.upper())
-        is_perm = (emp.breakfast_participation_type == "PERMANENT_NOT_TAKING")
+        is_perm = (emp.breakfast_participation_type or "").upper() in ["PERMANENT_NOT_TAKING", "PERMANENT_NON_TAKER", "NON_TAKER"]
         temp_req = temp_req_map.get(emp.employee_id.upper())
 
         emp_response = "NO_RESPONSE"
@@ -1124,6 +1129,7 @@ def update_actual_status(
 
 # 8. Daily Entry GET
 @router.get("/daily-entry")
+@router.get("/daily-entries")
 def get_daily_entry(
     date: Optional[str] = Query(None),
     current_user: CurrentUser = Depends(require_permission("breakfast.view")),
@@ -1164,15 +1170,16 @@ def get_daily_entry(
 
 # 9. Daily Entry POST (Save/Update)
 @router.post("/daily-entry")
+@router.post("/daily-entries")
 def save_daily_entry(
     payload: SaveDailyEntryRequest,
     request: Request,
     current_user: CurrentUser = Depends(require_permission("breakfast.manage")),
     db: Session = Depends(get_db)
 ):
-    b_date = payload.businessDate.strip()
+    b_date = (payload.businessDate or payload.date or "").strip()
     if not b_date:
-        raise ValidationError("businessDate is required")
+        raise ValidationError("businessDate or date is required")
 
     rec_type = (payload.recordType or payload.record_type or "CURRENT").upper()
     paid_by = payload.paidBy or payload.paid_by
@@ -1255,7 +1262,12 @@ def save_daily_entry(
     }
     entry_summary["totalQuantity"] = total_quantity
     entry_summary["actualResponseQuantity"] = float(actual_response_qty)
-    entry_summary["employeeRequestQuantity"] = float(taking_count)
+    req_qty_val = (
+        payload.employeeRequestQuantity if payload.employeeRequestQuantity is not None
+        else (payload.employee_request_quantity if payload.employee_request_quantity is not None
+        else emp_data["summary"].get("employeeRequestQuantity", float(taking_count)))
+    )
+    entry_summary["employeeRequestQuantity"] = float(req_qty_val)
 
     if entry:
         if rec_type != "HISTORICAL":

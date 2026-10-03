@@ -95,7 +95,7 @@ def get_employee_business_day_status(employee_id: str, date_str: str, db: Sessio
             "isApplicableForBreakfast": False
         }
 
-    is_permanent_not_taking = (employee.breakfast_participation_type == "PERMANENT_NOT_TAKING")
+    is_permanent_not_taking = (employee.breakfast_participation_type or "").upper() in ["PERMANENT_NOT_TAKING", "PERMANENT_NON_TAKER", "NON_TAKER"]
 
     # Check for temporary one-day request
     from app.breakfast.model import BreakfastTemporaryRequest

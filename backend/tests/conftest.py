@@ -12,7 +12,8 @@ from seed.seed_development import seed_database
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_database():
-    seed_database()
+    if os.getenv("RUN_SEED") == "1":
+        seed_database()
     yield
 
 @pytest.fixture

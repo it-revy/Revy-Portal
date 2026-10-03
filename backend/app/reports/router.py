@@ -54,9 +54,10 @@ def export_monthly_report_excel(
 
 @router.get("/ceo")
 def get_ceo_report(
+    date: Optional[str] = Query(None),
     current_user: CurrentUser = Depends(require_permission("breakfast.dashboard.view")),
     db: Session = Depends(get_db)
 ):
     service = ReportService(db)
-    result = service.get_ceo_report()
+    result = service.get_ceo_report(target_date=date)
     return {"success": True, **result}

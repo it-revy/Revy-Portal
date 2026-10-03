@@ -285,7 +285,7 @@ const EmployeeDailyPage = () => {
     return <div className="page-body">Loading today's status...</div>;
   }
 
-  const isPerm = statusData?.participationType === 'PERMANENT_NOT_TAKING';
+  const isPerm = ['PERMANENT_NOT_TAKING', 'PERMANENT_NON_TAKER', 'NON_TAKER'].includes((statusData?.participationType || '').toUpperCase());
   const hasExistingResponse = !!statusData?.todayRecord;
   const existingReqForSelectedDate = tempRequests.find(r => r.requestedDate === tempDate && r.status !== 'CANCELLED');
   const todayTempReq = tempRequests.find(r => r.requestedDate === statusData?.businessDate && r.status !== 'CANCELLED');
@@ -368,7 +368,7 @@ const EmployeeDailyPage = () => {
                   <AlertTriangle size={20} color="var(--warning)" />
                   <h3 style={{ margin: 0, fontSize: '1.1rem' }}>Permanent Non-Breakfast Participant</h3>
                   <span className="badge badge-warning" style={{ fontSize: '0.75rem' }}>
-                    PERMANENT_NOT_TAKING
+                    Permanent Non-Taker
                   </span>
                 </div>
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: 0, maxWidth: '700px' }}>
@@ -489,16 +489,16 @@ const EmployeeDailyPage = () => {
                   </label>
                   <input
                     type="number"
-                    step="0.5"
-                    min="0.5"
-                    max="10.0"
+                    step="any"
+                    min="0.1"
+                    max="100.0"
                     className="form-input"
                     value={tempQuantity}
                     onChange={(e) => setTempQuantity(e.target.value)}
                     required
                   />
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'block' }}>
-                    Supports decimal values (e.g. 1, 1.5, 2)
+                    Supports decimal values (e.g. 0.5, 1, 1.5, 2.25, 10.75)
                   </span>
                 </div>
               </div>
