@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.core.dependencies import require_permission, CurrentUser
+from app.core.dependencies import require_permission, require_any_permission, CurrentUser
 from app.core.exceptions import ValidationError, NotFoundError
 from app.breakfast.model import BreakfastOrder, BreakfastOrderItem
 from app.employees.model import Employee
@@ -62,7 +62,7 @@ def serialize_item(i: BreakfastOrderItem):
 @router.get("/")
 def get_orders_by_date(
     date: Optional[str] = Query(None),
-    current_user: CurrentUser = Depends(require_permission("breakfast.view")),
+    current_user: CurrentUser = Depends(require_any_permission(["breakfast.view", "breakfast.orders.view"])),
     db: Session = Depends(get_db)
 ):
     target_date = date or get_kolkata_date_string()

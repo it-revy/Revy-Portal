@@ -101,8 +101,10 @@ export const SYSTEM_MODULES = [
 
 export const getBreakfastDestination = (hasPermission, hasRole = () => false) => {
   if (hasRole('FINANCE_MANAGER') || hasRole('Finance Manager')) return '/finance/fund-requests';
+  if (hasRole('DIRECTOR_ANALYTICS') || hasRole('Director Analytics')) return '/director-analytics';
+  if (hasRole('CEO') || hasRole('Chief Executive Officer') || hasPermission('breakfast.orders.view')) return '/admin/orders';
   if (hasPermission('breakfast.view')) return '/admin/dashboard';
-  if (hasPermission('breakfast.dashboard.view')) return '/ceo-dashboard';
+  if (hasPermission('breakfast.dashboard.view')) return '/director-analytics';
   if (hasPermission('finance.breakfast_fund.view')) return '/finance/fund-requests';
   return '/today';
 };
@@ -116,6 +118,8 @@ export default function CentralPortalPage() {
   const hasBreakfastAccess = () => {
     if (!user) return false;
     if (hasRole('FINANCE_MANAGER') || hasRole('Finance Manager')) return true;
+    if (hasRole('DIRECTOR_ANALYTICS') || hasRole('Director Analytics')) return true;
+    if (hasRole('CEO') || hasRole('Chief Executive Officer')) return true;
     const breakfastPerms = [
       '*',
       'breakfast.view',
@@ -123,6 +127,7 @@ export default function CentralPortalPage() {
       'breakfast.submit',
       'breakfast.manage',
       'breakfast.report',
+      'breakfast.orders.view',
       'breakfast.dashboard.view',
       'finance.breakfast_fund.view'
     ];

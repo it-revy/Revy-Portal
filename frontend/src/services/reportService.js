@@ -22,8 +22,15 @@ export const reportService = {
     return res.data;
   },
 
-  getCEOReport: async () => {
-    const res = await API.get('/reports/ceo');
+  getDirectorAnalyticsReport: async (date = '') => {
+    const url = date ? `/reports/director-analytics?date=${date}` : '/reports/director-analytics';
+    const res = await API.get(url);
+    return res.data;
+  },
+
+  getCEOReport: async (date = '') => {
+    const url = date ? `/reports/director-analytics?date=${date}` : '/reports/director-analytics';
+    const res = await API.get(url);
     return res.data;
   }
 };

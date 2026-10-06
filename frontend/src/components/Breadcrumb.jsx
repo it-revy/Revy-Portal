@@ -11,7 +11,8 @@ const pathNameMap = {
   employees: "Employee Directory",
   holidays: "Public Holidays",
   reports: "Monthly Reports",
-  'ceo-dashboard': "CEO Analytics",
+  'director-analytics': "Director Analytics",
+  'ceo-dashboard': "Director Analytics",
   'audit-logs': "Audit Trail",
   settings: "Settings"
 };

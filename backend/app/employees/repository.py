@@ -92,7 +92,7 @@ class EmployeeRepository:
                         "finance.breakfast_fund.view", "finance.breakfast_fund.request.view",
                         "finance.breakfast_fund.request.approve", "finance.breakfast_fund.request.reject",
                         "finance.breakfast_fund.provide", "finance.breakfast_fund.report",
-                        "breakfast.money.view", "breakfast.money.report", "breakfast.view_own",
+                        "breakfast.money.view", "breakfast.money.report", "breakfast.report", "breakfast.view_own",
                         "breakfast.submit", "breakfast.history_own"
                     ])
                 ).all()
@@ -100,5 +100,26 @@ class EmployeeRepository:
                 self.db.add(fin_role)
                 self.db.flush()
             roles.append(fin_role)
+
+        # If DIRECTOR_ANALYTICS was requested and not found in DB, auto-create it with permissions
+        has_dir = any(c.upper() in ["DIRECTOR_ANALYTICS", "DIRECTOR ANALYTICS"] for c in norm_codes)
+        if has_dir and not any(r.code == "DIRECTOR_ANALYTICS" for r in roles):
+            dir_role = self.db.query(Role).filter(Role.code == "DIRECTOR_ANALYTICS").first()
+            if not dir_role:
+                dir_role = Role(
+                    code="DIRECTOR_ANALYTICS",
+                    name="Director Analytics",
+                    description="Access executive management insights and Director Analytics dashboard"
+                )
+                perms = self.db.query(Permission).filter(
+                    Permission.code.in_([
+                        "breakfast.dashboard.view", "breakfast.view_own", "breakfast.submit", "breakfast.history_own"
+                    ])
+                ).all()
+                dir_role.permissions = perms
+                self.db.add(dir_role)
+                self.db.flush()
+            roles.append(dir_role)
+
         return roles
 

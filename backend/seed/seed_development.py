@@ -19,7 +19,8 @@ PERMISSIONS_DATA = [
     {"code": "breakfast.view", "name": "View All Breakfast Status", "module": "BREAKFAST", "description": "View company wide daily status"},
     {"code": "breakfast.manage", "name": "Manage Daily Breakfast Operations", "module": "BREAKFAST", "description": "Manage records, actual status, and orders"},
     {"code": "breakfast.report", "name": "Generate Breakfast Reports", "module": "BREAKFAST", "description": "Access daily and monthly reports"},
-    {"code": "breakfast.dashboard.view", "name": "View CEO/Executive Dashboard", "module": "BREAKFAST", "description": "Executive view of summary analytics"},
+    {"code": "breakfast.orders.view", "name": "View All Breakfast Orders", "module": "BREAKFAST", "description": "View all company breakfast orders and order history"},
+    {"code": "breakfast.dashboard.view", "name": "View Director Analytics Dashboard", "module": "BREAKFAST", "description": "Executive Director view of summary analytics"},
     {"code": "breakfast.employee.create", "name": "Create Employees", "module": "BREAKFAST", "description": "Add new employee records"},
     {"code": "breakfast.employee.read", "name": "Read Employee Records", "module": "BREAKFAST", "description": "View employee profiles and status"},
     {"code": "breakfast.employee.update", "name": "Update Employee Records", "module": "BREAKFAST", "description": "Modify employee info, participation types, and roles"},
@@ -83,7 +84,7 @@ ROLES_DATA = [
             "finance.breakfast_fund.view", "finance.breakfast_fund.request.view",
             "finance.breakfast_fund.request.approve", "finance.breakfast_fund.request.reject",
             "finance.breakfast_fund.provide", "finance.breakfast_fund.report",
-            "breakfast.money.view", "breakfast.money.report", "breakfast.view_own",
+            "breakfast.money.view", "breakfast.money.report", "breakfast.report", "breakfast.view_own",
             "breakfast.submit", "breakfast.history_own"
         ]
     },
@@ -96,11 +97,19 @@ ROLES_DATA = [
         ]
     },
     {
+        "code": "DIRECTOR_ANALYTICS",
+        "name": "Director Analytics",
+        "description": "Executive Director Analytics dashboard and management insights",
+        "permissions": [
+            "breakfast.dashboard.view", "breakfast.view_own", "breakfast.submit", "breakfast.history_own"
+        ]
+    },
+    {
         "code": "CEO",
         "name": "Chief Executive Officer",
-        "description": "Executive reporting, analytics dashboard, employee management, and holiday overview",
+        "description": "Executive reporting, employee management, holiday overview, and company-wide breakfast orders overview",
         "permissions": [
-            "breakfast.report", "breakfast.dashboard.view", "breakfast.holiday.manage",
+            "breakfast.report", "breakfast.orders.view", "breakfast.holiday.manage",
             "breakfast.employee.create", "breakfast.employee.read", "breakfast.employee.update",
             "breakfast.employee.deactivate", "breakfast.view_own", "breakfast.submit",
             "breakfast.history_own"

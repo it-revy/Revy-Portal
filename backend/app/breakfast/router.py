@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 from app.core.database import get_db
-from app.core.dependencies import get_current_user, require_permission, CurrentUser
+from app.core.dependencies import get_current_user, require_permission, require_any_permission, CurrentUser
 from app.core.exceptions import ValidationError, NotFoundError, PermissionDeniedError
 from app.employees.model import Employee
 from app.breakfast.model import (
@@ -1335,7 +1335,7 @@ def save_daily_entry(
 @router.get("/additional-orders")
 def get_additional_orders(
     date: Optional[str] = Query(None),
-    current_user: CurrentUser = Depends(require_permission("breakfast.view")),
+    current_user: CurrentUser = Depends(require_any_permission(["breakfast.view", "breakfast.orders.view"])),
     db: Session = Depends(get_db)
 ):
     target_date = date or get_kolkata_date_string()
@@ -1614,7 +1614,7 @@ def get_all_orders(
     maxAmount: Optional[float] = Query(None),
     sortBy: str = Query("businessDate"),
     sortOrder: str = Query("desc"),
-    current_user: CurrentUser = Depends(require_permission("breakfast.view")),
+    current_user: CurrentUser = Depends(require_any_permission(["breakfast.view", "breakfast.orders.view"])),
     db: Session = Depends(get_db)
 ):
     daily_q = db.query(BreakfastDailyEntry)
@@ -1858,7 +1858,7 @@ def get_breakfast_records(
     search: Optional[str] = Query(None),
     page: int = Query(1),
     limit: str = Query("50"),
-    current_user: CurrentUser = Depends(require_permission("breakfast.view")),
+    current_user: CurrentUser = Depends(require_any_permission(["breakfast.view", "breakfast.orders.view"])),
     db: Session = Depends(get_db)
 ):
     q = db.query(BreakfastRecord)
@@ -1912,7 +1912,7 @@ def get_breakfast_records(
 @router.get("/records/{id}")
 def get_breakfast_record_by_id(
     id: str,
-    current_user: CurrentUser = Depends(require_permission("breakfast.view")),
+    current_user: CurrentUser = Depends(require_any_permission(["breakfast.view", "breakfast.orders.view"])),
     db: Session = Depends(get_db)
 ):
     rec = db.query(BreakfastRecord).filter(

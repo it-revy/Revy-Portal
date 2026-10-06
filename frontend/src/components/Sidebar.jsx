@@ -150,16 +150,16 @@ const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
           </NavLink>
         )}
 
-        {/* Dashboard for CEO (when breakfast.view is not present) */}
-        {!hasPermission('breakfast.view') && hasPermission('breakfast.dashboard.view') && (
+        {/* Orders link for CEO (when breakfast.view is not present) */}
+        {!hasPermission('breakfast.view') && (hasRole('CEO') || hasRole('Chief Executive Officer') || hasPermission('breakfast.orders.view')) && (
           <NavLink
-            to="/ceo-dashboard"
+            to="/admin/orders"
             onClick={handleLinkClick}
             className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-            title="Dashboard"
+            title="All Orders"
           >
-            <LayoutDashboard size={18} />
-            {(!isCollapsed || isMobileOpen) && <span>Dashboard</span>}
+            <FileSpreadsheet size={18} />
+            {(!isCollapsed || isMobileOpen) && <span>All Orders</span>}
           </NavLink>
         )}
 
@@ -298,7 +298,7 @@ const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
         )}
 
         {/* 5. Reports */}
-        {hasPermission('breakfast.report') && (
+        {(hasPermission('breakfast.report') || hasPermission('breakfast.money.report') || hasRole('FINANCE_MANAGER') || hasRole('Finance Manager')) && (
           <NavLink
             to="/reports"
             onClick={handleLinkClick}
@@ -310,16 +310,16 @@ const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
           </NavLink>
         )}
 
-        {/* CEO Analytics (for Admins with CEO dashboard view) */}
-        {hasPermission('breakfast.view') && hasPermission('breakfast.dashboard.view') && (
+        {/* Director Analytics (ONLY for users with DIRECTOR_ANALYTICS role) */}
+        {(hasRole('DIRECTOR_ANALYTICS') || hasRole('Director Analytics')) && (
           <NavLink
-            to="/ceo-dashboard"
+            to="/director-analytics"
             onClick={handleLinkClick}
             className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-            title="CEO Analytics"
+            title="Director Analytics"
           >
             <PieChart size={18} />
-            {(!isCollapsed || isMobileOpen) && <span>CEO Analytics</span>}
+            {(!isCollapsed || isMobileOpen) && <span>Director Analytics</span>}
           </NavLink>
         )}
 

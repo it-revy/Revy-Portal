@@ -3,7 +3,7 @@ import API from '../services/api';
 
 const AuthContext = createContext();
 
-const ROLE_PRIORITY = ['IT_ADMIN', 'CEO', 'FINANCE_MANAGER', 'BREAKFAST_ADMIN', 'EMPLOYEE'];
+const ROLE_PRIORITY = ['IT_ADMIN', 'DIRECTOR_ANALYTICS', 'CEO', 'FINANCE_MANAGER', 'BREAKFAST_ADMIN', 'EMPLOYEE'];
 const pickPrimaryRole = (roles = []) => {
   return ROLE_PRIORITY.find(r => roles.includes(r)) || roles[0] || 'EMPLOYEE';
 };

@@ -25,7 +25,7 @@ import FinanceManagerPage from './pages/FinanceManagerPage';
 
 import ForcePasswordChangeModal from './components/ForcePasswordChangeModal';
 
-const ProtectedLayout = ({ children, requiredPermission }) => {
+const ProtectedLayout = ({ children, requiredPermission, requiredRole }) => {
   const { user, loading, hasPermission, hasRole } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -38,9 +38,20 @@ const ProtectedLayout = ({ children, requiredPermission }) => {
   }
 
   const checkPermission = () => {
+    // If a required role is explicitly specified (e.g. DIRECTOR_ANALYTICS), enforce it strictly
+    if (requiredRole) {
+      if (Array.isArray(requiredRole)) {
+        return requiredRole.some(r => hasRole(r));
+      }
+      return hasRole(requiredRole);
+    }
     if (hasRole('FINANCE_MANAGER') || hasRole('Finance Manager')) {
-      if (typeof requiredPermission === 'string' && (requiredPermission.startsWith('finance.') || requiredPermission.startsWith('breakfast.money.'))) return true;
-      if (Array.isArray(requiredPermission) && requiredPermission.some(p => p.startsWith('finance.') || p.startsWith('breakfast.money.'))) return true;
+      if (typeof requiredPermission === 'string' && (requiredPermission.startsWith('finance.') || requiredPermission.startsWith('breakfast.money.') || requiredPermission === 'breakfast.report')) return true;
+      if (Array.isArray(requiredPermission) && requiredPermission.some(p => p.startsWith('finance.') || p.startsWith('breakfast.money.') || p === 'breakfast.report')) return true;
+    }
+    if (hasRole('CEO') || hasRole('Chief Executive Officer')) {
+      if (typeof requiredPermission === 'string' && (requiredPermission === 'breakfast.orders.view' || requiredPermission === 'breakfast.view')) return true;
+      if (Array.isArray(requiredPermission) && requiredPermission.some(p => p === 'breakfast.orders.view' || p === 'breakfast.view')) return true;
     }
     if (!requiredPermission) {
       // Require at least basic breakfast access for breakfast routes
@@ -51,10 +62,11 @@ const ProtectedLayout = ({ children, requiredPermission }) => {
         'breakfast.submit',
         'breakfast.manage',
         'breakfast.report',
+        'breakfast.orders.view',
         'breakfast.dashboard.view',
         'finance.breakfast_fund.view'
       ];
-      return baseBreakfastPerms.some(p => hasPermission(p)) || hasRole('FINANCE_MANAGER') || hasRole('Finance Manager');
+      return baseBreakfastPerms.some(p => hasPermission(p)) || hasRole('FINANCE_MANAGER') || hasRole('Finance Manager') || hasRole('DIRECTOR_ANALYTICS') || hasRole('Director Analytics');
     }
     if (Array.isArray(requiredPermission)) {
       return requiredPermission.some(p => hasPermission(p));
@@ -110,6 +122,9 @@ function AppRoutes() {
 
   const canAccessBreakfast = () => {
     if (!user) return false;
+    if (hasRole('DIRECTOR_ANALYTICS') || hasRole('Director Analytics')) return true;
+    if (hasRole('FINANCE_MANAGER') || hasRole('Finance Manager')) return true;
+    if (hasRole('CEO') || hasRole('Chief Executive Officer')) return true;
     const perms = [
       '*',
       'breakfast.view',
@@ -117,6 +132,7 @@ function AppRoutes() {
       'breakfast.submit',
       'breakfast.manage',
       'breakfast.report',
+      'breakfast.orders.view',
       'breakfast.dashboard.view',
       'finance.breakfast_fund.view'
     ];
@@ -251,7 +267,7 @@ function AppRoutes() {
       <Route
         path="/admin/orders"
         element={
-          <ProtectedLayout requiredPermission="breakfast.view">
+          <ProtectedLayout requiredPermission={['breakfast.view', 'breakfast.orders.view']}>
             <BreakfastOrdersPage />
           </ProtectedLayout>
         }
@@ -294,9 +310,18 @@ function AppRoutes() {
       />
 
       <Route
+        path="/director-analytics"
+        element={
+          <ProtectedLayout requiredRole="DIRECTOR_ANALYTICS">
+            <CEOViewPage />
+          </ProtectedLayout>
+        }
+      />
+
+      <Route
         path="/ceo-dashboard"
         element={
-          <ProtectedLayout requiredPermission="breakfast.dashboard.view">
+          <ProtectedLayout requiredRole="DIRECTOR_ANALYTICS">
             <CEOViewPage />
           </ProtectedLayout>
         }

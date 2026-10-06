@@ -23,12 +23,15 @@ from app.reports.router import router as reports_router
 from app.audit.router import router as audit_router
 from app.notifications.router import router as notifications_router
 
+from app.core.init_roles import ensure_roles_and_permissions
+
 logger = setup_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("Initializing REVY Breakfast Management application...")
     init_db()
+    ensure_roles_and_permissions()
     yield
     logger.info("Shutting down REVY Breakfast Management application...")
 

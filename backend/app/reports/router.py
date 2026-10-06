@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, Query, Response
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.core.dependencies import require_permission, require_any_permission, CurrentUser
+from app.core.dependencies import require_permission, require_any_permission, require_role, CurrentUser
 from app.reports.service import ReportService
 from app.reports.excel_generator import generate_report_excel
 from datetime import datetime
@@ -52,10 +52,11 @@ def export_monthly_report_excel(
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
 
+@router.get("/director-analytics")
 @router.get("/ceo")
-def get_ceo_report(
+def get_director_analytics_report(
     date: Optional[str] = Query(None),
-    current_user: CurrentUser = Depends(require_permission("breakfast.dashboard.view")),
+    current_user: CurrentUser = Depends(require_role("DIRECTOR_ANALYTICS")),
     db: Session = Depends(get_db)
 ):
     service = ReportService(db)

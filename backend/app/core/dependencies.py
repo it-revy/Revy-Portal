@@ -83,7 +83,14 @@ def get_current_user(
         for p in r_perms:
             permissions_set.add(p)
 
-    ROLE_PRIORITY = ["IT_ADMIN", "IT Administrator", "CEO", "Chief Executive Officer", "FINANCE_MANAGER", "Finance Manager", "BREAKFAST_ADMIN", "Breakfast Administrator", "EMPLOYEE", "Standard Employee"]
+    ROLE_PRIORITY = [
+        "IT_ADMIN", "IT Administrator",
+        "DIRECTOR_ANALYTICS", "Director Analytics",
+        "CEO", "Chief Executive Officer",
+        "FINANCE_MANAGER", "Finance Manager",
+        "BREAKFAST_ADMIN", "Breakfast Administrator",
+        "EMPLOYEE", "Standard Employee"
+    ]
     default_role = next((r for r in ROLE_PRIORITY if r in roles_list), (roles_list[0] if roles_list else "EMPLOYEE"))
     active_role = x_role_used if x_role_used and x_role_used in roles_list else default_role
     active_role_perms = permissions_by_role.get(active_role, [])
@@ -105,10 +112,12 @@ def require_permission(required_perm: str):
     def dependency(current_user: CurrentUser = Depends(get_current_user)):
         active_perms = current_user.permissions or []
         all_perms = current_user.all_permissions or []
+        user_roles_normalized = [r.upper().replace(" ", "_") for r in (current_user.roles or [])]
         # Allow full admin with '*' or check permission across active or all assigned roles
         has_access = (
             "*" in active_perms or "*" in all_perms or
-            required_perm in active_perms or required_perm in all_perms
+            required_perm in active_perms or required_perm in all_perms or
+            (required_perm == "breakfast.orders.view" and ("CEO" in user_roles_normalized or "CHIEF_EXECUTIVE_OFFICER" in user_roles_normalized))
         )
         if not has_access:
             raise PermissionDeniedError(f"Access denied. Required permission: '{required_perm}' is missing.")
@@ -120,9 +129,11 @@ def require_any_permission(required_perms: List[str]):
     def dependency(current_user: CurrentUser = Depends(get_current_user)):
         active_perms = current_user.permissions or []
         all_perms = current_user.all_permissions or []
+        user_roles_normalized = [r.upper().replace(" ", "_") for r in (current_user.roles or [])]
         has_access = (
             "*" in active_perms or "*" in all_perms or
-            any(p in active_perms or p in all_perms for p in required_perms)
+            any(p in active_perms or p in all_perms for p in required_perms) or
+            ("breakfast.orders.view" in required_perms and ("CEO" in user_roles_normalized or "CHIEF_EXECUTIVE_OFFICER" in user_roles_normalized))
         )
         if not has_access:
             raise PermissionDeniedError(f"Access denied. Required one of permissions: {', '.join(required_perms)}")

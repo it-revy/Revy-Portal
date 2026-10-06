@@ -596,7 +596,7 @@ const EmployeeManagementPage = () => {
                   Assign Roles (Multi-Select Support)
                 </label>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                  {['EMPLOYEE', 'BREAKFAST_ADMIN', 'FINANCE_MANAGER', 'IT_ADMIN', 'CEO'].map(role => (
+                  {['EMPLOYEE', 'BREAKFAST_ADMIN', 'FINANCE_MANAGER', 'IT_ADMIN', 'CEO', 'DIRECTOR_ANALYTICS'].map(role => (
                     <label key={role} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem' }}>
                       <input
                         type="checkbox"
@@ -604,7 +604,7 @@ const EmployeeManagementPage = () => {
                         onChange={() => handleRoleToggle(role)}
                         style={{ width: '16px', height: '16px', accentColor: 'var(--accent-primary)' }}
                       />
-                      {role === 'FINANCE_MANAGER' ? 'Finance Manager' : role.replace('_', ' ')}
+                      {role === 'FINANCE_MANAGER' ? 'Finance Manager' : role === 'DIRECTOR_ANALYTICS' ? 'Director Analytics' : role.replace('_', ' ')}
                     </label>
                   ))}
                 </div>
