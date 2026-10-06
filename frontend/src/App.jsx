@@ -29,6 +29,23 @@ import ForcePasswordChangeModal from './components/ForcePasswordChangeModal';
 const ProtectedLayout = ({ children, requiredPermission, requiredRole }) => {
   const { user, loading, hasPermission, hasRole } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      return localStorage.getItem('revy_sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleSidebarCollapse = () => {
+    setSidebarCollapsed(prev => {
+      const next = !prev;
+      try {
+        localStorage.setItem('revy_sidebar_collapsed', String(next));
+      } catch {}
+      return next;
+    });
+  };
 
   if (loading) {
     return <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading session...</div>;
@@ -79,9 +96,18 @@ const ProtectedLayout = ({ children, requiredPermission, requiredRole }) => {
     return (
       <div className="app-container">
         <ForcePasswordChangeModal />
-        <Sidebar isMobileOpen={mobileOpen} onCloseMobile={() => setMobileOpen(false)} />
-        <div className="main-content">
-          <Header onToggleMobile={() => setMobileOpen(!mobileOpen)} />
+        <Sidebar
+          isMobileOpen={mobileOpen}
+          onCloseMobile={() => setMobileOpen(false)}
+          isCollapsed={sidebarCollapsed}
+          onToggleCollapse={toggleSidebarCollapse}
+        />
+        <div className={`main-content ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+          <Header
+            onToggleMobile={() => setMobileOpen(!mobileOpen)}
+            sidebarCollapsed={sidebarCollapsed}
+            onToggleCollapse={toggleSidebarCollapse}
+          />
           <div className="page-body">
             <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center' }}>
               <h2 style={{ color: 'var(--danger)', marginBottom: '1rem' }}>403 - Permission Denied</h2>
@@ -89,7 +115,7 @@ const ProtectedLayout = ({ children, requiredPermission, requiredRole }) => {
                 Your current role does not have authorization to view this section.
               </p>
               <Link to="/portal" className="btn btn-primary" style={{ display: 'inline-flex', gap: '0.5rem' }}>
-                ← Return to Module Portal
+                ← Return to Services Portal
               </Link>
             </div>
           </div>
@@ -101,9 +127,18 @@ const ProtectedLayout = ({ children, requiredPermission, requiredRole }) => {
   return (
     <div className="app-container">
       <ForcePasswordChangeModal />
-      <Sidebar isMobileOpen={mobileOpen} onCloseMobile={() => setMobileOpen(false)} />
-      <div className="main-content">
-        <Header onToggleMobile={() => setMobileOpen(!mobileOpen)} />
+      <Sidebar
+        isMobileOpen={mobileOpen}
+        onCloseMobile={() => setMobileOpen(false)}
+        isCollapsed={sidebarCollapsed}
+        onToggleCollapse={toggleSidebarCollapse}
+      />
+      <div className={`main-content ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
+        <Header
+          onToggleMobile={() => setMobileOpen(!mobileOpen)}
+          sidebarCollapsed={sidebarCollapsed}
+          onToggleCollapse={toggleSidebarCollapse}
+        />
         {children}
       </div>
     </div>

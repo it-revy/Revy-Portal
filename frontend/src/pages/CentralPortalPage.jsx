@@ -21,20 +21,10 @@ import {
 
 export const SYSTEM_MODULES = [
   {
-    id: 'mis',
-    name: 'MIS',
-    title: 'Management Information System',
-    description: 'Executive analytics, operational metrics, cross-department dashboards, and high-level KPIs.',
-    icon: BarChart3,
-    enabled: false,
-    badge: 'Coming Soon',
-    accentColor: '#4f46e5',
-    category: 'Analytics & Management'
-  },
-  {
     id: 'breakfast',
     name: 'Breakfast',
-    title: 'Breakfast Management System',
+    subtitle: 'BMS',
+    title: 'Breakfast — BMS',
     description: 'Daily meal attendance, catering orders, cutoff enforcement, attendance history, and authoritative money ledger.',
     icon: UtensilsCrossed,
     enabled: true,
@@ -43,20 +33,10 @@ export const SYSTEM_MODULES = [
     category: 'Employee Services'
   },
   {
-    id: 'lims',
-    name: 'LIMS',
-    title: 'Laboratory Information Management',
-    description: 'Environmental sample tracking, biological/chemical test workflows, QA/QC audits, and digital lab certificates.',
-    icon: FlaskConical,
-    enabled: false,
-    badge: 'Coming Soon',
-    accentColor: '#0891b2',
-    category: 'Laboratory Operations'
-  },
-  {
     id: 'inventory',
     name: 'Inventory',
-    title: 'Inventory & Consumables',
+    subtitle: 'IMS',
+    title: 'Inventory — IMS',
     description: 'Lab chemical reagents, hardware consumables, safety equipment, batch expiries, and automated reorder points.',
     icon: Boxes,
     enabled: false,
@@ -65,9 +45,22 @@ export const SYSTEM_MODULES = [
     category: 'Supply Chain & Lab'
   },
   {
+    id: 'lms',
+    name: 'LMS',
+    subtitle: 'Laboratory Management System',
+    title: 'Laboratory Management System',
+    description: 'Environmental sample tracking, biological/chemical test workflows, QA/QC audits, and digital lab certificates.',
+    icon: FlaskConical,
+    enabled: false,
+    badge: 'Coming Soon',
+    accentColor: '#0891b2',
+    category: 'Laboratory Operations'
+  },
+  {
     id: 'leave',
-    name: 'Leave Management',
-    title: 'Leave & Attendance System',
+    name: 'Leave Management System',
+    subtitle: 'Leave & Attendance Tracking',
+    title: 'Leave Management System',
     description: 'Employee leave balance tracking, sick/casual leave applications, approval hierarchies, and team holiday schedules.',
     icon: CalendarCheck,
     enabled: false,
@@ -76,20 +69,10 @@ export const SYSTEM_MODULES = [
     category: 'Human Resources'
   },
   {
-    id: 'dwr',
-    name: 'DWR',
-    title: 'Daily Work Reports',
-    description: 'Daily task logging, on-site project activities, progress reporting, and manager sign-off workflows.',
-    icon: ClipboardList,
-    enabled: false,
-    badge: 'Coming Soon',
-    accentColor: '#d97706',
-    category: 'Operations & Field'
-  },
-  {
     id: 'reports',
     name: 'Reports',
-    title: 'Enterprise Reports & Audit',
+    subtitle: 'Weekly and Monthly Reports',
+    title: 'Reports — Weekly and Monthly Reports',
     description: 'Consolidated statutory reports, platform audit trail analysis, compliance reports, and multi-format data exports.',
     icon: FileSpreadsheet,
     enabled: false,
@@ -146,18 +129,18 @@ export default function CentralPortalPage() {
           name: mod.name,
           title: mod.title,
           isPermissionDenied: true,
-          message: 'Your current account or role does not have authorization to access the Breakfast Management module. Please contact your IT Administrator.'
+          message: 'Your current account or role does not have authorization to access the Breakfast (BMS) service. Please contact your IT Administrator.'
         });
       }
       return;
     }
 
-    // Inactive placeholder modules
+    // Inactive placeholder services
     setInactiveModal({
       name: mod.name,
-      title: mod.title,
+      title: mod.subtitle || mod.title,
       isPermissionDenied: false,
-      message: `The ${mod.title} (${mod.name}) module is currently under active development as part of the REVY Centralized Enterprise Platform roadmap.`
+      message: `The ${mod.name} (${mod.subtitle || mod.title}) service is currently under active development as part of the REVY Centralized Enterprise Platform roadmap.`
     });
   };
 
@@ -219,24 +202,24 @@ export default function CentralPortalPage() {
               <Sparkles size={14} color="#2563eb" />
               <span>Unified Management Workspace</span>
             </div>
-            <h1 className="portal-hero-title">Select a System Module</h1>
+            <h1 className="portal-hero-title">Select Services</h1>
             <p className="portal-hero-desc">
-              Welcome back, <strong>{user?.name}</strong>. Choose an authorized enterprise module below to launch your workspace.
+              Welcome back, <strong>{user?.name}</strong>. Choose an authorized enterprise service below to launch your workspace.
             </p>
             <div className="portal-stats-row">
               <span className="portal-stat-badge active-stat">
                 <span className="stat-dot green"></span>
-                1 Active Operational Module
+                1 Active Operational Service
               </span>
               <span className="portal-stat-badge pending-stat">
                 <span className="stat-dot amber"></span>
-                6 Modules Scheduled in Enterprise Roadmap
+                4 Services Scheduled in Enterprise Roadmap
               </span>
             </div>
           </section>
 
-          {/* Module Selection Grid */}
-          <section className="portal-modules-grid" aria-label="Available System Modules">
+          {/* Service Selection Grid */}
+          <section className="portal-modules-grid" aria-label="Available Services">
             {SYSTEM_MODULES.map((mod) => {
               const IconComponent = mod.icon;
               const isBreakfast = mod.id === 'breakfast';
@@ -295,14 +278,14 @@ export default function CentralPortalPage() {
                   <div className="portal-card-content">
                     <span className="portal-card-category">{mod.category}</span>
                     <h3 className="portal-card-title">{mod.name}</h3>
-                    <h4 className="portal-card-subtitle">{mod.title}</h4>
+                    <h4 className="portal-card-subtitle">{mod.subtitle || mod.title}</h4>
                     <p className="portal-card-desc">{mod.description}</p>
                   </div>
 
                   <div className="portal-card-bottom">
                     {isEnabled ? (
                       <div className="portal-action-cta cta-active">
-                        <span>Launch Module</span>
+                        <span>Open Service</span>
                         <ArrowRight size={16} className="cta-arrow" />
                       </div>
                     ) : isRestricted ? (
@@ -360,7 +343,7 @@ export default function CentralPortalPage() {
                 </div>
                 <div>
                   <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                    {inactiveModal.name} Module
+                    {inactiveModal.name} Service
                   </h3>
                   <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                     {inactiveModal.title}

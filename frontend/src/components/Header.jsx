@@ -2,8 +2,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { LogOut, Bell, ChevronDown, Menu, User, ArrowLeft, LayoutGrid } from 'lucide-react';
+import Breadcrumb from './Breadcrumb';
 
-const Header = ({ onToggleMobile }) => {
+const Header = ({ onToggleMobile, sidebarCollapsed, onToggleCollapse }) => {
   const { user, logout } = useAuth();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -24,12 +25,21 @@ const Header = ({ onToggleMobile }) => {
     ? user.roles[0].replace(/_/g, ' ')
     : null;
 
+  const handleToggle = () => {
+    if (window.innerWidth <= 768) {
+      if (onToggleMobile) onToggleMobile();
+    } else {
+      if (onToggleCollapse) onToggleCollapse();
+    }
+  };
+
   return (
     <header className="header">
       <div className="header-left">
         <button
           className="hamburger-btn"
-          onClick={onToggleMobile}
+          onClick={handleToggle}
+          title={sidebarCollapsed ? "Expand Sidebar (☰)" : "Collapse Sidebar"}
           aria-label="Toggle navigation menu"
         >
           <Menu size={22} />
@@ -38,11 +48,15 @@ const Header = ({ onToggleMobile }) => {
         <Link
           to="/portal"
           className="portal-back-btn"
-          title="Return to REVY Central Management Portal"
+          title="Return to REVY Central Services Portal"
         >
           <ArrowLeft size={15} />
-          <span>Module Portal</span>
+          <span>Services</span>
         </Link>
+
+        <div className="header-breadcrumb-wrap desktop-only" style={{ marginLeft: '0.5rem' }}>
+          <Breadcrumb />
+        </div>
       </div>
 
       <div className="header-right">

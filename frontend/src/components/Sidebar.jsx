@@ -18,10 +18,11 @@ import {
   ChevronRight,
   ChevronDown,
   X,
-  LayoutGrid
+  LayoutGrid,
+  Menu
 } from 'lucide-react';
 
-const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
+const Sidebar = ({ isMobileOpen, onCloseMobile, isCollapsed: propIsCollapsed, onToggleCollapse }) => {
   const { hasPermission, hasRole } = useAuth();
   const location = useLocation();
 
@@ -34,7 +35,9 @@ const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
     '/admin/breakfast-money'
   ].some(path => location.pathname.startsWith(path));
 
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsedInternal, setIsCollapsedInternal] = useState(false);
+  const isCollapsed = propIsCollapsed !== undefined ? propIsCollapsed : isCollapsedInternal;
+  const toggleCollapse = onToggleCollapse || (() => setIsCollapsedInternal(!isCollapsedInternal));
   const [breakfastExpanded, setBreakfastExpanded] = useState(isBreakfastPath || true);
 
   const handleLinkClick = () => {
@@ -46,7 +49,13 @@ const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
   const navContent = (
     <>
       {/* Brand Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', padding: '0 0.35rem' }}>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: isCollapsed && !isMobileOpen ? 'center' : 'space-between',
+        marginBottom: '1rem',
+        padding: '0 0.25rem'
+      }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
           <div style={{
             width: '36px',
@@ -70,21 +79,15 @@ const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
           )}
         </div>
 
-        {/* Collapse button on Desktop */}
-        {!isMobileOpen && (
+        {/* Collapse button on Desktop Header (when expanded) */}
+        {!isMobileOpen && !isCollapsed && (
           <button
-            onClick={() => setIsCollapsed(!isCollapsed)}
-            style={{
-              background: 'rgba(255, 255, 255, 0.08)',
-              border: 'none',
-              color: '#94a3b8',
-              borderRadius: '4px',
-              padding: '0.25rem',
-              cursor: 'pointer'
-            }}
-            title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+            onClick={toggleCollapse}
+            className="sidebar-header-toggle-btn"
+            title="Collapse Sidebar (<)"
+            aria-label="Collapse Sidebar"
           >
-            {isCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+            <ChevronLeft size={16} />
           </button>
         )}
 
@@ -92,14 +95,7 @@ const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
         {isMobileOpen && (
           <button
             onClick={onCloseMobile}
-            style={{
-              background: 'rgba(255, 255, 255, 0.08)',
-              border: 'none',
-              color: '#94a3b8',
-              borderRadius: '4px',
-              padding: '0.35rem',
-              cursor: 'pointer'
-            }}
+            className="sidebar-header-toggle-btn"
             title="Close menu"
           >
             <X size={18} />
@@ -107,9 +103,21 @@ const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
         )}
       </div>
 
+      {/* Prominent Expand Button when Collapsed at Top */}
+      {!isMobileOpen && isCollapsed && (
+        <button
+          onClick={toggleCollapse}
+          className="sidebar-expand-top-btn"
+          title="Expand Sidebar (☰)"
+          aria-label="Expand Sidebar"
+        >
+          <Menu size={20} />
+        </button>
+      )}
+
       {/* Nav List */}
       <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', flex: 1, overflowY: 'auto' }}>
-        {/* Return to Central Module Portal */}
+        {/* Return to Central Services Portal */}
         <NavLink
           to="/portal"
           onClick={handleLinkClick}
@@ -128,12 +136,12 @@ const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
             marginBottom: '0.65rem',
             transition: 'all 0.15s ease'
           }}
-          title="Return to Central Module Portal"
+          title="Return to Central Services Portal"
         >
           <LayoutGrid size={18} color="#60a5fa" style={{ flexShrink: 0 }} />
           {(!isCollapsed || isMobileOpen) && (
             <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              ← All Modules
+              ← All Services
             </span>
           )}
         </NavLink>
@@ -389,6 +397,27 @@ const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
           </NavLink>
         )}
       </nav>
+
+      {/* Sidebar Footer with Collapse / Expand Toggle Button */}
+      {!isMobileOpen && (
+        <div className="sidebar-footer">
+          <button
+            onClick={toggleCollapse}
+            className={`sidebar-footer-toggle-btn ${isCollapsed ? 'collapsed' : 'expanded'}`}
+            title={isCollapsed ? "Expand Sidebar (☰)" : "Collapse Sidebar (<)"}
+            aria-label={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+          >
+            {isCollapsed ? (
+              <Menu size={20} />
+            ) : (
+              <>
+                <ChevronLeft size={18} />
+                <span>Collapse</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
     </>
   );
 
