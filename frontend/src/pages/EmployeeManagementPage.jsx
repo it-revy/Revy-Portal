@@ -177,6 +177,14 @@ const EmployeeManagementPage = () => {
     }
   };
 
+  const handlePrimaryRoleChange = (e) => {
+    const selectedRole = e.target.value;
+    setFormData(prev => {
+      const remainingRoles = prev.roles.filter(r => r !== selectedRole);
+      return { ...prev, roles: [selectedRole, ...remainingRoles] };
+    });
+  };
+
   const handleRoleToggle = (roleCode) => {
     setFormData(prev => {
       const currentRoles = [...prev.roles];
@@ -590,9 +598,28 @@ const EmployeeManagementPage = () => {
                 </div>
               </div>
 
-              {/* Multi-Role Select Checkboxes */}
+              {/* Role Selection Dropdown & Multi-Role Select Checkboxes */}
               <div className="form-group" style={{ marginTop: '0.5rem', background: 'rgba(15, 23, 42, 0.6)', padding: '1rem', borderRadius: 'var(--radius-sm)' }}>
-                <label className="form-label" style={{ marginBottom: '0.75rem', display: 'block', color: 'var(--accent-primary)' }}>
+                <div style={{ marginBottom: '0.85rem' }}>
+                  <label htmlFor="employee-role-select" className="form-label" style={{ marginBottom: '0.4rem', display: 'block', color: 'var(--accent-primary)' }}>
+                    Role Selection Dropdown
+                  </label>
+                  <select
+                    id="employee-role-select"
+                    className="form-select"
+                    value={formData.roles[0] || 'EMPLOYEE'}
+                    onChange={handlePrimaryRoleChange}
+                  >
+                    <option value="EMPLOYEE">Employee</option>
+                    <option value="BREAKFAST_ADMIN">Breakfast Admin</option>
+                    <option value="FINANCE_MANAGER">Finance Manager</option>
+                    <option value="IT_ADMIN">IT Admin</option>
+                    <option value="CEO">CEO</option>
+                    <option value="DIRECTOR_ANALYTICS">Director Analytics</option>
+                  </select>
+                </div>
+
+                <label className="form-label" style={{ marginBottom: '0.5rem', display: 'block', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
                   Assign Roles (Multi-Select Support)
                 </label>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
