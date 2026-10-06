@@ -52,8 +52,18 @@ def export_monthly_report_excel(
         headers={"Content-Disposition": f'attachment; filename="{filename}"'}
     )
 
-@router.get("/director-analytics")
 @router.get("/ceo")
+def get_ceo_report(
+    date: Optional[str] = Query(None),
+    current_user: CurrentUser = Depends(require_role("CEO")),
+    db: Session = Depends(get_db)
+):
+    service = ReportService(db)
+    result = service.get_ceo_report(target_date=date)
+    return {"success": True, **result}
+
+
+@router.get("/director-analytics")
 def get_director_analytics_report(
     date: Optional[str] = Query(None),
     current_user: CurrentUser = Depends(require_role("DIRECTOR_ANALYTICS")),

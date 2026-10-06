@@ -12,7 +12,7 @@ const pathNameMap = {
   holidays: "Public Holidays",
   reports: "Monthly Reports",
   'director-analytics': "Director Analytics",
-  'ceo-dashboard': "Director Analytics",
+  'ceo-dashboard': "CEO Dashboard",
   'audit-logs': "Audit Trail",
   settings: "Settings"
 };

@@ -20,7 +20,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 
-const CEOViewPage = () => {
+const DirectorAnalyticsPage = () => {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -28,14 +28,14 @@ const CEOViewPage = () => {
   const [activePeriod, setActivePeriod] = useState('ALL'); // ALL, DAILY, WEEKLY, MONTHLY
 
   useEffect(() => {
-    fetchCeoData();
+    fetchDirectorData();
   }, []);
 
-  const fetchCeoData = async (targetDate) => {
+  const fetchDirectorData = async (targetDate) => {
     setLoading(true);
     setError(null);
     try {
-      const url = targetDate ? `/reports/ceo?date=${targetDate}` : '/reports/ceo';
+      const url = targetDate ? `/reports/director-analytics?date=${targetDate}` : '/reports/director-analytics';
       const res = await API.get(url);
       if (res.data.success) {
         setReport(res.data);
@@ -43,11 +43,11 @@ const CEOViewPage = () => {
           setSelectedDate(res.data.selectedDate || res.data.todayDate);
         }
       } else {
-        setError(res.data.message || 'Unable to load CEO executive management insights.');
+        setError(res.data.message || 'Unable to load Director Analytics executive management insights.');
       }
     } catch (err) {
       console.error('Failed to fetch CEO report:', err);
-      setError(err.response?.data?.message || 'Unable to load CEO management insights. Please check server connection.');
+      setError(err.response?.data?.message || 'Unable to load Director Analytics management insights. Please check server connection.');
     } finally {
       setLoading(false);
     }
@@ -55,13 +55,13 @@ const CEOViewPage = () => {
 
   const handleDateChange = (newDate) => {
     setSelectedDate(newDate);
-    fetchCeoData(newDate);
+    fetchDirectorData(newDate);
   };
 
   const handleResetToday = () => {
     const today = report?.todayDate || new Date().toISOString().split('T')[0];
     setSelectedDate(today);
-    fetchCeoData(today);
+    fetchDirectorData(today);
   };
 
   if (loading && !report) {
@@ -80,9 +80,9 @@ const CEOViewPage = () => {
       <div className="page-body" style={{ textAlign: 'center', padding: '3.5rem' }}>
         <div style={{ maxWidth: '460px', margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
           <AlertCircle size={40} color="var(--danger)" />
-          <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Unable to Load CEO Dashboard</h2>
+          <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Unable to Load Director Analytics Dashboard</h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0 }}>{error}</p>
-          <button className="btn btn-primary" onClick={() => fetchCeoData(selectedDate)}>
+          <button className="btn btn-primary" onClick={() => fetchDirectorData(selectedDate)}>
             Retry Loading Dashboard
           </button>
         </div>
@@ -121,7 +121,7 @@ const CEOViewPage = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', margin: 0, fontSize: '1.5rem' }}>
               <PieChart color="var(--accent-primary)" size={28} />
-              CEO Executive Management Dashboard
+              Director Analytics Dashboard
             </h1>
             <span
               className="badge"
@@ -134,7 +134,7 @@ const CEOViewPage = () => {
                 letterSpacing: '0.04em'
               }}
             >
-              Executive Read-Only View
+              Director Analytics View
             </span>
           </div>
           <p style={{ color: 'var(--text-secondary)', marginTop: '0.35rem', fontSize: '0.875rem' }}>
@@ -146,11 +146,11 @@ const CEOViewPage = () => {
         <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
           <div className="panel-card" style={{ padding: '0.4rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <Calendar size={16} color="var(--accent-primary)" />
-            <label htmlFor="ceo-date-selector" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, cursor: 'pointer' }}>
+            <label htmlFor="director-date-selector" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, cursor: 'pointer' }}>
               Date:
             </label>
             <input
-              id="ceo-date-selector"
+              id="director-date-selector"
               type="date"
               style={{
                 padding: '0.2rem 0.4rem',
@@ -757,4 +757,5 @@ const CEOViewPage = () => {
   );
 };
 
-export default CEOViewPage;
+export default DirectorAnalyticsPage;
+export { DirectorAnalyticsPage };

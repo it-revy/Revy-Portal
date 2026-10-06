@@ -100,11 +100,11 @@ export const SYSTEM_MODULES = [
 ];
 
 export const getBreakfastDestination = (hasPermission, hasRole = () => false) => {
-  if (hasRole('FINANCE_MANAGER') || hasRole('Finance Manager')) return '/finance/fund-requests';
+  if (hasRole('CEO') || hasRole('Chief Executive Officer')) return '/ceo-dashboard';
   if (hasRole('DIRECTOR_ANALYTICS') || hasRole('Director Analytics')) return '/director-analytics';
-  if (hasRole('CEO') || hasRole('Chief Executive Officer') || hasPermission('breakfast.orders.view')) return '/admin/orders';
+  if (hasRole('FINANCE_MANAGER') || hasRole('Finance Manager')) return '/finance/fund-requests';
+  if (hasPermission('breakfast.orders.view')) return '/admin/orders';
   if (hasPermission('breakfast.view')) return '/admin/dashboard';
-  if (hasPermission('breakfast.dashboard.view')) return '/director-analytics';
   if (hasPermission('finance.breakfast_fund.view')) return '/finance/fund-requests';
   return '/today';
 };

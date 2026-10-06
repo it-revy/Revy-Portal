@@ -15,6 +15,7 @@ import EmployeeManagementPage from './pages/EmployeeManagementPage';
 import PublicHolidaysPage from './pages/PublicHolidaysPage';
 import ReportsPage from './pages/ReportsPage';
 import CEOViewPage from './pages/CEOViewPage';
+import DirectorAnalyticsPage from './pages/DirectorAnalyticsPage';
 import AuditLogsPage from './pages/AuditLogsPage';
 import SettingsPage from './pages/SettingsPage';
 
@@ -313,7 +314,7 @@ function AppRoutes() {
         path="/director-analytics"
         element={
           <ProtectedLayout requiredRole="DIRECTOR_ANALYTICS">
-            <CEOViewPage />
+            <DirectorAnalyticsPage />
           </ProtectedLayout>
         }
       />
@@ -321,7 +322,7 @@ function AppRoutes() {
       <Route
         path="/ceo-dashboard"
         element={
-          <ProtectedLayout requiredRole="DIRECTOR_ANALYTICS">
+          <ProtectedLayout requiredRole="CEO">
             <CEOViewPage />
           </ProtectedLayout>
         }

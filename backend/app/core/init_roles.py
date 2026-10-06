@@ -69,13 +69,14 @@ def ensure_roles_and_permissions():
         dir_role.permissions = dir_perms
 
         # 3. Update CEO role permissions:
-        # - Remove breakfast.dashboard.view (Director Analytics is restricted to DIRECTOR_ANALYTICS role)
-        # - Add breakfast.orders.view (CEO can view all orders across all employees)
+        # - Ensure breakfast.orders.view is added so CEO can view all orders across all employees
         ceo_role = db.query(Role).filter(Role.code == "CEO").first()
         if ceo_role:
-            ceo_perms = [p for p in ceo_role.permissions if p.code != "breakfast.dashboard.view"]
+            ceo_perms = list(ceo_role.permissions)
             if orders_perm and not any(p.code == "breakfast.orders.view" for p in ceo_perms):
                 ceo_perms.append(orders_perm)
+            if dash_perm and not any(p.code == "breakfast.dashboard.view" for p in ceo_perms):
+                ceo_perms.append(dash_perm)
             ceo_role.permissions = ceo_perms
 
         # 4. Update FINANCE_MANAGER role permissions:

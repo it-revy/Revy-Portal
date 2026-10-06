@@ -7,6 +7,7 @@ import {
   Users,
   FileSpreadsheet,
   PieChart,
+  TrendingUp,
   ShieldAlert,
   Settings,
   Coffee,
@@ -271,6 +272,19 @@ const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
           </div>
         )}
 
+        {/* All Orders - for CEO if breakfast dropdown is not displayed */}
+        {(hasRole('CEO') || hasRole('Chief Executive Officer') || hasPermission('breakfast.orders.view')) && !hasPermission('breakfast.view') && (
+          <NavLink
+            to="/admin/orders"
+            onClick={handleLinkClick}
+            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            title="All Orders"
+          >
+            <FileSpreadsheet size={18} />
+            {(!isCollapsed || isMobileOpen) && <span>All Orders</span>}
+          </NavLink>
+        )}
+
         {/* 3. Employees */}
         {hasPermission('breakfast.employee.read') && (
           <NavLink
@@ -307,6 +321,19 @@ const Sidebar = ({ isMobileOpen, onCloseMobile }) => {
           >
             <FileSpreadsheet size={18} />
             {(!isCollapsed || isMobileOpen) && <span>Reports</span>}
+          </NavLink>
+        )}
+
+        {/* CEO Dashboard (ONLY for users with CEO role) */}
+        {(hasRole('CEO') || hasRole('Chief Executive Officer')) && (
+          <NavLink
+            to="/ceo-dashboard"
+            onClick={handleLinkClick}
+            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            title="CEO Dashboard"
+          >
+            <TrendingUp size={18} />
+            {(!isCollapsed || isMobileOpen) && <span>CEO Dashboard</span>}
           </NavLink>
         )}
 

@@ -1,31 +1,37 @@
 import pytest
 
-def test_rbac_matrix_director_analytics_access(client, director_analytics_headers, ceo_headers, finance_headers, employee_headers):
-    # 1. Director Analytics role CAN access analytics dashboard API
+def test_rbac_matrix_director_analytics_and_ceo_dashboard(client, director_analytics_headers, ceo_headers, finance_headers, employee_headers):
+    # 1. Director Analytics role CAN access /reports/director-analytics
     res_dir = client.get("/api/v1/reports/director-analytics", headers=director_analytics_headers)
     assert res_dir.status_code == 200
     assert res_dir.json()["success"] is True
     assert "executiveSummary" in res_dir.json()
 
-    # Legacy alias /ceo also works for Director Analytics
-    res_legacy = client.get("/api/v1/reports/ceo", headers=director_analytics_headers)
-    assert res_legacy.status_code == 200
+    # Director Analytics role CANNOT access /reports/ceo (CEO Dashboard is restricted to CEO)
+    res_dir_ceo = client.get("/api/v1/reports/ceo", headers=director_analytics_headers)
+    assert res_dir_ceo.status_code == 403
 
-    # 2. CEO role CANNOT access Director Analytics dashboard API (CEO != Director Analytics)
-    res_ceo = client.get("/api/v1/reports/director-analytics", headers=ceo_headers)
-    assert res_ceo.status_code == 403
-    assert "PERMISSION_DENIED" in str(res_ceo.json())
+    # 2. CEO role CAN access /reports/ceo (CEO Dashboard)
+    res_ceo = client.get("/api/v1/reports/ceo", headers=ceo_headers)
+    assert res_ceo.status_code == 200
+    assert res_ceo.json()["success"] is True
 
-    res_ceo_legacy = client.get("/api/v1/reports/ceo", headers=ceo_headers)
-    assert res_ceo_legacy.status_code == 403
+    # CEO role CANNOT access Director Analytics dashboard API (/reports/director-analytics)
+    res_ceo_dir = client.get("/api/v1/reports/director-analytics", headers=ceo_headers)
+    assert res_ceo_dir.status_code == 403
+    assert "PERMISSION_DENIED" in str(res_ceo_dir.json())
 
-    # 3. Finance Manager CANNOT access Director Analytics
-    res_fin = client.get("/api/v1/reports/director-analytics", headers=finance_headers)
-    assert res_fin.status_code == 403
+    # 3. Finance Manager CANNOT access Director Analytics or CEO Dashboard
+    res_fin_dir = client.get("/api/v1/reports/director-analytics", headers=finance_headers)
+    assert res_fin_dir.status_code == 403
+    res_fin_ceo = client.get("/api/v1/reports/ceo", headers=finance_headers)
+    assert res_fin_ceo.status_code == 403
 
-    # 4. Standard Employee CANNOT access Director Analytics
-    res_emp = client.get("/api/v1/reports/director-analytics", headers=employee_headers)
-    assert res_emp.status_code == 403
+    # 4. Standard Employee CANNOT access Director Analytics or CEO Dashboard
+    res_emp_dir = client.get("/api/v1/reports/director-analytics", headers=employee_headers)
+    assert res_emp_dir.status_code == 403
+    res_emp_ceo = client.get("/api/v1/reports/ceo", headers=employee_headers)
+    assert res_emp_ceo.status_code == 403
 
 
 def test_rbac_matrix_ceo_can_view_all_orders(client, ceo_headers, director_analytics_headers, finance_headers, employee_headers):
