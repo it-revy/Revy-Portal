@@ -210,6 +210,10 @@ function AppRoutes() {
           )
         }
       />
+      <Route
+        path="/bms"
+        element={<Navigate to="/breakfast" replace />}
+      />
 
       {/* Common Breakfast Response - Accessible by ANY authenticated user with breakfast permission */}
       <Route

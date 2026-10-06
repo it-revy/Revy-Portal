@@ -343,20 +343,20 @@ const EmployeeManagementPage = () => {
       )}
 
       {/* Employees Table */}
-      <div className="glass-panel" style={{ padding: '1.75rem' }}>
+      <div className="glass-panel table-card-panel">
         <div className="table-container">
-          <table className="custom-table">
+          <table className="custom-table" style={{ minWidth: '1080px' }}>
             <thead>
               <tr>
-                <th>Employee ID</th>
-                <th>Username</th>
-                <th>Employee Name</th>
-                <th>Department</th>
-                <th>Designation</th>
-                <th>Assigned Roles</th>
-                <th>Breakfast Type</th>
-                <th>Status</th>
-                <th style={{ textAlign: 'right' }}>Actions</th>
+                <th style={{ minWidth: '110px' }}>Employee ID</th>
+                <th style={{ minWidth: '110px' }}>Username</th>
+                <th style={{ minWidth: '160px' }}>Employee Name</th>
+                <th style={{ minWidth: '130px' }}>Department</th>
+                <th style={{ minWidth: '130px' }}>Designation</th>
+                <th style={{ minWidth: '160px' }}>Assigned Roles</th>
+                <th style={{ minWidth: '130px' }}>Breakfast Type</th>
+                <th style={{ minWidth: '90px' }}>Status</th>
+                <th className="sticky-action-col" style={{ textAlign: 'right', minWidth: '180px' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -438,30 +438,30 @@ const EmployeeManagementPage = () => {
                         {emp.status}
                       </span>
                     </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'inline-flex', gap: '0.4rem' }}>
-                        <button className="btn btn-secondary" style={{ padding: '0.35rem 0.6rem' }} onClick={() => handleViewHistory(emp.employeeId)} title="History">
+                    <td className="sticky-action-col" style={{ textAlign: 'right', minWidth: '180px' }}>
+                      <div className="table-action-btn-group">
+                        <button className="btn btn-secondary action-btn" style={{ padding: '0.4rem 0.65rem' }} onClick={() => handleViewHistory(emp.employeeId)} title="History">
                           <History size={15} />
                         </button>
                         {hasPermission('breakfast.employee.update') && (
-                          <button className="btn btn-secondary" style={{ padding: '0.35rem 0.6rem' }} onClick={() => handleOpenEditModal(emp)} title="Edit Employee / Username">
+                          <button className="btn btn-secondary action-btn" style={{ padding: '0.4rem 0.65rem' }} onClick={() => handleOpenEditModal(emp)} title="Edit Employee / Username">
                             <Edit size={15} />
                           </button>
                         )}
                         {hasPermission('user.password.reset') && (
-                          <button className="btn btn-secondary" style={{ padding: '0.35rem 0.6rem', color: '#2563eb' }} onClick={() => handleOpenPasswordModal(emp)} title="Reset User Password">
+                          <button className="btn btn-secondary action-btn" style={{ padding: '0.4rem 0.65rem', color: '#2563eb' }} onClick={() => handleOpenPasswordModal(emp)} title="Reset User Password">
                             <Key size={15} />
                           </button>
                         )}
                         {emp.status === 'active' && hasPermission('breakfast.employee.deactivate') && (
-                          <button className="btn btn-secondary" style={{ padding: '0.35rem 0.6rem', color: 'var(--warning)' }} onClick={() => handleDeactivate(emp.employeeId)} title="Soft Deactivate">
+                          <button className="btn btn-secondary action-btn" style={{ padding: '0.4rem 0.65rem', color: 'var(--warning)' }} onClick={() => handleDeactivate(emp.employeeId)} title="Soft Deactivate">
                             <UserX size={15} />
                           </button>
                         )}
                         {hasRole('IT_ADMIN') && (
                           <button
-                            className="btn btn-secondary"
-                            style={{ padding: '0.35rem 0.6rem', color: 'var(--danger)' }}
+                            className="btn btn-secondary action-btn"
+                            style={{ padding: '0.4rem 0.65rem', color: 'var(--danger)' }}
                             onClick={() => {
                               setHardDeleteEmpId(emp.employeeId);
                               setShowHardDeleteModal(true);

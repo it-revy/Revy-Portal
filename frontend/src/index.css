@@ -868,11 +868,23 @@ p {
   border: 1px solid var(--border-color);
   background: #ffffff;
   position: relative;
+  scrollbar-width: thin;
+}
+
+.table-card-panel {
+  padding: 1.5rem;
+}
+
+@media (max-width: 1024px) {
+  .table-card-panel {
+    padding: 1rem;
+  }
 }
 
 .custom-table {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   text-align: left;
   font-size: 0.875rem;
   min-width: 620px;
@@ -899,8 +911,52 @@ p {
   vertical-align: middle;
 }
 
-.custom-table tr:hover {
+.custom-table tr:hover td {
   background: #f8fafc;
+}
+
+/* Sticky Actions Column - Stays permanently visible and clickable on the right edge */
+.custom-table th.sticky-action-col {
+  position: sticky;
+  right: 0;
+  top: 0;
+  z-index: 25;
+  background: #f8fafc;
+  box-shadow: -4px 0 10px -2px rgba(15, 23, 42, 0.08);
+  border-left: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  text-align: right;
+  white-space: nowrap;
+  padding-right: 1.25rem;
+}
+
+.custom-table td.sticky-action-col {
+  position: sticky;
+  right: 0;
+  z-index: 15;
+  background: #ffffff;
+  box-shadow: -4px 0 10px -2px rgba(15, 23, 42, 0.08);
+  border-left: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  text-align: right;
+  white-space: nowrap;
+  padding-right: 1.25rem;
+}
+
+.custom-table tr:hover td.sticky-action-col {
+  background: #f8fafc;
+}
+
+.table-action-btn-group {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  flex-wrap: nowrap;
+}
+
+.table-action-btn-group .btn {
+  flex-shrink: 0;
 }
 
 /* ========================================================
@@ -1596,14 +1652,17 @@ p {
   font-weight: 800;
   color: var(--text-primary);
   line-height: 1.2;
-  margin-bottom: 0.2rem;
+  margin-bottom: 0.25rem;
+  letter-spacing: -0.015em;
 }
 
 .portal-card-subtitle {
-  font-size: 0.85rem;
+  font-size: 0.88rem;
   font-weight: 600;
-  color: var(--accent-primary);
+  color: #475569;
+  font-style: italic;
   margin-bottom: 0.65rem;
+  line-height: 1.35;
 }
 
 .portal-card-desc {

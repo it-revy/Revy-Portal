@@ -21,10 +21,22 @@ import {
 
 export const SYSTEM_MODULES = [
   {
+    id: 'mis',
+    name: 'MIS',
+    subtitle: 'Management Information System',
+    title: 'Management Information System',
+    description: 'Executive analytics, operational metrics, cross-department dashboards, and high-level KPIs.',
+    icon: BarChart3,
+    enabled: false,
+    badge: 'Coming Soon',
+    accentColor: '#4f46e5',
+    category: 'Analytics & Management'
+  },
+  {
     id: 'breakfast',
-    name: 'Breakfast',
-    subtitle: 'BMS',
-    title: 'Breakfast — BMS',
+    name: 'BMS',
+    subtitle: 'Breakfast Management System',
+    title: 'Breakfast Management System',
     description: 'Daily meal attendance, catering orders, cutoff enforcement, attendance history, and authoritative money ledger.',
     icon: UtensilsCrossed,
     enabled: true,
@@ -33,16 +45,16 @@ export const SYSTEM_MODULES = [
     category: 'Employee Services'
   },
   {
-    id: 'inventory',
-    name: 'Inventory',
-    subtitle: 'IMS',
-    title: 'Inventory — IMS',
-    description: 'Lab chemical reagents, hardware consumables, safety equipment, batch expiries, and automated reorder points.',
-    icon: Boxes,
+    id: 'dwr',
+    name: 'DWR',
+    subtitle: 'Daily Work Report',
+    title: 'Daily Work Report',
+    description: 'Daily task logging, on-site project activities, progress reporting, and manager sign-off workflows.',
+    icon: ClipboardList,
     enabled: false,
     badge: 'Coming Soon',
-    accentColor: '#7c3aed',
-    category: 'Supply Chain & Lab'
+    accentColor: '#d97706',
+    category: 'Operations & Field'
   },
   {
     id: 'lms',
@@ -57,9 +69,21 @@ export const SYSTEM_MODULES = [
     category: 'Laboratory Operations'
   },
   {
+    id: 'inventory',
+    name: 'IMS',
+    subtitle: 'Inventory Management System',
+    title: 'Inventory Management System',
+    description: 'Lab chemical reagents, hardware consumables, safety equipment, batch expiries, and automated reorder points.',
+    icon: Boxes,
+    enabled: false,
+    badge: 'Coming Soon',
+    accentColor: '#7c3aed',
+    category: 'Supply Chain & Lab'
+  },
+  {
     id: 'leave',
     name: 'Leave Management System',
-    subtitle: 'Leave & Attendance Tracking',
+    subtitle: 'Leave Records & Approvals',
     title: 'Leave Management System',
     description: 'Employee leave balance tracking, sick/casual leave applications, approval hierarchies, and team holiday schedules.',
     icon: CalendarCheck,
@@ -70,9 +94,9 @@ export const SYSTEM_MODULES = [
   },
   {
     id: 'reports',
-    name: 'Reports',
-    subtitle: 'Weekly and Monthly Reports',
-    title: 'Reports — Weekly and Monthly Reports',
+    name: 'Report',
+    subtitle: 'Statutory & Audit Reports',
+    title: 'Report',
     description: 'Consolidated statutory reports, platform audit trail analysis, compliance reports, and multi-format data exports.',
     icon: FileSpreadsheet,
     enabled: false,
@@ -213,7 +237,7 @@ export default function CentralPortalPage() {
               </span>
               <span className="portal-stat-badge pending-stat">
                 <span className="stat-dot amber"></span>
-                4 Services Scheduled in Enterprise Roadmap
+                6 Services Scheduled in Enterprise Roadmap
               </span>
             </div>
           </section>
