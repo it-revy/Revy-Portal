@@ -14,9 +14,15 @@ def get_daily_breakfast_employees(business_date: str, db: Session) -> Dict[str, 
     - Actual Response Quantity = Quantity actually provided/served (actualStatus == 'TAKEN').
     - Total Quantity = Actual Response Quantity.
     """
+    from app.modules.model import Module, UserModuleMembership
+    bms_active_user_ids = db.query(UserModuleMembership.user_id)\
+        .join(Module, UserModuleMembership.module_id == Module.id)\
+        .filter(Module.code == "BMS", UserModuleMembership.is_active == True)
+
     all_active = db.query(Employee).filter(
         Employee.status.in_(["active", "ACTIVE"]),
-        Employee.is_hard_deleted == False
+        Employee.is_hard_deleted == False,
+        Employee.user_id.in_(bms_active_user_ids)
     ).order_by(Employee.employee_id.asc()).all()
 
     active_leaves = db.query(BreakfastNonParticipationPeriod).filter(

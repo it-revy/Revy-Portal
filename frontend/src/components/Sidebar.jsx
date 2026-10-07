@@ -371,6 +371,19 @@ const Sidebar = ({ isMobileOpen, onCloseMobile, isCollapsed: propIsCollapsed, on
             {(!isCollapsed || isMobileOpen) && <span>Settings</span>}
           </NavLink>
         )}
+
+        {/* Central User Management - System Administrators */}
+        {(hasRole('IT_ADMIN') || hasPermission('*') || hasPermission('users.view') || hasPermission('users.create')) && (
+          <NavLink
+            to="/users"
+            onClick={handleLinkClick}
+            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            title="User Management"
+          >
+            <Users size={18} />
+            {(!isCollapsed || isMobileOpen) && <span>User Management</span>}
+          </NavLink>
+        )}
       </nav>
 
       {/* Sidebar Footer with Collapse / Expand Toggle Button */}

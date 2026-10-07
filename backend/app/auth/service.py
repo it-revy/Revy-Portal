@@ -22,7 +22,7 @@ class AuthService:
             User.is_hard_deleted == False
         ).first()
 
-        if not user or not user.employee:
+        if not user:
             raise AuthenticationError("Invalid username or password")
 
         if user.status != "active":
@@ -43,26 +43,46 @@ class AuthService:
 
         permissions_list = list(permissions_set)
 
+        modules_list = [
+            {
+                "moduleCode": m.module.code,
+                "moduleName": m.module.name,
+                "isOpenToAll": m.module.is_open_to_all,
+                "roleCode": m.role.code if m.role else None,
+                "roleName": m.role.name if m.role else None
+            }
+            for m in user.module_memberships if m.is_active and m.module
+        ]
+
+        emp = user.employee
+        display_name = user.name or (emp.name if emp else user.username)
+        emp_id = emp.employee_id if emp else ""
+
         payload = {
-            "employeeId": user.employee.employee_id,
+            "userId": user.id,
+            "employeeId": emp_id,
             "username": user.username,
-            "name": user.employee.name,
+            "name": display_name,
             "roles": roles_list
         }
 
         token = create_access_token(payload)
 
         user_profile = {
-            "employeeId": user.employee.employee_id,
+            "id": user.id,
+            "employeeId": emp_id,
             "username": user.username,
-            "name": user.employee.name,
+            "name": display_name,
             "email": user.email,
-            "phone": user.employee.phone or "",
-            "department": user.employee.department,
-            "designation": user.employee.designation,
+            "phone": user.phone or (emp.phone if emp else ""),
+            "department": emp.department if emp else "",
+            "designation": emp.designation if emp else "",
             "status": user.status,
+            "managerId": user.manager_id,
+            "managerName": user.manager.name if user.manager else None,
             "roles": roles_list,
-            "breakfastParticipationType": user.employee.breakfast_participation_type,
+            "modules": modules_list,
+            "breakfastParticipationType": emp.breakfast_participation_type if emp else "NORMAL",
             "forcePasswordChange": bool(user.force_password_change),
             "permissions": permissions_list,
             "permissionsByRole": permissions_by_role
@@ -73,12 +93,12 @@ class AuthService:
             action="USER_LOGIN",
             request=request,
             target_info={
-                "targetEmployeeId": user.employee.employee_id,
+                "targetEmployeeId": emp_id or user.username,
                 "targetUsername": user.username,
                 "details": "User logged in successfully"
             },
-            performed_by_employee_id=user.employee.employee_id,
-            performed_by_name=user.employee.name,
+            performed_by_employee_id=emp_id or user.username,
+            performed_by_name=display_name,
             role_used=roles_list[0] if roles_list else "EMPLOYEE"
         )
 

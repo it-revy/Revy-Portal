@@ -23,19 +23,33 @@ def get_me(current_user: CurrentUser = Depends(get_current_user)):
     user = current_user.user
     emp = user.employee
 
+    modules_list = [
+        {
+            "moduleCode": m.module.code,
+            "moduleName": m.module.name,
+            "isOpenToAll": m.module.is_open_to_all,
+            "roleCode": m.role.code if m.role else None,
+            "roleName": m.role.name if m.role else None
+        }
+        for m in user.module_memberships if m.is_active and m.module
+    ]
+
     return {
         "success": True,
         "user": {
             "id": user.id,
             "employeeId": emp.employee_id if emp else "",
             "username": user.username,
-            "name": emp.name if emp else user.username,
+            "name": user.name or (emp.name if emp else user.username),
             "email": user.email,
-            "phone": emp.phone if emp else "",
+            "phone": user.phone or (emp.phone if emp else ""),
             "department": emp.department if emp else "",
             "designation": emp.designation if emp else "",
             "status": user.status,
+            "managerId": user.manager_id,
+            "managerName": user.manager.name if user.manager else None,
             "roles": current_user.roles,
+            "modules": modules_list,
             "breakfastParticipationType": emp.breakfast_participation_type if emp else "NORMAL",
             "forcePasswordChange": bool(user.force_password_change),
             "permissions": current_user.all_permissions,

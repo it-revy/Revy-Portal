@@ -2,6 +2,7 @@
 from app.core.database import Base
 from app.roles.model import Role, Permission, role_permissions
 from app.users.model import User, user_roles
+from app.modules.model import Module, ModuleRole, UserModuleMembership
 from app.employees.model import Department, Employee
 from app.audit.model import AuditLog
 from app.notifications.model import Notification
@@ -28,6 +29,9 @@ __all__ = [
     "role_permissions",
     "User",
     "user_roles",
+    "Module",
+    "ModuleRole",
+    "UserModuleMembership",
     "Department",
     "Employee",
     "AuditLog",
@@ -46,4 +50,3 @@ __all__ = [
     "BreakfastFundRequest",
     "BreakfastTemporaryRequest"
 ]
-

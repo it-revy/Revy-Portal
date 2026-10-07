@@ -33,9 +33,18 @@ class EmployeeRepository:
         participation_type: Optional[str] = None
     ) -> List[Employee]:
         from sqlalchemy.orm import joinedload
+        from app.modules.model import Module, UserModuleMembership
+
+        bms_user_ids = self.db.query(UserModuleMembership.user_id)\
+            .join(Module, UserModuleMembership.module_id == Module.id)\
+            .filter(Module.code == "BMS", UserModuleMembership.is_active == True)
+
         query = self.db.query(Employee).options(
             joinedload(Employee.user).joinedload(User.roles)
-        ).filter(Employee.is_hard_deleted == False)
+        ).filter(
+            Employee.is_hard_deleted == False,
+            Employee.user_id.in_(bms_user_ids)
+        )
 
         if search and search.strip():
             s = f"%{search.strip()}%"

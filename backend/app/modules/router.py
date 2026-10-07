@@ -1,0 +1,50 @@
+from typing import List
+from fastapi import APIRouter, Depends, Request
+from sqlalchemy.orm import Session
+from app.core.database import get_db
+from app.core.dependencies import require_permission, require_any_permission, CurrentUser
+from app.modules.schema import ModuleResponse, ModuleRoleResponse, UserModuleMembershipItem, UpdateUserModulesRequest
+from app.modules.service import ModuleService
+
+router = APIRouter(tags=["Modules"])
+
+@router.get("/modules", response_model=List[ModuleResponse])
+def get_all_modules(
+    current_user: CurrentUser = Depends(require_any_permission(["*", "modules.view", "users.view", "users.edit", "breakfast.employee.read", "breakfast.view"])),
+    db: Session = Depends(get_db)
+):
+    service = ModuleService(db)
+    return service.list_modules(only_active=True)
+
+@router.get("/modules/{module_id}/roles", response_model=List[ModuleRoleResponse])
+def get_module_roles(
+    module_id: str,
+    current_user: CurrentUser = Depends(require_any_permission(["*", "modules.view", "users.view", "users.edit", "breakfast.employee.read"])),
+    db: Session = Depends(get_db)
+):
+    service = ModuleService(db)
+    return service.get_module_roles(module_id)
+
+@router.get("/users/{user_id}/modules", response_model=List[UserModuleMembershipItem])
+def get_user_modules(
+    user_id: str,
+    current_user: CurrentUser = Depends(require_any_permission(["*", "users.view", "users.edit", "modules.manage"])),
+    db: Session = Depends(get_db)
+):
+    service = ModuleService(db)
+    return service.get_user_module_memberships(user_id)
+
+@router.put("/users/{user_id}/modules", response_model=List[UserModuleMembershipItem])
+def update_user_modules(
+    user_id: str,
+    payload: UpdateUserModulesRequest,
+    request: Request,
+    current_user: CurrentUser = Depends(require_any_permission(["*", "users.edit", "modules.manage"])),
+    db: Session = Depends(get_db)
+):
+    service = ModuleService(db)
+    return service.update_user_module_memberships(
+        user_id=user_id,
+        assignments=[item.model_dump() for item in payload.modules],
+        request=request
+    )

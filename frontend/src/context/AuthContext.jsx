@@ -137,6 +137,29 @@ export const AuthProvider = ({ children }) => {
     return user.roles.some(r => String(r).toLowerCase().replace(/[\s_-]+/g, '') === normTarget);
   };
 
+  const hasModuleAccess = (moduleCode) => {
+    if (!user) return false;
+    const target = String(moduleCode).toUpperCase();
+    // Universal access modules: MIS, DWR, REPORTS
+    if (['MIS', 'DWR', 'REPORTS'].includes(target)) return true;
+
+    // Superadmin override
+    if (hasRole('IT_ADMIN') || hasPermission('*')) return true;
+
+    // Check user module memberships
+    if (Array.isArray(user.modules)) {
+      return user.modules.some(m => (m.moduleCode || '').toUpperCase() === target);
+    }
+    return false;
+  };
+
+  const getModuleRole = (moduleCode) => {
+    if (!user || !Array.isArray(user.modules)) return null;
+    const target = String(moduleCode).toUpperCase();
+    const entry = user.modules.find(m => (m.moduleCode || '').toUpperCase() === target);
+    return entry ? (entry.roleCode || entry.roleName || null) : null;
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -149,7 +172,9 @@ export const AuthProvider = ({ children }) => {
         changePassword,
         switchRole,
         hasPermission,
-        hasRole
+        hasRole,
+        hasModuleAccess,
+        getModuleRole
       }}
     >
       {children}

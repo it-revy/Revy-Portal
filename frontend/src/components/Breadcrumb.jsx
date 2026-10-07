@@ -14,6 +14,7 @@ const pathNameMap = {
   'director-analytics': "Director Analytics",
   'ceo-dashboard': "Directors Dashboard",
   'audit-logs': "Audit Trail",
+  users: "User Management",
   settings: "Settings"
 };
 

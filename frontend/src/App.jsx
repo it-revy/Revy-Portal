@@ -23,11 +23,12 @@ import DailyEntryPage from './pages/DailyEntryPage';
 import AdditionalOrdersPage from './pages/AdditionalOrdersPage';
 import BreakfastMoneyPage from './pages/BreakfastMoneyPage';
 import FinanceManagerPage from './pages/FinanceManagerPage';
+import UserManagementPage from './pages/UserManagementPage';
 
 import ForcePasswordChangeModal from './components/ForcePasswordChangeModal';
 
-const ProtectedLayout = ({ children, requiredPermission, requiredRole }) => {
-  const { user, loading, hasPermission, hasRole } = useAuth();
+const ProtectedLayout = ({ children, requiredPermission, requiredRole, requiredModule }) => {
+  const { user, loading, hasPermission, hasRole, hasModuleAccess } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
@@ -56,6 +57,11 @@ const ProtectedLayout = ({ children, requiredPermission, requiredRole }) => {
   }
 
   const checkPermission = () => {
+    if (requiredModule && !hasModuleAccess(requiredModule)) {
+      return false;
+    }
+    if (hasRole('IT_ADMIN') || hasPermission('*')) return true;
+
     // If a required role is explicitly specified (e.g. DIRECTOR_ANALYTICS), enforce it strictly
     if (requiredRole) {
       if (Array.isArray(requiredRole)) {
@@ -72,19 +78,7 @@ const ProtectedLayout = ({ children, requiredPermission, requiredRole }) => {
       if (Array.isArray(requiredPermission) && requiredPermission.some(p => p === 'breakfast.orders.view' || p === 'breakfast.view')) return true;
     }
     if (!requiredPermission) {
-      // Require at least basic breakfast access for breakfast routes
-      const baseBreakfastPerms = [
-        '*',
-        'breakfast.view',
-        'breakfast.view_own',
-        'breakfast.submit',
-        'breakfast.manage',
-        'breakfast.report',
-        'breakfast.orders.view',
-        'breakfast.dashboard.view',
-        'finance.breakfast_fund.view'
-      ];
-      return baseBreakfastPerms.some(p => hasPermission(p)) || hasRole('FINANCE_MANAGER') || hasRole('Finance Manager') || hasRole('DIRECTOR_ANALYTICS') || hasRole('Director Analytics');
+      return hasModuleAccess('BMS');
     }
     if (Array.isArray(requiredPermission)) {
       return requiredPermission.some(p => hasPermission(p));
@@ -146,7 +140,7 @@ const ProtectedLayout = ({ children, requiredPermission, requiredRole }) => {
 };
 
 function AppRoutes() {
-  const { user, hasPermission, hasRole, loading } = useAuth();
+  const { user, hasPermission, hasRole, hasModuleAccess, loading } = useAuth();
 
   if (loading) {
     return (
@@ -158,21 +152,7 @@ function AppRoutes() {
 
   const canAccessBreakfast = () => {
     if (!user) return false;
-    if (hasRole('DIRECTOR_ANALYTICS') || hasRole('Director Analytics')) return true;
-    if (hasRole('FINANCE_MANAGER') || hasRole('Finance Manager')) return true;
-    if (hasRole('CEO') || hasRole('Chief Executive Officer')) return true;
-    const perms = [
-      '*',
-      'breakfast.view',
-      'breakfast.view_own',
-      'breakfast.submit',
-      'breakfast.manage',
-      'breakfast.report',
-      'breakfast.orders.view',
-      'breakfast.dashboard.view',
-      'finance.breakfast_fund.view'
-    ];
-    return perms.some(p => hasPermission(p));
+    return hasModuleAccess('BMS');
   };
 
   return (
@@ -381,6 +361,16 @@ function AppRoutes() {
         element={
           <ProtectedLayout requiredPermission="breakfast.settings.manage">
             <SettingsPage />
+          </ProtectedLayout>
+        }
+      />
+
+      {/* Central User Management Route */}
+      <Route
+        path="/users"
+        element={
+          <ProtectedLayout requiredPermission={['*', 'users.view', 'users.create', 'users.edit']}>
+            <UserManagementPage />
           </ProtectedLayout>
         }
       />

@@ -22,18 +22,22 @@ from app.breakfast.order_router import router as order_router
 from app.reports.router import router as reports_router
 from app.audit.router import router as audit_router
 from app.notifications.router import router as notifications_router
+from app.users.router import router as users_router
+from app.modules.router import router as modules_router
 
 from app.core.init_roles import ensure_roles_and_permissions
+from app.core.init_modules import ensure_modules_and_memberships
 
 logger = setup_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("Initializing REVY Breakfast Management application...")
+    logger.info("Initializing REVY Enterprise application...")
     init_db()
     ensure_roles_and_permissions()
+    ensure_modules_and_memberships()
     yield
-    logger.info("Shutting down REVY Breakfast Management application...")
+    logger.info("Shutting down REVY Enterprise application...")
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -133,6 +137,8 @@ for prefix in ["/api/v1", "/api"]:
     app.include_router(order_router, prefix=prefix)
     app.include_router(notifications_router, prefix=prefix)
     app.include_router(finance_router, prefix=prefix)
+    app.include_router(users_router, prefix=prefix)
+    app.include_router(modules_router, prefix=prefix)
 
 if __name__ == "__main__":
     import os

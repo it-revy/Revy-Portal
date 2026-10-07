@@ -356,7 +356,7 @@ const EmployeeManagementPage = () => {
                 <th style={{ minWidth: '160px' }}>Assigned Roles</th>
                 <th style={{ minWidth: '130px' }}>Breakfast Type</th>
                 <th style={{ minWidth: '90px' }}>Status</th>
-                <th className="sticky-action-col" style={{ textAlign: 'right', minWidth: '225px' }}>Actions</th>
+                <th className="actions-column" style={{ textAlign: 'right', minWidth: '220px' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -438,7 +438,7 @@ const EmployeeManagementPage = () => {
                         {emp.status}
                       </span>
                     </td>
-                    <td className="sticky-action-col" style={{ textAlign: 'right', minWidth: '225px' }}>
+                    <td className="actions-column" style={{ textAlign: 'right', minWidth: '220px' }}>
                       <div className="table-action-btn-group">
                         <button
                           type="button"

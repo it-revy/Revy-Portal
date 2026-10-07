@@ -4,14 +4,14 @@ from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.core.dependencies import require_permission, require_any_permission, CurrentUser
+from app.core.dependencies import require_permission, require_any_permission, require_module_access, CurrentUser
 from app.core.exceptions import ValidationError, NotFoundError
 from app.breakfast.model import BreakfastOrder, BreakfastOrderItem, BreakfastDailyEntry, BreakfastAdditionalOrder
 from app.employees.model import Employee
 from app.breakfast.date_utils import get_kolkata_date_string
 from app.audit.service import AuditService
 
-router = APIRouter(prefix="/orders", tags=["Breakfast Orders"])
+router = APIRouter(prefix="/orders", tags=["Breakfast Orders"], dependencies=[Depends(require_module_access("BMS"))])
 
 class OrderItemInput(BaseModel):
     orderType: Optional[str] = "INDIVIDUAL"

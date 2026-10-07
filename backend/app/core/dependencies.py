@@ -24,7 +24,9 @@ class CurrentUser:
         self.email = user.email
         self.employee = user.employee
         self.employee_id = user.employee.employee_id if user.employee else None
-        self.name = user.employee.name if user.employee else user.username
+        self.name = user.name or (user.employee.name if user.employee else user.username)
+        self.phone = user.phone or (user.employee.phone if user.employee else "")
+        self.manager_id = user.manager_id
         self.department = user.employee.department if user.employee else ""
         self.designation = user.employee.designation if user.employee else ""
         self.breakfast_participation_type = user.employee.breakfast_participation_type if user.employee else "NORMAL"
@@ -35,6 +37,11 @@ class CurrentUser:
         self.permissions = permissions  # permissions for active role
         self.all_permissions = all_permissions  # union of all roles permissions
         self.permissions_by_role = permissions_by_role
+        self.modules = [m.module.code for m in user.module_memberships if m.is_active and m.module]
+        self.module_roles = {
+            m.module.code: (m.role.code if m.role else None)
+            for m in user.module_memberships if m.is_active and m.module
+        }
 
 
 def get_current_user(
@@ -149,3 +156,29 @@ def require_role(required_role: str):
             raise PermissionDeniedError(f"Access denied. Role '{required_role}' is required.")
         return current_user
     return dependency
+
+
+def require_module_access(module_code: str):
+    """
+    Enforces that the current authenticated user has active membership
+    in the requested business module. Universal modules (MIS, DWR, REPORTS)
+    are accessible to any authenticated user.
+    """
+    def dependency(current_user: CurrentUser = Depends(get_current_user)):
+        target = module_code.upper()
+        if target in ["MIS", "DWR", "REPORTS"]:
+            return current_user
+
+        # Superadmin / full access override
+        if "*" in (current_user.all_permissions or []):
+            return current_user
+
+        user_roles_normalized = [r.upper().replace(" ", "_") for r in (current_user.roles or [])]
+        if "IT_ADMIN" in user_roles_normalized:
+            return current_user
+
+        if target not in current_user.modules:
+            raise PermissionDeniedError(f"Access denied. You do not have membership in module '{module_code}'.")
+        return current_user
+    return dependency
+
