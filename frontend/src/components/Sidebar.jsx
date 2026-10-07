@@ -15,7 +15,6 @@ import {
   Wallet,
   CalendarRange,
   ChevronLeft,
-  ChevronRight,
   ChevronDown,
   X,
   LayoutGrid,
@@ -79,18 +78,6 @@ const Sidebar = ({ isMobileOpen, onCloseMobile, isCollapsed: propIsCollapsed, on
           )}
         </div>
 
-        {/* Collapse button on Desktop Header (when expanded) */}
-        {!isMobileOpen && !isCollapsed && (
-          <button
-            onClick={toggleCollapse}
-            className="sidebar-header-toggle-btn"
-            title="Collapse Sidebar (<)"
-            aria-label="Collapse Sidebar"
-          >
-            <ChevronLeft size={16} />
-          </button>
-        )}
-
         {/* Close button on Mobile */}
         {isMobileOpen && (
           <button
@@ -102,18 +89,6 @@ const Sidebar = ({ isMobileOpen, onCloseMobile, isCollapsed: propIsCollapsed, on
           </button>
         )}
       </div>
-
-      {/* Prominent Expand Button when Collapsed at Top */}
-      {!isMobileOpen && isCollapsed && (
-        <button
-          onClick={toggleCollapse}
-          className="sidebar-expand-top-btn"
-          title="Expand Sidebar (☰)"
-          aria-label="Expand Sidebar"
-        >
-          <Menu size={20} />
-        </button>
-      )}
 
       {/* Nav List */}
       <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', flex: 1, overflowY: 'auto' }}>

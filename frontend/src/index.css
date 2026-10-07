@@ -928,6 +928,7 @@ p {
   text-align: right;
   white-space: nowrap;
   padding-right: 1.25rem;
+  min-width: 225px;
 }
 
 .custom-table td.sticky-action-col {
@@ -941,22 +942,116 @@ p {
   text-align: right;
   white-space: nowrap;
   padding-right: 1.25rem;
+  min-width: 225px;
 }
 
 .custom-table tr:hover td.sticky-action-col {
   background: #f8fafc;
 }
 
+/* ========================================================
+   TABLE ACTION BUTTONS & ACTIONS COLUMN
+   ======================================================== */
 .table-action-btn-group {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.4rem;
+  gap: 6px;
   flex-wrap: nowrap;
+  vertical-align: middle;
 }
 
-.table-action-btn-group .btn {
+.table-action-btn-group .action-btn {
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  max-height: 34px;
+  min-width: 34px;
+  max-width: 34px;
+  padding: 0;
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: #ffffff;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 150ms ease;
   flex-shrink: 0;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.table-action-btn-group .action-btn svg {
+  flex-shrink: 0;
+  transition: transform 150ms ease;
+}
+
+.table-action-btn-group .action-btn:hover {
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+}
+
+.table-action-btn-group .action-btn:active {
+  transform: scale(0.96);
+}
+
+.table-action-btn-group .action-btn:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
+}
+
+/* Secondary Action: History */
+.table-action-btn-group .action-btn-history {
+  color: var(--text-secondary);
+}
+.table-action-btn-group .action-btn-history:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: var(--text-primary);
+}
+
+/* Primary / Common Action: Edit */
+.table-action-btn-group .action-btn-edit {
+  color: var(--text-secondary);
+}
+.table-action-btn-group .action-btn-edit:hover {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: var(--accent-primary);
+}
+
+/* Credentials / Security Action: Password */
+.table-action-btn-group .action-btn-password {
+  color: #2563eb;
+  border-color: rgba(37, 99, 235, 0.22);
+}
+.table-action-btn-group .action-btn-password:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+/* Warning / State Action: Deactivate */
+.table-action-btn-group .action-btn-warning {
+  color: #d97706;
+  border-color: rgba(245, 158, 11, 0.25);
+}
+.table-action-btn-group .action-btn-warning:hover {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #b45309;
+}
+
+/* Destructive / Dangerous Action: Delete */
+.table-action-btn-group .action-btn-danger {
+  color: #ef4444;
+  border-color: rgba(239, 68, 68, 0.25);
+}
+.table-action-btn-group .action-btn-danger:hover {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #dc2626;
 }
 
 /* ========================================================
