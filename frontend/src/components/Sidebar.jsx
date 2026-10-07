@@ -313,10 +313,10 @@ const Sidebar = ({ isMobileOpen, onCloseMobile, isCollapsed: propIsCollapsed, on
             to="/ceo-dashboard"
             onClick={handleLinkClick}
             className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
-            title="CEO Dashboard"
+            title="Directors Dashboard"
           >
             <TrendingUp size={18} />
-            {(!isCollapsed || isMobileOpen) && <span>CEO Dashboard</span>}
+            {(!isCollapsed || isMobileOpen) && <span>Directors Dashboard</span>}
           </NavLink>
         )}
 

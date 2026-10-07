@@ -43,11 +43,11 @@ const CEOViewPage = () => {
           setSelectedDate(res.data.selectedDate || res.data.todayDate);
         }
       } else {
-        setError(res.data.message || 'Unable to load CEO executive management insights.');
+        setError(res.data.message || 'Unable to load Directors executive management insights.');
       }
     } catch (err) {
       console.error('Failed to fetch CEO report:', err);
-      setError(err.response?.data?.message || 'Unable to load CEO management insights. Please check server connection.');
+      setError(err.response?.data?.message || 'Unable to load Directors management insights. Please check server connection.');
     } finally {
       setLoading(false);
     }
@@ -80,7 +80,7 @@ const CEOViewPage = () => {
       <div className="page-body" style={{ textAlign: 'center', padding: '3.5rem' }}>
         <div style={{ maxWidth: '460px', margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1rem' }}>
           <AlertCircle size={40} color="var(--danger)" />
-          <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Unable to Load CEO Dashboard</h2>
+          <h2 style={{ margin: 0, fontSize: '1.25rem' }}>Unable to Load Directors Dashboard</h2>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: 0 }}>{error}</p>
           <button className="btn btn-primary" onClick={() => fetchCeoData(selectedDate)}>
             Retry Loading Dashboard
@@ -121,7 +121,7 @@ const CEOViewPage = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', margin: 0, fontSize: '1.5rem' }}>
               <PieChart color="var(--accent-primary)" size={28} />
-              CEO Executive Management Dashboard
+              Directors Executive Management Dashboard
             </h1>
             <span
               className="badge"
