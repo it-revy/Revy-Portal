@@ -102,6 +102,13 @@ const ReportsPage = () => {
   const orderSummary = reportData?.orderSummary || [];
   const moneyTransactions = reportData?.moneyTransactions || [];
 
+  const totalDeposit = moneyTransactions
+    .filter(t => ['MONEY_RECEIVED', 'DEPOSIT', 'CREDIT', 'REVERSAL'].includes((t.type || '').toUpperCase()))
+    .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+  const totalDebited = moneyTransactions
+    .filter(t => !['MONEY_RECEIVED', 'DEPOSIT', 'CREDIT', 'REVERSAL'].includes((t.type || '').toUpperCase()))
+    .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
   return (
     <div className="page-body">
       {/* Header Bar */}
@@ -560,10 +567,20 @@ const ReportsPage = () => {
           {/* TAB 4: MONEY TRANSACTIONS */}
           {activeTab === 'money_transactions' && (
             <div className="glass-panel" style={{ padding: '1.5rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.75rem' }}>
                 <h3 style={{ fontSize: '1.1rem', margin: 0, fontWeight: 700 }}>
                   BREAKFAST MONEY TRANSACTIONS ({moneyTransactions.length} Transactions)
                 </h3>
+                {moneyTransactions.length > 0 && (
+                  <div style={{ display: 'flex', gap: '1.5rem', fontSize: '0.9rem', alignItems: 'center' }}>
+                    <span>
+                      Total Deposit: <strong style={{ color: '#16a34a', fontWeight: 700 }}>₹{totalDeposit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                    </span>
+                    <span>
+                      Total Debited: <strong style={{ color: '#dc2626', fontWeight: 700 }}>₹{totalDebited.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</strong>
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div className="table-container">
@@ -574,7 +591,8 @@ const ReportsPage = () => {
                       <th>Date</th>
                       <th>Time</th>
                       <th>Type</th>
-                      <th style={{ textAlign: 'right' }}>Amount</th>
+                      <th style={{ textAlign: 'right' }}>Deposit</th>
+                      <th style={{ textAlign: 'right' }}>Debited</th>
                       <th style={{ textAlign: 'right' }}>Balance After</th>
                       <th>Reference Type</th>
                       <th>Description</th>
@@ -584,38 +602,58 @@ const ReportsPage = () => {
                   <tbody>
                     {moneyTransactions.length === 0 ? (
                       <tr>
-                        <td colSpan="9" style={{ textAlign: 'center', padding: '2.5rem' }}>
+                        <td colSpan="10" style={{ textAlign: 'center', padding: '2.5rem' }}>
                           No transaction ledger history found for the selected period.
                         </td>
                       </tr>
                     ) : (
-                      moneyTransactions.map(t => (
-                        <tr key={t.transactionId}>
-                          <td><strong style={{ color: 'var(--text-primary)', fontFamily: 'monospace' }}>{t.transactionId}</strong></td>
-                          <td>{t.transactionDate}</td>
-                          <td>{t.transactionTime}</td>
-                          <td>
-                            <span className={`badge ${
-                              t.type === 'MONEY_RECEIVED' ? 'badge-success' :
-                              t.type === 'BREAKFAST_EXPENSE' ? 'badge-danger' :
-                              'badge-warning'
-                            }`}>
-                              {t.type}
-                            </span>
-                          </td>
-                          <td style={{ textAlign: 'right', fontWeight: 600, color: t.type === 'MONEY_RECEIVED' ? '#16a34a' : '#dc2626' }}>
-                            ₹{t.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </td>
-                          <td style={{ textAlign: 'right', fontWeight: 700 }}>
-                            ₹{t.balanceAfterTransaction.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                          </td>
-                          <td>{t.referenceType}</td>
-                          <td style={{ fontSize: '0.82rem', maxWidth: '240px' }}>{t.description}</td>
-                          <td>{t.createdBy}</td>
-                        </tr>
-                      ))
+                      moneyTransactions.map(t => {
+                        const isDeposit = ['MONEY_RECEIVED', 'DEPOSIT', 'CREDIT', 'REVERSAL'].includes((t.type || '').toUpperCase());
+                        return (
+                          <tr key={t.transactionId}>
+                            <td><strong style={{ color: 'var(--text-primary)', fontFamily: 'monospace' }}>{t.transactionId}</strong></td>
+                            <td>{t.transactionDate}</td>
+                            <td>{t.transactionTime}</td>
+                            <td>
+                              <span className={`badge ${
+                                isDeposit ? 'badge-success' :
+                                t.type === 'BREAKFAST_EXPENSE' ? 'badge-danger' :
+                                'badge-warning'
+                              }`}>
+                                {t.type}
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'right', fontWeight: 600, color: '#16a34a' }}>
+                              {isDeposit ? `₹${Number(t.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
+                            </td>
+                            <td style={{ textAlign: 'right', fontWeight: 600, color: '#dc2626' }}>
+                              {!isDeposit ? `₹${Number(t.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
+                            </td>
+                            <td style={{ textAlign: 'right', fontWeight: 700 }}>
+                              ₹{Number(t.balanceAfterTransaction || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td>{t.referenceType}</td>
+                            <td style={{ fontSize: '0.82rem', maxWidth: '240px' }}>{t.description}</td>
+                            <td>{t.createdBy}</td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
+                  {moneyTransactions.length > 0 && (
+                    <tfoot>
+                      <tr style={{ background: 'var(--bg-hover)', fontWeight: 700, borderTop: '2px solid var(--border-color)' }}>
+                        <td colSpan="4" style={{ textAlign: 'left', padding: '0.85rem' }}>TOTAL</td>
+                        <td style={{ textAlign: 'right', color: '#16a34a' }}>
+                          ₹{totalDeposit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td style={{ textAlign: 'right', color: '#dc2626' }}>
+                          ₹{totalDebited.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td colSpan="4"></td>
+                      </tr>
+                    </tfoot>
+                  )}
                 </table>
               </div>
             </div>

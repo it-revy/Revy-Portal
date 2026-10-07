@@ -174,11 +174,11 @@ def generate_report_excel(data: dict) -> io.BytesIO:
     ws4 = wb.create_sheet(title="Money Transactions")
     ws4.freeze_panes = "A5"
 
-    ws4.merge_cells("A1:H1")
+    ws4.merge_cells("A1:I1")
     ws4["A1"] = "FINANCIAL LEDGER TRANSACTIONS"
     ws4["A1"].font = title_font
 
-    headers4 = ["Date", "Time", "Transaction ID", "Type", "Amount", "Balance After", "Source", "Description"]
+    headers4 = ["Date", "Time", "Transaction ID", "Type", "Deposit", "Debited", "Balance After", "Source", "Description"]
     ws4.append([])
     ws4.append([])
     ws4.append(headers4)
@@ -188,22 +188,60 @@ def generate_report_excel(data: dict) -> io.BytesIO:
         cell.font = header_font
         cell.alignment = Alignment(vertical="center", horizontal="center")
 
-    for txn in data.get("moneyTransactions", []):
+    txns = data.get("moneyTransactions", [])
+    for txn in txns:
+        txn_type = (txn.get("type") or "").upper()
+        amt = float(txn.get("amount", 0) or 0)
+        is_deposit = txn_type in ["MONEY_RECEIVED", "DEPOSIT", "CREDIT", "REVERSAL"]
+
         ws4.append([
             txn.get("transactionDate") or txn.get("transaction_date"),
             txn.get("transactionTime") or txn.get("transaction_time"),
             txn.get("transactionId") or txn.get("transaction_id"),
             txn.get("type"),
-            txn.get("amount", 0),
+            amt if is_deposit else "-",
+            amt if not is_deposit else "-",
             txn.get("balanceAfterTransaction") or txn.get("balance_after_transaction", 0),
             txn.get("source"),
             txn.get("description")
         ])
         curr_row = ws4[ws4.max_row]
-        curr_row[4].number_format = '"₹"#,##0.00'
-        curr_row[5].number_format = '"₹"#,##0.00'
+        if is_deposit:
+            curr_row[4].number_format = '"₹"#,##0.00'
+            curr_row[4].alignment = Alignment(vertical="center", horizontal="right")
+            curr_row[5].alignment = Alignment(vertical="center", horizontal="center")
+        else:
+            curr_row[4].alignment = Alignment(vertical="center", horizontal="center")
+            curr_row[5].number_format = '"₹"#,##0.00'
+            curr_row[5].alignment = Alignment(vertical="center", horizontal="right")
+        curr_row[6].number_format = '"₹"#,##0.00'
         for cell in curr_row:
             cell.border = thin_border
+
+    if txns:
+        tot_deposit = sum(float(t.get("amount", 0) or 0) for t in txns if (t.get("type") or "").upper() in ["MONEY_RECEIVED", "DEPOSIT", "CREDIT", "REVERSAL"])
+        tot_debited = sum(float(t.get("amount", 0) or 0) for t in txns if (t.get("type") or "").upper() not in ["MONEY_RECEIVED", "DEPOSIT", "CREDIT", "REVERSAL"])
+        ws4.append([
+            "TOTAL",
+            "",
+            "",
+            "",
+            tot_deposit,
+            tot_debited,
+            "",
+            "",
+            ""
+        ])
+        tot_row = ws4[ws4.max_row]
+        for c in tot_row:
+            c.fill = totals_fill
+            c.font = totals_font
+            c.border = double_bottom_border
+        tot_row[0].alignment = Alignment(vertical="center", horizontal="left")
+        tot_row[4].number_format = '"₹"#,##0.00'
+        tot_row[4].alignment = Alignment(vertical="center", horizontal="right")
+        tot_row[5].number_format = '"₹"#,##0.00'
+        tot_row[5].alignment = Alignment(vertical="center", horizontal="right")
 
     _autofit(ws4)
 
