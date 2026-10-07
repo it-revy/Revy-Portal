@@ -44,6 +44,9 @@ const AdminDashboardPage = () => {
 
       if (sumRes.data.success) {
         setSummary(sumRes.data);
+        if (sumRes.data.metrics?.todayBreakfastCost !== undefined) {
+          setDailyCost(sumRes.data.metrics.todayBreakfastCost);
+        }
       } else {
         throw new Error(sumRes.data.message || 'Failed to fetch summary');
       }
@@ -62,14 +65,29 @@ const AdminDashboardPage = () => {
         // Non-fatal if user doesn't have money permission
       }
 
-      // Fetch daily cost from orders if available
+      // Fetch daily cost from authoritative orders if available
       try {
-        const ordersRes = await API.get(`/orders?date=${selectedDate}`);
+        const ordersRes = await API.get(`/breakfast/orders?startDate=${selectedDate}&endDate=${selectedDate}&limit=ALL`);
         if (ordersRes.data.success && ordersRes.data.summary) {
-          setDailyCost(ordersRes.data.summary.grandTotal || 0);
+          const cost = ordersRes.data.summary.totalAmount ?? ordersRes.data.summary.grandTotal;
+          if (cost !== undefined) {
+            setDailyCost(cost);
+          }
+        } else {
+          const fallbackRes = await API.get(`/orders?date=${selectedDate}`);
+          if (fallbackRes.data.success && fallbackRes.data.summary) {
+            setDailyCost(fallbackRes.data.summary.grandTotal || 0);
+          }
         }
       } catch (oErr) {
-        // Non-fatal
+        try {
+          const fallbackRes = await API.get(`/orders?date=${selectedDate}`);
+          if (fallbackRes.data.success && fallbackRes.data.summary) {
+            setDailyCost(fallbackRes.data.summary.grandTotal || 0);
+          }
+        } catch (fErr) {
+          // Non-fatal, dailyCost was already set from sumRes.data.metrics.todayBreakfastCost
+        }
       }
     } catch (err) {
       console.error('Failed to fetch dashboard data:', err);

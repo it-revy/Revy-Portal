@@ -18,7 +18,9 @@ from app.breakfast.model import (
     BreakfastDailyEntry,
     BreakfastAdditionalOrder,
     PublicHoliday,
-    BreakfastTemporaryRequest
+    BreakfastTemporaryRequest,
+    BreakfastOrder,
+    BreakfastOrderItem
 )
 from app.breakfast import service as bf_service
 from app.breakfast import money_service
@@ -914,6 +916,27 @@ def get_admin_summary(
     settings = db.query(BreakfastSetting).first()
     cutoff_time = settings.cutoff_time if settings else "12:00"
 
+    # Calculate actual breakfast cost for target_date from daily entry, additional orders, and individual orders
+    daily_entry = db.query(BreakfastDailyEntry).filter(BreakfastDailyEntry.business_date == target_date).first()
+    daily_entry_cost = float(daily_entry.total_cost or 0.0) if daily_entry else 0.0
+
+    daily_add_orders = db.query(BreakfastAdditionalOrder).filter(BreakfastAdditionalOrder.business_date == target_date).all()
+    additional_orders_cost = float(sum(o.total_cost or 0.0 for o in daily_add_orders))
+
+    order_items = db.query(BreakfastOrderItem).filter(BreakfastOrderItem.business_date == target_date).all()
+    order_items_cost = float(sum(i.total or 0.0 for i in order_items))
+
+    hist_records = db.query(BreakfastRecord).filter(
+        BreakfastRecord.business_date == target_date,
+        BreakfastRecord.record_type == "HISTORICAL"
+    ).all()
+    historical_cost = float(sum(
+        (r.total_cost or 0.0) if (r.total_cost and r.total_cost > 0) else ((r.snack_cost or 0.0) + (r.fruit_cost or 0.0))
+        for r in hist_records
+    )) if not daily_entry else 0.0
+
+    today_breakfast_cost = round(daily_entry_cost + additional_orders_cost + order_items_cost + historical_cost, 2)
+
     return {
         "success": True,
         "businessDate": target_date,
@@ -934,7 +957,10 @@ def get_admin_summary(
             "employeeRequestQuantity": float(summary["employeeRequestQuantity"]),
             "actualResponseQuantity": float(summary["actualResponseQuantity"]),
             "totalQuantity": float(summary["totalQuantity"]),
-            "temporaryRequestsCount": summary["temporaryRequestsCount"]
+            "temporaryRequestsCount": summary["temporaryRequestsCount"],
+            "todayBreakfastCost": today_breakfast_cost,
+            "dailyCost": today_breakfast_cost,
+            "totalBreakfastCost": today_breakfast_cost
         }
     }
 
@@ -1834,6 +1860,7 @@ def get_all_orders(
         "summary": {
             "totalOrders": tot_count,
             "totalAmount": tot_amt,
+            "grandTotal": tot_amt,
             "dailyCount": daily_count,
             "additionalCount": add_count,
             "historicalCount": hist_count

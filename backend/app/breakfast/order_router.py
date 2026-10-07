@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.dependencies import require_permission, require_any_permission, CurrentUser
 from app.core.exceptions import ValidationError, NotFoundError
-from app.breakfast.model import BreakfastOrder, BreakfastOrderItem
+from app.breakfast.model import BreakfastOrder, BreakfastOrderItem, BreakfastDailyEntry, BreakfastAdditionalOrder
 from app.employees.model import Employee
 from app.breakfast.date_utils import get_kolkata_date_string
 from app.audit.service import AuditService
@@ -71,7 +71,14 @@ def get_orders_by_date(
 
     individual_total = sum(i.total for i in order_items if i.order_type == "INDIVIDUAL")
     common_total = sum(i.total for i in order_items if i.order_type != "INDIVIDUAL")
-    grand_total = individual_total + common_total
+
+    daily_entry = db.query(BreakfastDailyEntry).filter(BreakfastDailyEntry.business_date == target_date).first()
+    daily_entry_total = float(daily_entry.total_cost or 0.0) if daily_entry else 0.0
+
+    additional_orders = db.query(BreakfastAdditionalOrder).filter(BreakfastAdditionalOrder.business_date == target_date).all()
+    additional_orders_total = float(sum(o.total_cost or 0.0 for o in additional_orders))
+
+    grand_total = round(individual_total + common_total + daily_entry_total + additional_orders_total, 2)
 
     return {
         "success": True,
@@ -80,6 +87,8 @@ def get_orders_by_date(
             "totalOrders": len(orders),
             "individualTotal": individual_total,
             "commonTotal": common_total,
+            "dailyBreakfastTotal": daily_entry_total,
+            "additionalOrdersTotal": additional_orders_total,
             "grandTotal": grand_total
         },
         "orders": [serialize_order(o) for o in orders],
