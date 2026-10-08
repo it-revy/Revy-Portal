@@ -30,7 +30,7 @@ def ensure_modules_and_memberships():
                 "code": "MIS",
                 "name": "MIS",
                 "description": "Management Information System — Executive analytics and corporate KPIs.",
-                "is_active": True,
+                "is_active": False,
                 "is_open_to_all": False
             },
             {
@@ -44,28 +44,28 @@ def ensure_modules_and_memberships():
                 "code": "CRM",
                 "name": "Customer Relationship Management",
                 "description": "Client accounts, lead pipeline, sales tracking, and customer communications.",
-                "is_active": True,
+                "is_active": False,
                 "is_open_to_all": False
             },
             {
                 "code": "LMS",
                 "name": "Laboratory Management System",
                 "description": "Environmental sample tracking, biological/chemical test workflows, QA/QC audits, and digital lab certificates.",
-                "is_active": True,
+                "is_active": False,
                 "is_open_to_all": False
             },
             {
                 "code": "IMS",
                 "name": "Inventory Management System",
                 "description": "Track plant materials, lab consumables, hardware inventory, real-time stock alerts, and procurement requisitions.",
-                "is_active": True,
+                "is_active": False,
                 "is_open_to_all": False
             },
             {
                 "code": "LEAVE",
                 "name": "Leave Management",
                 "description": "Employee leave requests, manager approvals, vacation balance tracking, and corporate attendance calendar.",
-                "is_active": True,
+                "is_active": False,
                 "is_open_to_all": False
             },
             {
@@ -79,14 +79,14 @@ def ensure_modules_and_memberships():
                 "code": "DWR",
                 "name": "Daily Work Report",
                 "description": "Daily task logging, on-site project activities, progress reporting, and manager sign-off workflows.",
-                "is_active": True,
+                "is_active": False,
                 "is_open_to_all": False
             },
             {
                 "code": "REPORTS",
                 "name": "Reports",
                 "description": "Consolidated statutory reports, platform audit trail analysis, compliance reports, and multi-format data exports.",
-                "is_active": True,
+                "is_active": False,
                 "is_open_to_all": False
             }
         ]

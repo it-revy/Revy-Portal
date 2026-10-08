@@ -91,12 +91,32 @@ def reset_user_password(
     current_user: CurrentUser = Depends(require_any_permission(["*", "users.edit", "user.password.reset"])),
     db: Session = Depends(get_db)
 ):
-    user = UserService(db).db.query(UserService(db).db.query(UserService).first()) if False else None
     from app.users.model import User
+    from app.audit.service import AuditService
+    from app.core.exceptions import NotFoundError, ValidationError
+
+    if not payload.newPassword or len(payload.newPassword) < 6:
+        raise ValidationError("New password must be at least 6 characters long.")
+
     user = db.query(User).filter(User.id == id, User.is_hard_deleted == False).first()
     if not user:
-        return {"success": False, "message": "User not found"}
+        raise NotFoundError("User not found")
+
     user.password_hash = get_password_hash(payload.newPassword)
     user.force_password_change = True
     db.commit()
+
+    # Log password reset audit event
+    audit_service = AuditService(db)
+    audit_service.log(
+        action="PASSWORD_RESET",
+        request=request,
+        target_info={
+            "targetUserId": user.id,
+            "targetUsername": user.username,
+            "targetEmployeeName": user.name,
+            "details": f"Central password reset for user {user.username} by {current_user.username}"
+        }
+    )
+
     return {"success": True, "message": "Password reset successfully. User will be prompted to change password on next login."}

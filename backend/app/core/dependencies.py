@@ -8,6 +8,7 @@ from app.users.model import User
 from app.roles.model import Role, Permission
 
 ALL_SYSTEM_MODULES = ["MIS", "BMS", "CRM", "LMS", "IMS", "LEAVE", "USERS", "DWR", "REPORTS"]
+ACTIVE_SYSTEM_MODULES = ["BMS", "USERS"]
 
 class CurrentUser:
     def __init__(
@@ -132,7 +133,7 @@ def get_current_user(
         for p in all_db_perms:
             permissions_set.add(p)
 
-        effective_modules = list(ALL_SYSTEM_MODULES)
+        effective_modules = list(ACTIVE_SYSTEM_MODULES)
         if is_it_admin:
             permissions_by_role["IT_ADMIN"] = list(permissions_set)
             permissions_by_role["IT Admin"] = list(permissions_set)
@@ -142,7 +143,7 @@ def get_current_user(
             roles_list.extend(["CEO", "Chief Executive Officer"])
             permissions_by_role["CEO"] = list(permissions_set)
     else:
-        effective_modules = user_modules
+        effective_modules = [m for m in user_modules if m in ACTIVE_SYSTEM_MODULES]
 
     ROLE_PRIORITY = [
         "IT_ADMIN", "IT Admin",
@@ -261,12 +262,16 @@ def require_role(required_role: str):
 
 def require_module_access(module_code: str):
     """
-    Enforces that the current authenticated user has active membership
-    in the requested business module. Global IT Admin and Director bypass
-    all module boundaries with full system access.
+    Enforces that the requested module is active in the current phase
+    and the current authenticated user has active membership.
+    All modules other than BMS and USERS are strictly disabled server-side.
     """
     def dependency(current_user: CurrentUser = Depends(get_current_user)):
-        # Global IT Admin & Director bypass all module restrictions
+        target = module_code.upper()
+        if target not in ACTIVE_SYSTEM_MODULES:
+            raise PermissionDeniedError(f"Access denied. Module '{module_code}' is disabled in this phase.")
+
+        # Global IT Admin & Director bypass membership checks for ACTIVE modules
         if current_user.is_global_admin:
             return current_user
 
@@ -274,7 +279,6 @@ def require_module_access(module_code: str):
         if "IT_ADMIN" in user_roles_normalized or "DIRECTOR" in user_roles_normalized or "*" in (current_user.all_permissions or []):
             return current_user
 
-        target = module_code.upper()
         if target not in current_user.modules:
             raise PermissionDeniedError(f"Access denied. You do not have membership in module '{module_code}'.")
         return current_user

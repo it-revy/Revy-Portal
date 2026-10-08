@@ -11,13 +11,20 @@ export const employeeService = {
     return res.data;
   },
 
-  getEmployeeById: async (empId) => {
-    const res = await API.get(`/employees/${empId}`);
+  getAvailableUsers: async (search = '') => {
+    const params = new URLSearchParams();
+    if (search) params.append('search', search);
+    const res = await API.get(`/employees/available-users?${params.toString()}`);
     return res.data;
   },
 
-  createEmployee: async (payload) => {
-    const res = await API.post('/employees', payload);
+  assignUserToBms: async (payload) => {
+    const res = await API.post('/employees/assign-user', payload);
+    return res.data;
+  },
+
+  getEmployeeById: async (empId) => {
+    const res = await API.get(`/employees/${empId}`);
     return res.data;
   },
 
@@ -28,11 +35,6 @@ export const employeeService = {
 
   deactivateEmployee: async (empId) => {
     const res = await API.delete(`/employees/${empId}`);
-    return res.data;
-  },
-
-  resetPassword: async (empId, payload) => {
-    const res = await API.post(`/employees/${empId}/reset-password`, payload);
     return res.data;
   },
 

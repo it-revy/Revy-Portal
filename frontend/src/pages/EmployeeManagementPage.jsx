@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import API from '../services/api';
+import employeeService from '../services/employeeService';
 import { useAuth } from '../context/AuthContext';
 import {
   Users,
@@ -8,50 +9,57 @@ import {
   UserX,
   Trash2,
   Search,
-  Key,
   CheckCircle2,
   AlertCircle,
   AlertTriangle,
   X,
-  History
+  History,
+  Shield,
+  UserCheck,
+  Check,
+  Building,
+  Briefcase,
+  Utensils
 } from 'lucide-react';
 
 const EmployeeManagementPage = () => {
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
   const [search, setSearch] = useState('');
   const [departmentFilter, setDepartmentFilter] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [participationFilter, setParticipationFilter] = useState('ALL');
 
-  // Modal states
-  const [showModal, setShowModal] = useState(false);
-  const [modalMode, setModalMode] = useState('CREATE'); // CREATE or EDIT
-  const [selectedEmp, setSelectedEmp] = useState(null);
+  // Add User to BMS Modal State
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [availableUsers, setAvailableUsers] = useState([]);
+  const [availableLoading, setAvailableLoading] = useState(false);
+  const [userSearchTerm, setUserSearchTerm] = useState('');
+  const [selectedCentralUser, setSelectedCentralUser] = useState(null);
+  const [addFormData, setAddFormData] = useState({
+    department: 'General',
+    designation: 'Employee',
+    roleCode: 'BMS_EMPLOYEE',
+    breakfastParticipationType: 'NORMAL'
+  });
+  const [addSubmitting, setAddSubmitting] = useState(false);
 
-  // Form states
-  const [formData, setFormData] = useState({
+  // Edit BMS Profile Modal State
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editFormData, setEditFormData] = useState({
     employeeId: '',
-    username: '',
     name: '',
+    username: '',
     email: '',
-    password: '',
-    phone: '',
     department: '',
     designation: '',
+    roleCode: 'BMS_EMPLOYEE',
     breakfastParticipationType: 'NORMAL',
-    status: 'active',
-    roles: ['EMPLOYEE']
+    status: 'active'
   });
-
-  // Password Reset Modal state
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [passTargetEmp, setPassTargetEmp] = useState(null);
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [passMessage, setPassMessage] = useState(null);
-  const [passUpdating, setPassUpdating] = useState(false);
+  const [editSubmitting, setEditSubmitting] = useState(false);
 
   // IT_ADMIN Hard Delete Modal state
   const [showHardDeleteModal, setShowHardDeleteModal] = useState(false);
@@ -60,6 +68,7 @@ const EmployeeManagementPage = () => {
 
   // History Modal state
   const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [selectedEmp, setSelectedEmp] = useState(null);
   const [empHistory, setEmpHistory] = useState([]);
 
   const { hasRole, hasPermission } = useAuth();
@@ -72,13 +81,16 @@ const EmployeeManagementPage = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await API.get(
-        `/employees?search=${encodeURIComponent(search)}&department=${encodeURIComponent(departmentFilter)}&status=${encodeURIComponent(statusFilter)}&participationType=${encodeURIComponent(participationFilter)}`
-      );
-      if (res.data && res.data.success) {
-        setEmployees(res.data.employees || []);
+      const res = await employeeService.getEmployees({
+        search,
+        department: departmentFilter,
+        status: statusFilter,
+        participationType: participationFilter
+      });
+      if (res && res.success) {
+        setEmployees(res.employees || []);
       } else {
-        setError(res.data?.message || 'Unable to load employees. Please try again.');
+        setError(res?.message || 'Unable to load employees. Please try again.');
         setEmployees([]);
       }
     } catch (err) {
@@ -91,155 +103,133 @@ const EmployeeManagementPage = () => {
     }
   };
 
-  const handleOpenCreateModal = () => {
-    setModalMode('CREATE');
-    setFormData({
-      employeeId: '',
-      username: '',
-      name: '',
-      email: '',
-      password: '',
-      phone: '',
+  const showNotification = (msg) => {
+    setSuccessMessage(msg);
+    setTimeout(() => setSuccessMessage(null), 4000);
+  };
+
+  // Open "Add User to BMS" modal
+  const handleOpenAddUserModal = async () => {
+    setUserSearchTerm('');
+    setSelectedCentralUser(null);
+    setAddFormData({
       department: 'Engineering',
       designation: 'Software Engineer',
-      breakfastParticipationType: 'NORMAL',
-      status: 'active',
-      roles: ['EMPLOYEE']
+      roleCode: 'BMS_EMPLOYEE',
+      breakfastParticipationType: 'NORMAL'
     });
-    setShowModal(true);
-  };
+    setShowAddUserModal(true);
+    setAvailableLoading(true);
 
-  const handleOpenEditModal = (emp) => {
-    setModalMode('EDIT');
-    setSelectedEmp(emp);
-    const isPnt = ['PERMANENT_NOT_TAKING', 'PERMANENT_NON_TAKER', 'NON_TAKER'].includes((emp.breakfastParticipationType || '').toUpperCase());
-    setFormData({
-      employeeId: emp.employeeId,
-      username: emp.username || '',
-      name: emp.name,
-      email: emp.email,
-      password: '',
-      phone: emp.phone || '',
-      department: emp.department,
-      designation: emp.designation,
-      breakfastParticipationType: isPnt ? 'PERMANENT_NON_TAKER' : 'NORMAL',
-      status: emp.status,
-      roles: emp.roles || ['EMPLOYEE']
-    });
-    setShowModal(true);
-  };
-
-  const handleOpenPasswordModal = (emp) => {
-    setPassTargetEmp(emp);
-    setNewPassword('');
-    setConfirmPassword('');
-    setPassMessage(null);
-    setShowPasswordModal(true);
-  };
-
-  const handleResetPasswordSubmit = async (e) => {
-    e.preventDefault();
-    setPassMessage(null);
-
-    if (!newPassword || !confirmPassword) {
-      setPassMessage({ type: 'danger', text: 'New password and confirm password are required' });
-      return;
-    }
-
-    if (newPassword.length < 6) {
-      setPassMessage({ type: 'danger', text: 'Password must be at least 6 characters long' });
-      return;
-    }
-
-    if (newPassword !== confirmPassword) {
-      setPassMessage({ type: 'danger', text: 'Passwords do not match' });
-      return;
-    }
-
-    setPassUpdating(true);
     try {
-      const res = await API.post(`/employees/${passTargetEmp.employeeId}/reset-password`, {
-        newPassword,
-        confirmPassword
+      const res = await employeeService.getAvailableUsers();
+      setAvailableUsers(res || []);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to fetch available users.');
+    } finally {
+      setAvailableLoading(false);
+    }
+  };
+
+  // Submit adding user to BMS
+  const handleAddUserSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedCentralUser) {
+      setError('Please select a Central User to add to BMS.');
+      return;
+    }
+
+    setAddSubmitting(true);
+    try {
+      const res = await employeeService.assignUserToBms({
+        userId: selectedCentralUser.id,
+        roleCode: addFormData.roleCode,
+        department: addFormData.department,
+        designation: addFormData.designation,
+        breakfastParticipationType: addFormData.breakfastParticipationType
       });
 
-      if (res.data.success) {
-        setPassMessage({ type: 'success', text: res.data.message });
-        setTimeout(() => {
-          setShowPasswordModal(false);
-          setPassTargetEmp(null);
-        }, 1500);
-      }
-    } catch (err) {
-      setPassMessage({ type: 'danger', text: err.response?.data?.message || 'Failed to reset password' });
-    } finally {
-      setPassUpdating(false);
-    }
-  };
-
-  const handlePrimaryRoleChange = (e) => {
-    const selectedRole = e.target.value;
-    setFormData(prev => {
-      const remainingRoles = prev.roles.filter(r => r !== selectedRole);
-      return { ...prev, roles: [selectedRole, ...remainingRoles] };
-    });
-  };
-
-  const handleRoleToggle = (roleCode) => {
-    setFormData(prev => {
-      const currentRoles = [...prev.roles];
-      if (currentRoles.includes(roleCode)) {
-        if (currentRoles.length === 1) return prev;
-        return { ...prev, roles: currentRoles.filter(r => r !== roleCode) };
-      } else {
-        return { ...prev, roles: [...currentRoles, roleCode] };
-      }
-    });
-  };
-
-  const handleFormSubmit = async (e) => {
-    e.preventDefault();
-    try {
-      if (modalMode === 'CREATE') {
-        const res = await API.post('/employees', formData);
-        if (res.data.success) {
-          setShowModal(false);
-          fetchEmployees();
-        }
-      } else {
-        const res = await API.put(`/employees/${formData.employeeId}`, formData);
-        if (res.data.success) {
-          setShowModal(false);
-          fetchEmployees();
-        }
-      }
-    } catch (err) {
-      setError(err.response?.data?.message || 'Operation failed');
-    }
-  };
-
-  const handleDeactivate = async (empId) => {
-    if (!window.confirm(`Deactivate employee ${empId}? Account status will be set to inactive, preserving historical records.`)) {
-      return;
-    }
-    try {
-      const res = await API.delete(`/employees/${empId}`);
-      if (res.data.success) {
+      if (res && res.success) {
+        setShowAddUserModal(false);
+        showNotification(res.message || `User ${selectedCentralUser.name || selectedCentralUser.username} successfully added to BMS.`);
         fetchEmployees();
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to deactivate employee');
+      setError(err.response?.data?.message || 'Failed to add user to BMS.');
+    } finally {
+      setAddSubmitting(false);
+    }
+  };
+
+  // Open Edit BMS Profile Modal
+  const handleOpenEditModal = (emp) => {
+    setEditFormData({
+      employeeId: emp.employeeId,
+      name: emp.name,
+      username: emp.username,
+      email: emp.email,
+      department: emp.department || '',
+      designation: emp.designation || '',
+      roleCode: emp.bmsRoleCode || (emp.roles && emp.roles[0]) || 'BMS_EMPLOYEE',
+      breakfastParticipationType: emp.breakfastParticipationType || 'NORMAL',
+      status: emp.status || 'active'
+    });
+    setShowEditModal(true);
+  };
+
+  // Submit Edit BMS Profile
+  const handleEditSubmit = async (e) => {
+    e.preventDefault();
+    setEditSubmitting(true);
+    try {
+      const res = await employeeService.updateEmployee(editFormData.employeeId, {
+        department: editFormData.department,
+        designation: editFormData.designation,
+        roleCode: editFormData.roleCode,
+        breakfastParticipationType: editFormData.breakfastParticipationType,
+        status: editFormData.status
+      });
+
+      if (res && res.success) {
+        setShowEditModal(false);
+        showNotification(`BMS Profile for ${editFormData.name} updated successfully.`);
+        fetchEmployees();
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to update BMS employee profile.');
+    } finally {
+      setEditSubmitting(false);
+    }
+  };
+
+  // Remove User from BMS
+  const handleRemoveFromBms = async (emp) => {
+    const confirmed = window.confirm(
+      `Remove ${emp.name} (${emp.employeeId}) from BMS?\n\n` +
+      `• The Central User account will remain Active.\n` +
+      `• All historical breakfast transactions and orders are preserved.\n` +
+      `• The user will no longer participate in BMS meals.`
+    );
+    if (!confirmed) return;
+
+    try {
+      const res = await employeeService.deactivateEmployee(emp.employeeId);
+      if (res && res.success) {
+        showNotification(res.message || `User ${emp.name} removed from BMS.`);
+        fetchEmployees();
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to remove user from BMS.');
     }
   };
 
   const handleExecuteHardDelete = async () => {
     try {
-      const res = await API.post(`/employees/${hardDeleteEmpId}/hard-delete`, {
-        confirmCode: confirmCodeInput
-      });
-      if (res.data.success) {
+      const res = await employeeService.hardDeleteEmployee(hardDeleteEmpId, confirmCodeInput);
+      if (res && res.success) {
         setShowHardDeleteModal(false);
         setConfirmCodeInput('');
+        showNotification('BMS participation record permanently deleted.');
         fetchEmployees();
       }
     } catch (err) {
@@ -249,10 +239,10 @@ const EmployeeManagementPage = () => {
 
   const handleViewHistory = async (empId) => {
     try {
-      const res = await API.get(`/employees/${empId}`);
-      if (res.data.success) {
-        setEmpHistory(res.data.recentRecords || []);
-        setSelectedEmp(res.data.employee);
+      const res = await employeeService.getEmployeeById(empId);
+      if (res && res.success) {
+        setEmpHistory(res.recentRecords || []);
+        setSelectedEmp(res.employee);
         setShowHistoryModal(true);
       }
     } catch (err) {
@@ -260,25 +250,81 @@ const EmployeeManagementPage = () => {
     }
   };
 
+  // Filter available users based on search
+  const filteredAvailableUsers = availableUsers.filter(u => {
+    if (!userSearchTerm) return true;
+    const term = userSearchTerm.toLowerCase();
+    return (
+      (u.name && u.name.toLowerCase().includes(term)) ||
+      (u.username && u.username.toLowerCase().includes(term)) ||
+      (u.email && u.email.toLowerCase().includes(term)) ||
+      (u.department && u.department.toLowerCase().includes(term))
+    );
+  });
+
   return (
     <div className="page-body">
+      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <Users color="var(--accent-primary)" /> Employee & User Account Management
+            <Users color="var(--accent-primary)" /> BMS Employees
           </h1>
           <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-            Manage user credentials (Username + Password), roles, status, and participation types
+            Users participating in the Breakfast Management System. (Central credentials and passwords are strictly managed in Central User Management).
           </p>
         </div>
 
         {hasPermission('breakfast.employee.create') && (
-          <button className="btn btn-primary" onClick={handleOpenCreateModal}>
+          <button className="btn btn-primary" onClick={handleOpenAddUserModal}>
             <UserPlus size={18} />
-            Add New Employee
+            Add User to BMS
           </button>
         )}
       </div>
+
+      {/* Success Notification Banner */}
+      {successMessage && (
+        <div style={{
+          background: 'rgba(16, 185, 129, 0.15)',
+          border: '1px solid rgba(16, 185, 129, 0.3)',
+          color: '#34d399',
+          padding: '0.75rem 1rem',
+          borderRadius: 'var(--radius-sm)',
+          marginBottom: '1rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          fontSize: '0.875rem'
+        }}>
+          <CheckCircle2 size={18} color="#10b981" />
+          <span>{successMessage}</span>
+        </div>
+      )}
+
+      {/* Error Banner */}
+      {error && (
+        <div style={{
+          background: 'rgba(239, 68, 68, 0.15)',
+          border: '1px solid rgba(239, 68, 68, 0.3)',
+          color: '#fca5a5',
+          padding: '0.75rem 1rem',
+          borderRadius: 'var(--radius-sm)',
+          marginBottom: '1rem',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          fontSize: '0.875rem'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <AlertCircle size={18} color="#ef4444" />
+            <span>{error}</span>
+          </div>
+          <button onClick={() => setError(null)} style={{ background: 'none', border: 'none', color: '#fca5a5', cursor: 'pointer' }}>
+            <X size={16} />
+          </button>
+        </div>
+      )}
 
       {/* Search & Filter Bar */}
       <div className="glass-panel" style={{ padding: '1.25rem', marginBottom: '1.5rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
@@ -318,45 +364,21 @@ const EmployeeManagementPage = () => {
         </select>
       </div>
 
-      {/* Error Banner when actions fail but employees exist */}
-      {error && employees.length > 0 && (
-        <div style={{
-          background: 'rgba(239, 68, 68, 0.15)',
-          border: '1px solid rgba(239, 68, 68, 0.3)',
-          color: '#fca5a5',
-          padding: '0.75rem 1rem',
-          borderRadius: 'var(--radius-sm)',
-          marginBottom: '1rem',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          fontSize: '0.875rem'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <AlertCircle size={18} color="#ef4444" />
-            <span>{error}</span>
-          </div>
-          <button onClick={() => setError(null)} style={{ background: 'none', border: 'none', color: '#fca5a5', cursor: 'pointer' }}>
-            <X size={16} />
-          </button>
-        </div>
-      )}
-
       {/* Employees Table */}
       <div className="glass-panel table-card-panel">
         <div className="table-container">
-          <table className="custom-table" style={{ minWidth: '1140px' }}>
+          <table className="custom-table" style={{ minWidth: '1100px' }}>
             <thead>
               <tr>
                 <th style={{ minWidth: '110px' }}>Employee ID</th>
-                <th style={{ minWidth: '110px' }}>Username</th>
-                <th style={{ minWidth: '160px' }}>Employee Name</th>
+                <th style={{ minWidth: '130px' }}>Central User</th>
+                <th style={{ minWidth: '160px' }}>Name & Email</th>
                 <th style={{ minWidth: '130px' }}>Department</th>
                 <th style={{ minWidth: '130px' }}>Designation</th>
-                <th style={{ minWidth: '160px' }}>Assigned Roles</th>
-                <th style={{ minWidth: '130px' }}>Breakfast Type</th>
-                <th style={{ minWidth: '90px' }}>Status</th>
-                <th className="actions-column" style={{ textAlign: 'right', minWidth: '220px' }}>Actions</th>
+                <th style={{ minWidth: '140px' }}>BMS Role</th>
+                <th style={{ minWidth: '130px' }}>Participation</th>
+                <th style={{ minWidth: '90px' }}>BMS Status</th>
+                <th className="actions-column" style={{ textAlign: 'right', minWidth: '160px' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -365,25 +387,12 @@ const EmployeeManagementPage = () => {
                   <td colSpan="9" style={{ textAlign: 'center', padding: '2.5rem' }}>
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.75rem', color: 'var(--text-secondary)' }}>
                       <div className="spinner" style={{ width: '18px', height: '18px', border: '2px solid rgba(255,255,255,0.2)', borderTopColor: 'var(--accent-primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                      <span>Loading employees...</span>
-                    </div>
-                  </td>
-                </tr>
-              ) : error ? (
-                <tr>
-                  <td colSpan="9" style={{ textAlign: 'center', padding: '2.5rem' }}>
-                    <div style={{ maxWidth: '440px', margin: '0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.5rem' }}>
-                      <AlertCircle size={32} color="var(--danger)" />
-                      <strong style={{ color: 'var(--text-primary)', fontSize: '1rem' }}>Unable to load employees.</strong>
-                      <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: 0 }}>{error}</p>
-                      <button className="btn btn-secondary" style={{ marginTop: '0.5rem' }} onClick={fetchEmployees}>
-                        Please try again
-                      </button>
+                      <span>Loading BMS employees...</span>
                     </div>
                   </td>
                 </tr>
               ) : employees.length === 0 ? (
-                <tr><td colSpan="9" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>No employees found.</td></tr>
+                <tr><td colSpan="9" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>No BMS employees found.</td></tr>
               ) : (
                 employees.map(emp => (
                   <tr key={emp.employeeId}>
@@ -397,36 +406,26 @@ const EmployeeManagementPage = () => {
                       <div><strong>{emp.name}</strong></div>
                       <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{emp.email}</span>
                     </td>
+                    <td>{emp.department || '—'}</td>
                     <td>
-                      <div>{emp.department}</div>
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{emp.designation || '—'}</span>
                     </td>
                     <td>
-                      <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{emp.designation}</span>
-                    </td>
-                    <td>
-                      <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
-                        {emp.roles?.map(r => {
-                          const isFinance = (r === 'FINANCE_MANAGER' || r === 'Finance Manager');
-                          return (
-                            <span
-                              key={r}
-                              className="badge"
-                              style={isFinance ? {
-                                background: 'rgba(16, 185, 129, 0.15)',
-                                color: '#34d399',
-                                border: '1px solid rgba(16, 185, 129, 0.35)',
-                                fontWeight: 600
-                              } : {
-                                background: 'rgba(59, 130, 246, 0.1)',
-                                color: '#93c5fd',
-                                border: '1px solid rgba(59, 130, 246, 0.25)'
-                              }}
-                            >
-                              {r.replace('_', ' ')}
-                            </span>
-                          );
-                        })}
-                      </div>
+                      <span
+                        className="badge"
+                        style={{
+                          background: emp.bmsRoleCode === 'BMS_ADMIN' ? 'rgba(239, 68, 68, 0.15)' :
+                                      emp.bmsRoleCode === 'BMS_FINANCE_MANAGER' ? 'rgba(16, 185, 129, 0.15)' :
+                                      emp.bmsRoleCode === 'BMS_DIRECTOR_ANALYTICS' ? 'rgba(139, 92, 246, 0.15)' : 'rgba(59, 130, 246, 0.1)',
+                          color: emp.bmsRoleCode === 'BMS_ADMIN' ? '#f87171' :
+                                 emp.bmsRoleCode === 'BMS_FINANCE_MANAGER' ? '#34d399' :
+                                 emp.bmsRoleCode === 'BMS_DIRECTOR_ANALYTICS' ? '#a78bfa' : '#93c5fd',
+                          border: '1px solid rgba(255, 255, 255, 0.15)',
+                          fontWeight: 600
+                        }}
+                      >
+                        {emp.bmsRoleName || emp.bmsRoleCode || 'BMS Employee'}
+                      </span>
                     </td>
                     <td>
                       <span className={`badge ${['NORMAL', 'REGULAR', 'REGULAR_TAKER'].includes((emp.breakfastParticipationType || '').toUpperCase()) ? 'badge-success' : 'badge-warning'}`}>
@@ -438,13 +437,13 @@ const EmployeeManagementPage = () => {
                         {emp.status}
                       </span>
                     </td>
-                    <td className="actions-column" style={{ textAlign: 'right', minWidth: '220px' }}>
+                    <td className="actions-column" style={{ textAlign: 'right', minWidth: '160px' }}>
                       <div className="table-action-btn-group">
                         <button
                           type="button"
                           className="action-btn action-btn-history"
                           onClick={() => handleViewHistory(emp.employeeId)}
-                          title="View History"
+                          title="View Breakfast History"
                           aria-label={`View history for ${emp.name || emp.employeeId}`}
                         >
                           <History size={16} />
@@ -454,30 +453,19 @@ const EmployeeManagementPage = () => {
                             type="button"
                             className="action-btn action-btn-edit"
                             onClick={() => handleOpenEditModal(emp)}
-                            title="Edit Employee"
-                            aria-label={`Edit ${emp.name || emp.employeeId}`}
+                            title="Edit BMS Profile"
+                            aria-label={`Edit BMS Profile for ${emp.name || emp.employeeId}`}
                           >
                             <Edit size={16} />
-                          </button>
-                        )}
-                        {hasPermission('user.password.reset') && (
-                          <button
-                            type="button"
-                            className="action-btn action-btn-password"
-                            onClick={() => handleOpenPasswordModal(emp)}
-                            title="Reset Password"
-                            aria-label={`Reset password for ${emp.name || emp.employeeId}`}
-                          >
-                            <Key size={16} />
                           </button>
                         )}
                         {emp.status === 'active' && hasPermission('breakfast.employee.deactivate') && (
                           <button
                             type="button"
                             className="action-btn action-btn-warning"
-                            onClick={() => handleDeactivate(emp.employeeId)}
-                            title="Deactivate Employee"
-                            aria-label={`Deactivate ${emp.name || emp.employeeId}`}
+                            onClick={() => handleRemoveFromBms(emp)}
+                            title="Remove from BMS"
+                            aria-label={`Remove ${emp.name || emp.employeeId} from BMS`}
                           >
                             <UserX size={16} />
                           </button>
@@ -490,7 +478,7 @@ const EmployeeManagementPage = () => {
                               setHardDeleteEmpId(emp.employeeId);
                               setShowHardDeleteModal(true);
                             }}
-                            title="Delete Employee"
+                            title="Permanent Hard Delete"
                             aria-label={`Delete ${emp.name || emp.employeeId}`}
                           >
                             <Trash2 size={16} />
@@ -506,72 +494,163 @@ const EmployeeManagementPage = () => {
         </div>
       </div>
 
-      {/* Add / Edit Employee Modal */}
-      {showModal && (
+      {/* ========================================================================= */}
+      {/* 1. ADD USER TO BMS MODAL (Search & Select Existing Central User)          */}
+      {/* ========================================================================= */}
+      {showAddUserModal && (
         <div className="modal-overlay">
-          <div className="modal-content">
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem' }}>
-              <h2>{modalMode === 'CREATE' ? 'Add New Employee' : `Edit Employee (${formData.employeeId})`}</h2>
-              <button className="btn btn-secondary" style={{ padding: '0.3rem 0.5rem' }} onClick={() => setShowModal(false)}>
+          <div className="modal-content" style={{ maxWidth: '650px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
+              <h2 style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <UserPlus color="var(--accent-primary)" size={22} /> Add User to BMS
+              </h2>
+              <button className="btn btn-secondary" style={{ padding: '0.3rem 0.5rem' }} onClick={() => setShowAddUserModal(false)}>
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleFormSubmit}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
-                <div className="form-group">
-                  <label className="form-label">Employee ID</label>
+            <div style={{
+              background: 'rgba(37, 99, 235, 0.1)',
+              border: '1px solid rgba(37, 99, 235, 0.25)',
+              padding: '0.75rem 1rem',
+              borderRadius: 'var(--radius-sm)',
+              marginBottom: '1.25rem',
+              fontSize: '0.85rem',
+              color: '#93c5fd',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem'
+            }}>
+              <Shield size={18} color="#3b82f6" />
+              <span>
+                Select an existing Central User to grant BMS participation. Account creation and password management are handled centrally in <strong>User Management</strong>.
+              </span>
+            </div>
+
+            <form onSubmit={handleAddUserSubmit}>
+              {/* Central User Search and Select */}
+              <div className="form-group" style={{ marginBottom: '1.25rem' }}>
+                <label className="form-label" style={{ fontWeight: 600 }}>
+                  Select Central User *
+                </label>
+                <div style={{ position: 'relative', marginBottom: '0.5rem' }}>
                   <input
                     type="text"
                     className="form-input"
-                    placeholder="EMP-0006 (auto)"
-                    value={formData.employeeId}
-                    onChange={(e) => setFormData({ ...formData, employeeId: e.target.value })}
-                    disabled={modalMode === 'EDIT'}
+                    placeholder="Search central users by Name, Username, or Email..."
+                    value={userSearchTerm}
+                    onChange={(e) => setUserSearchTerm(e.target.value)}
                   />
                 </div>
-                <div className="form-group">
-                  <label className="form-label">Username (Login ID) *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="e.g. rahul, vasudev"
-                    value={formData.username}
-                    onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Full Name *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    required
-                  />
-                </div>
+
+                {availableLoading ? (
+                  <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                    Loading eligible central users...
+                  </div>
+                ) : filteredAvailableUsers.length === 0 ? (
+                  <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', background: 'rgba(15, 23, 42, 0.4)', borderRadius: 'var(--radius-sm)' }}>
+                    No eligible central users found. All active users may already be assigned to BMS.
+                  </div>
+                ) : (
+                  <div style={{
+                    maxHeight: '180px',
+                    overflowY: 'auto',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 'var(--radius-sm)',
+                    background: 'rgba(15, 23, 42, 0.6)'
+                  }}>
+                    {filteredAvailableUsers.map(u => {
+                      const isSelected = selectedCentralUser && selectedCentralUser.id === u.id;
+                      return (
+                        <div
+                          key={u.id}
+                          onClick={() => {
+                            setSelectedCentralUser(u);
+                            if (u.department) setAddFormData(prev => ({ ...prev, department: u.department }));
+                            if (u.designation) setAddFormData(prev => ({ ...prev, designation: u.designation }));
+                          }}
+                          style={{
+                            padding: '0.65rem 0.85rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+                            cursor: 'pointer',
+                            background: isSelected ? 'rgba(37, 99, 235, 0.25)' : 'transparent',
+                            transition: 'background 0.15s ease'
+                          }}
+                        >
+                          <div>
+                            <strong style={{ color: isSelected ? '#93c5fd' : 'var(--text-primary)', fontSize: '0.9rem' }}>
+                              {u.name || u.username}
+                            </strong>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>
+                              (@{u.username})
+                            </span>
+                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                              {u.email} {u.department ? `• ${u.department}` : ''}
+                            </div>
+                          </div>
+                          {isSelected && <Check size={18} color="#60a5fa" />}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
+              {/* Selected User Summary Card */}
+              {selectedCentralUser && (
+                <div style={{
+                  padding: '0.75rem 1rem',
+                  background: 'rgba(37, 99, 235, 0.15)',
+                  border: '1px solid rgba(37, 99, 235, 0.35)',
+                  borderRadius: 'var(--radius-sm)',
+                  marginBottom: '1.25rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between'
+                }}>
+                  <div>
+                    <div style={{ fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#93c5fd' }}>
+                      Selected Central User
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: '1rem', color: 'white' }}>
+                      {selectedCentralUser.name || selectedCentralUser.username}
+                    </div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                      Username: <strong>{selectedCentralUser.username}</strong> | Email: <strong>{selectedCentralUser.email}</strong>
+                    </div>
+                  </div>
+                  <span className="badge badge-success">Active Central User</span>
+                </div>
+              )}
+
+              {/* BMS Specific Fields */}
               <div className="form-grid-2">
                 <div className="form-group">
-                  <label className="form-label">Email Address *</label>
-                  <input
-                    type="email"
-                    className="form-input"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    required
-                  />
+                  <label className="form-label">BMS Module Role *</label>
+                  <select
+                    className="form-select"
+                    value={addFormData.roleCode}
+                    onChange={(e) => setAddFormData({ ...addFormData, roleCode: e.target.value })}
+                  >
+                    <option value="BMS_EMPLOYEE">BMS Employee (Standard Daily Meals)</option>
+                    <option value="BMS_ADMIN">BMS Admin (Operational Breakfast Management)</option>
+                    <option value="BMS_FINANCE_MANAGER">BMS Finance Manager (Fund Requests & Ledger)</option>
+                    <option value="BMS_DIRECTOR_ANALYTICS">BMS Director Analytics (Analytics Dashboard)</option>
+                  </select>
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Phone Number</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                  />
+                  <label className="form-label">Breakfast Participation Type *</label>
+                  <select
+                    className="form-select"
+                    value={addFormData.breakfastParticipationType}
+                    onChange={(e) => setAddFormData({ ...addFormData, breakfastParticipationType: e.target.value })}
+                  >
+                    <option value="NORMAL">Regular Taker (Normal)</option>
+                    <option value="PERMANENT_NON_TAKER">Permanent Non-Taker (Opt-out)</option>
+                  </select>
                 </div>
               </div>
 
@@ -581,8 +660,9 @@ const EmployeeManagementPage = () => {
                   <input
                     type="text"
                     className="form-input"
-                    value={formData.department}
-                    onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                    placeholder="e.g. Engineering, Operations"
+                    value={addFormData.department}
+                    onChange={(e) => setAddFormData({ ...addFormData, department: e.target.value })}
                     required
                   />
                 </div>
@@ -591,86 +671,132 @@ const EmployeeManagementPage = () => {
                   <input
                     type="text"
                     className="form-input"
-                    value={formData.designation}
-                    onChange={(e) => setFormData({ ...formData, designation: e.target.value })}
+                    placeholder="e.g. Software Engineer, Executive"
+                    value={addFormData.designation}
+                    onChange={(e) => setAddFormData({ ...addFormData, designation: e.target.value })}
                     required
                   />
                 </div>
               </div>
 
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowAddUserModal(false)}>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={!selectedCentralUser || addSubmitting}
+                >
+                  {addSubmitting ? 'Adding to BMS...' : 'Add to BMS'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 2. EDIT BMS EMPLOYEE PROFILE MODAL (BMS Fields Only)                      */}
+      {/* ========================================================================= */}
+      {showEditModal && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '600px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+              <h2>Edit BMS Profile — {editFormData.name}</h2>
+              <button className="btn btn-secondary" style={{ padding: '0.3rem 0.5rem' }} onClick={() => setShowEditModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Read-only Central Identity Notice */}
+            <div style={{
+              background: 'rgba(15, 23, 42, 0.7)',
+              border: '1px solid var(--border-color)',
+              padding: '0.85rem 1rem',
+              borderRadius: 'var(--radius-sm)',
+              marginBottom: '1.25rem',
+              fontSize: '0.85rem'
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                <span>Central User: <strong style={{ color: 'white' }}>{editFormData.name}</strong> (@{editFormData.username})</span>
+                <span className="badge badge-secondary">{editFormData.employeeId}</span>
+              </div>
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                Email: {editFormData.email} • <em>Central account credentials are managed in User Management.</em>
+              </div>
+            </div>
+
+            <form onSubmit={handleEditSubmit}>
               <div className="form-grid-2">
+                <div className="form-group">
+                  <label className="form-label">BMS Module Role *</label>
+                  <select
+                    className="form-select"
+                    value={editFormData.roleCode}
+                    onChange={(e) => setEditFormData({ ...editFormData, roleCode: e.target.value })}
+                  >
+                    <option value="BMS_EMPLOYEE">BMS Employee (Standard Meals)</option>
+                    <option value="BMS_ADMIN">BMS Admin (Operational Breakfast Management)</option>
+                    <option value="BMS_FINANCE_MANAGER">BMS Finance Manager (Fund Requests & Ledger)</option>
+                    <option value="BMS_DIRECTOR_ANALYTICS">BMS Director Analytics (Analytics Dashboard)</option>
+                  </select>
+                </div>
+
                 <div className="form-group">
                   <label className="form-label">Breakfast Participation Type *</label>
                   <select
                     className="form-select"
-                    value={formData.breakfastParticipationType}
-                    onChange={(e) => setFormData({ ...formData, breakfastParticipationType: e.target.value })}
+                    value={editFormData.breakfastParticipationType}
+                    onChange={(e) => setEditFormData({ ...editFormData, breakfastParticipationType: e.target.value })}
                   >
                     <option value="NORMAL">Regular Taker (Normal)</option>
                     <option value="PERMANENT_NON_TAKER">Permanent Non-Taker (Opt-out)</option>
                   </select>
                 </div>
+              </div>
+
+              <div className="form-grid-2">
                 <div className="form-group">
-                  <label className="form-label">Account Status</label>
-                  <select
-                    className="form-select"
-                    value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                  >
-                    <option value="active">Active</option>
-                    <option value="inactive">Inactive (Soft Deactivated)</option>
-                  </select>
+                  <label className="form-label">Department *</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={editFormData.department}
+                    onChange={(e) => setEditFormData({ ...editFormData, department: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Designation *</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={editFormData.designation}
+                    onChange={(e) => setEditFormData({ ...editFormData, designation: e.target.value })}
+                    required
+                  />
                 </div>
               </div>
 
-              {/* Role Selection Dropdown & Multi-Role Select Checkboxes */}
-              <div className="form-group" style={{ marginTop: '0.5rem', background: 'rgba(15, 23, 42, 0.6)', padding: '1rem', borderRadius: 'var(--radius-sm)' }}>
-                <div style={{ marginBottom: '0.85rem' }}>
-                  <label htmlFor="employee-role-select" className="form-label" style={{ marginBottom: '0.4rem', display: 'block', color: 'var(--accent-primary)' }}>
-                    BMS Role Selection Dropdown
-                  </label>
-                  <select
-                    id="employee-role-select"
-                    className="form-select"
-                    value={formData.roles[0] || 'BMS_EMPLOYEE'}
-                    onChange={handlePrimaryRoleChange}
-                  >
-                    <option value="BMS_EMPLOYEE">BMS Employee</option>
-                    <option value="BMS_ADMIN">BMS Admin</option>
-                    <option value="BMS_FINANCE_MANAGER">BMS Finance Manager</option>
-                    <option value="BMS_DIRECTOR_ANALYTICS">BMS Director Analytics</option>
-                  </select>
-                </div>
-
-                <label className="form-label" style={{ marginBottom: '0.5rem', display: 'block', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                  Assign BMS Roles (Multi-Select Support)
-                </label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                  {[
-                    { code: 'BMS_EMPLOYEE', label: 'BMS Employee' },
-                    { code: 'BMS_ADMIN', label: 'BMS Admin' },
-                    { code: 'BMS_FINANCE_MANAGER', label: 'BMS Finance Manager' },
-                    { code: 'BMS_DIRECTOR_ANALYTICS', label: 'BMS Director Analytics' }
-                  ].map(roleItem => (
-                    <label key={roleItem.code} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem' }}>
-                      <input
-                        type="checkbox"
-                        checked={formData.roles.includes(roleItem.code) || (roleItem.code === 'BMS_EMPLOYEE' && formData.roles.includes('EMPLOYEE')) || (roleItem.code === 'BMS_ADMIN' && formData.roles.includes('BREAKFAST_ADMIN')) || (roleItem.code === 'BMS_FINANCE_MANAGER' && formData.roles.includes('FINANCE_MANAGER')) || (roleItem.code === 'BMS_DIRECTOR_ANALYTICS' && formData.roles.includes('DIRECTOR_ANALYTICS'))}
-                        onChange={() => handleRoleToggle(roleItem.code)}
-                        style={{ width: '16px', height: '16px', accentColor: 'var(--accent-primary)' }}
-                      />
-                      {roleItem.label}
-                    </label>
-                  ))}
-                </div>
+              <div className="form-group">
+                <label className="form-label">BMS Participation Status</label>
+                <select
+                  className="form-select"
+                  value={editFormData.status}
+                  onChange={(e) => setEditFormData({ ...editFormData, status: e.target.value })}
+                >
+                  <option value="active">Active in BMS</option>
+                  <option value="inactive">Inactive in BMS</option>
+                </select>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowEditModal(false)}>
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary">
-                  {modalMode === 'CREATE' ? 'Create Employee' : 'Save Changes'}
+                <button type="submit" className="btn btn-primary" disabled={editSubmitting}>
+                  {editSubmitting ? 'Updating...' : 'Update BMS Profile'}
                 </button>
               </div>
             </form>
@@ -678,82 +804,9 @@ const EmployeeManagementPage = () => {
         </div>
       )}
 
-      {/* IT Admin Password Reset Modal */}
-      {showPasswordModal && passTargetEmp && (
-        <div className="modal-overlay">
-          <div className="modal-content" style={{ maxWidth: '450px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
-              <h2 style={{ fontSize: '1.2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <Key color="#2563eb" size={20} /> Change User Password
-              </h2>
-              <button className="btn btn-secondary" style={{ padding: '0.3rem 0.5rem' }} onClick={() => setShowPasswordModal(false)}>
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="glass-card" style={{ padding: '0.85rem 1rem', marginBottom: '1.25rem', fontSize: '0.85rem' }}>
-              <div><strong>User:</strong> {passTargetEmp.name}</div>
-              <div><strong>Username:</strong> <code style={{ color: 'var(--accent-primary)' }}>{passTargetEmp.username}</code></div>
-              <div><strong>Employee ID:</strong> {passTargetEmp.employeeId}</div>
-            </div>
-
-            {passMessage && (
-              <div style={{
-                background: passMessage.type === 'success' ? 'var(--success-bg)' : 'var(--danger-bg)',
-                border: `1px solid ${passMessage.type === 'success' ? '#a7f3d0' : '#fca5a5'}`,
-                color: passMessage.type === 'success' ? 'var(--success-text)' : 'var(--danger-text)',
-                padding: '0.75rem 1rem',
-                borderRadius: 'var(--radius-sm)',
-                marginBottom: '1rem',
-                fontSize: '0.85rem',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.5rem'
-              }}>
-                {passMessage.type === 'success' ? <CheckCircle2 size={16} /> : <AlertCircle size={16} />}
-                {passMessage.text}
-              </div>
-            )}
-
-            <form onSubmit={handleResetPasswordSubmit}>
-              <div className="form-group">
-                <label className="form-label">New Password *</label>
-                <input
-                  type="password"
-                  className="form-input"
-                  placeholder="Enter new password (min 6 chars)"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Confirm New Password *</label>
-                <input
-                  type="password"
-                  className="form-input"
-                  placeholder="Re-enter new password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '1.5rem' }}>
-                <button type="button" className="btn btn-secondary" onClick={() => setShowPasswordModal(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="btn btn-primary" disabled={passUpdating}>
-                  {passUpdating ? 'Updating Password...' : 'Update Password'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* IT_ADMIN Exceptional Hard Delete Modal */}
+      {/* ========================================================================= */}
+      {/* 3. IT_ADMIN Exceptional Hard Delete Modal                                 */}
+      {/* ========================================================================= */}
       {showHardDeleteModal && (
         <div className="modal-overlay">
           <div className="modal-content" style={{ borderColor: 'var(--danger)' }}>
@@ -762,7 +815,7 @@ const EmployeeManagementPage = () => {
               <h2>IT_ADMIN Exceptional Hard Delete</h2>
             </div>
             <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
-              You are about to execute a permanent HARD DELETE on employee <strong style={{ color: 'var(--text-primary)' }}>{hardDeleteEmpId}</strong>. Normal administrative deletion is soft deactivation.
+              You are about to execute a permanent HARD DELETE on BMS employee <strong style={{ color: 'var(--text-primary)' }}>{hardDeleteEmpId}</strong>.
             </p>
 
             <div className="form-group">
@@ -792,7 +845,9 @@ const EmployeeManagementPage = () => {
         </div>
       )}
 
-      {/* View History Modal */}
+      {/* ========================================================================= */}
+      {/* 4. View Breakfast History Modal                                           */}
+      {/* ========================================================================= */}
       {showHistoryModal && (
         <div className="modal-overlay">
           <div className="modal-content" style={{ maxWidth: '700px' }}>

@@ -1,10 +1,12 @@
-from typing import Optional
-from fastapi import APIRouter, Depends, Query, Request
+from typing import Optional, List, Dict, Any
+from fastapi import APIRouter, Depends, Query, Request, HTTPException, status
 from sqlalchemy.orm import Session
 from app.core.database import get_db
-from app.core.dependencies import require_permission, require_role, CurrentUser
+from app.core.dependencies import require_permission, require_any_permission, require_role, CurrentUser
 from app.employees.schema import (
     CreateEmployeeRequest,
+    AddUserToBmsRequest,
+    AvailableUserResponse,
     UpdateEmployeeRequest,
     ResetPasswordRequest,
     HardDeleteRequest
@@ -13,6 +15,39 @@ from app.employees.service import EmployeeService
 from app.breakfast.model import BreakfastRecord
 
 router = APIRouter(prefix="/employees", tags=["Employees"])
+
+@router.get("/available-users", response_model=List[AvailableUserResponse])
+def get_available_users_for_bms(
+    search: Optional[str] = Query(None),
+    current_user: CurrentUser = Depends(require_any_permission(["breakfast.employee.create", "breakfast.employee.read", "users.view", "*"])),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns active Central Users who are not currently active members of BMS.
+    Used by BMS Admin to select and assign existing users to the Breakfast Management System.
+    """
+    service = EmployeeService(db)
+    return service.list_available_users_for_bms(search=search)
+
+@router.post("/assign-user")
+@router.post("/add-to-bms")
+def assign_user_to_bms(
+    payload: AddUserToBmsRequest,
+    request: Request,
+    current_user: CurrentUser = Depends(require_any_permission(["breakfast.employee.create", "users.edit", "*"])),
+    db: Session = Depends(get_db)
+):
+    """
+    Assigns an existing Central User to BMS.
+    Does NOT create a new system user. Strictly prevents duplicate assignments.
+    """
+    service = EmployeeService(db)
+    created = service.add_user_to_bms(payload.model_dump(), request=request)
+    return {
+        "success": True,
+        "message": f"User {created.get('name') or created.get('username')} successfully added to BMS.",
+        "employee": created
+    }
 
 @router.get("")
 @router.get("/")
@@ -50,7 +85,7 @@ def create_employee(
     created = service.create_employee(payload.model_dump(), request=request)
     return {
         "success": True,
-        "message": "Employee created successfully",
+        "message": "User added to BMS successfully",
         "employee": created
     }
 
@@ -105,7 +140,7 @@ def update_employee(
     updated = service.update_employee(id, payload.model_dump(exclude_unset=True), request=request)
     return {
         "success": True,
-        "message": "Employee updated successfully",
+        "message": "BMS Employee updated successfully",
         "employee": updated
     }
 
@@ -120,24 +155,22 @@ def deactivate_employee(
     deactivated = service.deactivate_employee(id, request=request)
     return {
         "success": True,
-        "message": f"Employee {deactivated['employeeId']} deactivated successfully. Historical records preserved.",
+        "message": f"User {deactivated['name']} ({deactivated['employeeId']}) removed from BMS. Historical records and central user account remain preserved.",
         "employee": deactivated
     }
 
 @router.post("/{id}/reset-password")
 def reset_password(
     id: str,
-    payload: ResetPasswordRequest,
-    request: Request,
+    payload: Optional[Dict[str, Any]] = None,
+    request: Request = None,
     current_user: CurrentUser = Depends(require_permission("user.password.reset")),
     db: Session = Depends(get_db)
 ):
-    service = EmployeeService(db)
-    service.reset_password(id, payload.newPassword, payload.confirmPassword, request=request)
-    return {
-        "success": True,
-        "message": f"Password for user updated successfully"
-    }
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Password reset must be performed via Central User Management. BMS cannot manage or reset user passwords."
+    )
 
 @router.post("/{id}/hard-delete")
 def hard_delete_employee(
@@ -151,5 +184,5 @@ def hard_delete_employee(
     service.hard_delete_employee(id, payload.confirmCode, request=request)
     return {
         "success": True,
-        "message": f"Employee {id} hard-deleted by IT_ADMIN."
+        "message": f"BMS membership for employee {id} hard-deleted by IT_ADMIN."
     }
