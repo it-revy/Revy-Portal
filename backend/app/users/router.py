@@ -22,7 +22,7 @@ def get_users(
     status: Optional[str] = Query(None),
     module: Optional[str] = Query(None),
     managerId: Optional[str] = Query(None),
-    current_user: CurrentUser = Depends(require_any_permission(["*", "users.view", "users.create", "users.edit", "breakfast.employee.read"])),
+    current_user: CurrentUser = Depends(require_any_permission(["*", "users.view", "users.create", "users.edit"])),
     db: Session = Depends(get_db)
 ):
     service = UserService(db)
@@ -56,7 +56,7 @@ def create_user(
 @router.get("/{id}", response_model=UserResponse)
 def get_user_by_id(
     id: str,
-    current_user: CurrentUser = Depends(require_any_permission(["*", "users.view", "users.edit", "breakfast.employee.read"])),
+    current_user: CurrentUser = Depends(require_any_permission(["*", "users.view", "users.edit"])),
     db: Session = Depends(get_db)
 ):
     service = UserService(db)

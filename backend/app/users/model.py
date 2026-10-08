@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Table
 from sqlalchemy.orm import relationship
 from app.core.database import Base
+import app.roles.model  # noqa: F401
 
 def generate_uuid():
     return str(uuid.uuid4())
@@ -31,9 +32,9 @@ class User(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     manager = relationship("User", remote_side=[id], backref="direct_reports")
-    roles = relationship("Role", secondary=user_roles, back_populates="users", lazy="joined")
-    employee = relationship("Employee", back_populates="user", uselist=False, lazy="joined")
-    module_memberships = relationship("UserModuleMembership", back_populates="user", cascade="all, delete-orphan", lazy="joined")
+    roles = relationship("Role", secondary=user_roles, back_populates="users", lazy="selectin")
+    employee = relationship("Employee", back_populates="user", uselist=False, cascade="all, delete-orphan", lazy="selectin")
+    module_memberships = relationship("UserModuleMembership", back_populates="user", cascade="all, delete-orphan", lazy="selectin")
 
     @property
     def is_active(self) -> bool:

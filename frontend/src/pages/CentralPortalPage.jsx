@@ -13,25 +13,48 @@ import {
   Lock,
   LogOut,
   Sparkles,
-  Info,
   CheckCircle2,
   X,
   ShieldCheck,
   Building,
-  Users
+  Users,
+  Clock
 } from 'lucide-react';
 
-export const SYSTEM_MODULES = [
+/**
+ * Authoritative 9 Services in exact order specified:
+ * 1. MIS
+ * 2. BMS — Breakfast Management System
+ * 3. CRM
+ * 4. LMS
+ * 5. IMS
+ * 6. Leave Management
+ * 7. User Management
+ * 8. DWR
+ * 9. Reports
+ */
+export const PORTAL_SERVICES = [
   {
-    id: 'breakfast',
+    id: 'mis',
+    code: 'MIS',
+    name: 'MIS',
+    subtitle: 'Management Information System',
+    title: 'Management Information System',
+    description: 'Executive analytics, operational metrics, cross-department dashboards, and high-level enterprise KPIs.',
+    icon: BarChart3,
+    isClickable: false,
+    accentColor: '#4f46e5',
+    category: 'Analytics & Management'
+  },
+  {
+    id: 'bms',
     code: 'BMS',
     name: 'BMS',
     subtitle: 'Breakfast Management System',
     title: 'Breakfast Management System',
     description: 'Daily meal attendance, catering orders, cutoff enforcement, attendance history, and authoritative money ledger.',
     icon: UtensilsCrossed,
-    isOpenToAll: false,
-    badge: 'Module Role Managed',
+    isClickable: true,
     accentColor: '#2563eb',
     category: 'Employee Services'
   },
@@ -41,10 +64,9 @@ export const SYSTEM_MODULES = [
     name: 'CRM',
     subtitle: 'Customer Relationship Management',
     title: 'Customer Relationship Management',
-    description: 'Client accounts, lead pipeline, sales tracking, and customer communications.',
+    description: 'Client accounts, lead pipeline, sales tracking, proposal generation, and corporate customer communications.',
     icon: Building,
-    isOpenToAll: false,
-    badge: 'Module Role Managed',
+    isClickable: false,
     accentColor: '#f59e0b',
     category: 'Sales & Growth'
   },
@@ -56,23 +78,45 @@ export const SYSTEM_MODULES = [
     title: 'Laboratory Management System',
     description: 'Environmental sample tracking, biological/chemical test workflows, QA/QC audits, and digital lab certificates.',
     icon: FlaskConical,
-    isOpenToAll: false,
-    badge: 'Module Role Managed',
+    isClickable: false,
     accentColor: '#0891b2',
     category: 'Laboratory Operations'
   },
   {
-    id: 'mis',
-    code: 'MIS',
-    name: 'MIS',
-    subtitle: 'Management Information System',
-    title: 'Management Information System',
-    description: 'Executive analytics, operational metrics, cross-department dashboards, and high-level KPIs.',
-    icon: BarChart3,
-    isOpenToAll: true,
-    badge: 'Open to All',
-    accentColor: '#4f46e5',
-    category: 'Analytics & Management'
+    id: 'ims',
+    code: 'IMS',
+    name: 'IMS',
+    subtitle: 'Inventory Management System',
+    title: 'Inventory Management System',
+    description: 'Track plant materials, lab consumables, hardware inventory, real-time stock alerts, and procurement requisitions.',
+    icon: Boxes,
+    isClickable: false,
+    accentColor: '#10b981',
+    category: 'Supply & Inventory'
+  },
+  {
+    id: 'leave',
+    code: 'LEAVE',
+    name: 'Leave Management',
+    subtitle: 'Leave & Attendance Portal',
+    title: 'Leave & Attendance Management',
+    description: 'Employee leave requests, manager approvals, vacation balance tracking, and corporate attendance calendar.',
+    icon: CalendarCheck,
+    isClickable: false,
+    accentColor: '#8b5cf6',
+    category: 'Human Resources'
+  },
+  {
+    id: 'users',
+    code: 'USERS',
+    name: 'User Management',
+    subtitle: 'Identity & Access Control',
+    title: 'User & System Identity Management',
+    description: 'Create system users, assign hierarchical reporting managers, and control business module memberships and roles.',
+    icon: Users,
+    isClickable: true,
+    accentColor: '#2563eb',
+    category: 'Platform Administration'
   },
   {
     id: 'dwr',
@@ -82,8 +126,7 @@ export const SYSTEM_MODULES = [
     title: 'Daily Work Report',
     description: 'Daily task logging, on-site project activities, progress reporting, and manager sign-off workflows.',
     icon: ClipboardList,
-    isOpenToAll: true,
-    badge: 'Open to All',
+    isClickable: false,
     accentColor: '#d97706',
     category: 'Operations & Field'
   },
@@ -95,17 +138,16 @@ export const SYSTEM_MODULES = [
     title: 'Statutory & Audit Reports',
     description: 'Consolidated statutory reports, platform audit trail analysis, compliance reports, and multi-format data exports.',
     icon: FileSpreadsheet,
-    isOpenToAll: true,
-    badge: 'Open to All',
+    isClickable: false,
     accentColor: '#db2777',
     category: 'Compliance & Audit'
   }
 ];
 
 export const getBreakfastDestination = (hasPermission, hasRole = () => false) => {
-  if (hasRole('CEO') || hasRole('Chief Executive Officer')) return '/ceo-dashboard';
-  if (hasRole('DIRECTOR_ANALYTICS') || hasRole('Director Analytics')) return '/director-analytics';
-  if (hasRole('FINANCE_MANAGER') || hasRole('Finance Manager')) return '/finance/fund-requests';
+  if (hasRole('DIRECTOR') || hasRole('Director') || hasRole('CEO') || hasRole('Chief Executive Officer')) return '/ceo-dashboard';
+  if (hasRole('BMS_DIRECTOR_ANALYTICS') || hasRole('Director Analytics') || hasRole('DIRECTOR_ANALYTICS') || hasRole('BMS Director Analytics')) return '/director-analytics';
+  if (hasRole('BMS_FINANCE_MANAGER') || hasRole('Finance Manager') || hasRole('FINANCE_MANAGER') || hasRole('BMS Finance Manager')) return '/finance/fund-requests';
   if (hasPermission('breakfast.orders.view')) return '/admin/orders';
   if (hasPermission('breakfast.view')) return '/admin/dashboard';
   if (hasPermission('finance.breakfast_fund.view')) return '/finance/fund-requests';
@@ -113,40 +155,28 @@ export const getBreakfastDestination = (hasPermission, hasRole = () => false) =>
 };
 
 export default function CentralPortalPage() {
-  const { user, logout, hasPermission, hasRole, hasModuleAccess, getModuleRole } = useAuth();
+  const { user, logout, hasPermission, hasRole, hasModuleAccess } = useAuth();
   const navigate = useNavigate();
   const [inactiveModal, setInactiveModal] = useState(null);
 
-  const canManageUsers = hasRole('IT_ADMIN') || hasPermission('*') || hasPermission('users.view') || hasPermission('users.create');
-
-  // Build the list of modules, prepending User Management for Admins
-  const displayModules = [...SYSTEM_MODULES];
-  if (canManageUsers) {
-    displayModules.unshift({
-      id: 'users',
-      code: 'USERS',
-      name: 'User Management',
-      subtitle: 'Identity & Access Control',
-      title: 'User & System Identity Management',
-      description: 'Create system users, assign hierarchical managers, and control business module memberships.',
-      icon: Users,
-      isOpenToAll: false,
-      badge: 'System Admin',
-      accentColor: '#2563eb',
-      category: 'Platform Administration'
-    });
-  }
+  const canManageUsers = hasRole('IT_ADMIN') ||
+                         hasRole('DIRECTOR') ||
+                         hasRole('USER_MANAGEMENT_ADMIN') ||
+                         hasModuleAccess('USERS') ||
+                         hasPermission('*') ||
+                         hasPermission('users.view') ||
+                         hasPermission('users.create') ||
+                         hasPermission('users.edit');
 
   const handleModuleClick = (mod) => {
-    // 1. User Management (Admin only)
-    if (mod.id === 'users') {
-      navigate('/users');
+    // 1. If service is disabled / coming soon: do not navigate
+    if (!mod.isClickable) {
       return;
     }
 
     // 2. BMS (Breakfast Management System)
     if (mod.code === 'BMS') {
-      if (hasModuleAccess('BMS')) {
+      if (hasModuleAccess('BMS') || hasRole('IT_ADMIN') || hasRole('DIRECTOR') || hasPermission('*')) {
         const targetRoute = getBreakfastDestination(hasPermission, hasRole);
         navigate(targetRoute);
       } else {
@@ -154,43 +184,25 @@ export default function CentralPortalPage() {
           name: mod.name,
           title: mod.title,
           isPermissionDenied: true,
-          message: 'Your current account does not have membership in the Breakfast Management System (BMS). Please contact your IT Administrator to be added.'
+          message: 'Your current account does not have membership in the Breakfast Management System (BMS). Please contact your IT Administrator to be enrolled.'
         });
       }
       return;
     }
 
-    // 3. Universal modules (MIS, DWR, Reports) - Open to all authenticated users
-    if (mod.isOpenToAll) {
-      if (mod.code === 'REPORTS') {
-        navigate('/admin/reports');
-        return;
+    // 3. User Management
+    if (mod.id === 'users' || mod.code === 'USERS') {
+      if (canManageUsers) {
+        navigate('/user-management');
+      } else {
+        setInactiveModal({
+          name: mod.name,
+          title: mod.title,
+          isPermissionDenied: true,
+          message: 'Access Restricted: You must have IT Administrator, Director, or User Management Admin privileges to access User Management.'
+        });
       }
-      setInactiveModal({
-        name: mod.name,
-        title: mod.subtitle || mod.title,
-        isPermissionDenied: false,
-        message: `The ${mod.name} (${mod.subtitle || mod.title}) workspace is available to all employees. Dedicated workflow components are scheduled in the next platform release.`
-      });
       return;
-    }
-
-    // 4. Restricted Business Modules (CRM, LMS)
-    if (hasModuleAccess(mod.code)) {
-      const assignedRole = getModuleRole(mod.code);
-      setInactiveModal({
-        name: mod.name,
-        title: mod.subtitle || mod.title,
-        isPermissionDenied: false,
-        message: `Your account is active in ${mod.name} with role: ${assignedRole || 'Member'}. The full workflow dashboard for ${mod.name} is currently being connected.`
-      });
-    } else {
-      setInactiveModal({
-        name: mod.name,
-        title: mod.subtitle || mod.title,
-        isPermissionDenied: true,
-        message: `Access Restricted: Your account has not been added to ${mod.name}. Please contact your system administrator for access.`
-      });
     }
   };
 
@@ -259,60 +271,81 @@ export default function CentralPortalPage() {
             <div className="portal-stats-row">
               <span className="portal-stat-badge active-stat">
                 <span className="stat-dot green"></span>
-                Universal Access Active (MIS, DWR, Reports)
+                Active: BMS & User Management
               </span>
               <span className="portal-stat-badge pending-stat">
                 <span className="stat-dot amber"></span>
-                Module-Based Access Enforced
+                Module-Specific Navigation Enforced
               </span>
             </div>
           </section>
 
-          {/* Service Selection Grid */}
+          {/* Service Selection Grid - EXACT 9 SERVICES */}
           <section className="portal-modules-grid" aria-label="Available Services">
-            {displayModules.map((mod) => {
+            {PORTAL_SERVICES.map((mod) => {
               const IconComponent = mod.icon;
-              const isUsers = mod.id === 'users';
-              const isUniversal = mod.isOpenToAll;
-              const hasAccess = isUsers ? canManageUsers : (isUniversal || hasModuleAccess(mod.code));
+              const isClickable = mod.isClickable;
+
+              // Access check for clickable services
+              let hasAccess = false;
+              if (mod.code === 'BMS') {
+                hasAccess = hasModuleAccess('BMS') || hasRole('IT_ADMIN') || hasPermission('*');
+              } else if (mod.code === 'USERS') {
+                hasAccess = canManageUsers;
+              }
 
               return (
                 <div
                   key={mod.id}
-                  className={`portal-module-card ${hasAccess ? 'card-enabled' : 'card-disabled'}`}
+                  className={`portal-module-card ${isClickable ? (hasAccess ? 'card-enabled' : 'card-disabled') : 'card-disabled is-coming-soon'}`}
                   onClick={() => handleModuleClick(mod)}
-                  role="button"
-                  tabIndex={0}
+                  role={isClickable ? 'button' : 'region'}
+                  tabIndex={isClickable ? 0 : -1}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
+                    if (isClickable && (e.key === 'Enter' || e.key === ' ')) {
                       e.preventDefault();
                       handleModuleClick(mod);
                     }
                   }}
-                  aria-disabled={!hasAccess}
+                  aria-disabled={!isClickable || !hasAccess}
+                  style={!isClickable ? { opacity: 0.65, cursor: 'not-allowed' } : {}}
                 >
                   <div className="portal-card-top">
                     <div
                       className="portal-module-icon-wrap"
                       style={{
-                        background: hasAccess ? `${mod.accentColor}18` : '#f1f5f9',
-                        color: hasAccess ? mod.accentColor : '#94a3b8',
-                        borderColor: hasAccess ? `${mod.accentColor}30` : '#e2e8f0'
+                        background: isClickable && hasAccess ? `${mod.accentColor}18` : '#f1f5f9',
+                        color: isClickable && hasAccess ? mod.accentColor : '#94a3b8',
+                        borderColor: isClickable && hasAccess ? `${mod.accentColor}30` : '#e2e8f0'
                       }}
                     >
                       <IconComponent size={26} />
                     </div>
 
                     <div className="portal-card-badges">
-                      {hasAccess ? (
-                        <span className="portal-badge badge-active">
-                          <CheckCircle2 size={12} style={{ marginRight: '4px' }} />
-                          {mod.badge}
-                        </span>
+                      {isClickable ? (
+                        hasAccess ? (
+                          <span className="portal-badge badge-active">
+                            <CheckCircle2 size={12} style={{ marginRight: '4px' }} />
+                            {mod.code === 'USERS' ? 'System Admin' : 'Active Service'}
+                          </span>
+                        ) : (
+                          <span className="portal-badge badge-restricted">
+                            <Lock size={12} style={{ marginRight: '4px' }} />
+                            Membership Required
+                          </span>
+                        )
                       ) : (
-                        <span className="portal-badge badge-restricted">
-                          <Lock size={12} style={{ marginRight: '4px' }} />
-                          Membership Required
+                        <span
+                          className="portal-badge"
+                          style={{
+                            background: '#f1f5f9',
+                            color: '#64748b',
+                            border: '1px solid #cbd5e1'
+                          }}
+                        >
+                          <Clock size={12} style={{ marginRight: '4px' }} />
+                          Coming Soon
                         </span>
                       )}
                     </div>
@@ -326,15 +359,30 @@ export default function CentralPortalPage() {
                   </div>
 
                   <div className="portal-card-bottom">
-                    {hasAccess ? (
-                      <div className="portal-action-cta cta-active">
-                        <span>Open Service</span>
-                        <ArrowRight size={16} className="cta-arrow" />
-                      </div>
+                    {isClickable ? (
+                      hasAccess ? (
+                        <div className="portal-action-cta cta-active">
+                          <span>Open Service</span>
+                          <ArrowRight size={16} className="cta-arrow" />
+                        </div>
+                      ) : (
+                        <div className="portal-action-cta cta-disabled">
+                          <span>Membership Required</span>
+                          <Lock size={14} />
+                        </div>
+                      )
                     ) : (
-                      <div className="portal-action-cta cta-disabled">
-                        <span>Not Enrolled</span>
-                        <Lock size={14} />
+                      <div
+                        className="portal-action-cta cta-disabled"
+                        style={{
+                          background: '#f8fafc',
+                          color: '#94a3b8',
+                          border: '1px solid #e2e8f0',
+                          cursor: 'not-allowed'
+                        }}
+                      >
+                        <span>Coming Soon</span>
+                        <Lock size={13} />
                       </div>
                     )}
                   </div>
@@ -345,75 +393,51 @@ export default function CentralPortalPage() {
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="portal-footer">
-        <div className="portal-footer-inner">
-          <p>© {new Date().getFullYear()} REVY Environmental Solutions. All rights reserved.</p>
-          <p className="portal-footer-tech">
-            REVY Centralized Enterprise Management System • FastAPI + PostgreSQL
-          </p>
-        </div>
-      </footer>
-
-      {/* Inactive / Restricted Module Modal */}
+      {/* Access Restriction Modal */}
       {inactiveModal && (
-        <div className="modal-backdrop" onClick={() => setInactiveModal(null)}>
-          <div
-            className="modal-content"
-            style={{ maxWidth: '480px', padding: '2rem' }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                <div
-                  style={{
-                    width: '42px',
-                    height: '42px',
-                    borderRadius: '10px',
-                    background: inactiveModal.isPermissionDenied ? '#fef2f2' : '#eff6ff',
-                    color: inactiveModal.isPermissionDenied ? '#dc2626' : '#2563eb',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}
-                >
-                  {inactiveModal.isPermissionDenied ? <Lock size={22} /> : <Info size={22} />}
+        <div className="portal-modal-backdrop" onClick={() => setInactiveModal(null)}>
+          <div className="portal-modal-dialog" onClick={(e) => e.stopPropagation()}>
+            <div className="portal-modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <div style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '8px',
+                  background: 'rgba(239, 68, 68, 0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#ef4444'
+                }}>
+                  <Lock size={18} />
                 </div>
                 <div>
-                  <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                    {inactiveModal.name} Service
-                  </h3>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    {inactiveModal.title}
-                  </span>
+                  <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 600 }}>{inactiveModal.name}</h4>
+                  <span style={{ fontSize: '0.75rem', color: '#64748b' }}>{inactiveModal.title}</span>
                 </div>
               </div>
               <button
+                className="portal-modal-close"
                 onClick={() => setInactiveModal(null)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-muted)',
-                  cursor: 'pointer',
-                  padding: '4px'
-                }}
-                aria-label="Close dialog"
+                aria-label="Close"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
-            <p style={{ fontSize: '0.92rem', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: '1.5rem' }}>
-              {inactiveModal.message}
-            </p>
+            <div className="portal-modal-body">
+              <p style={{ margin: 0, color: '#334155', lineHeight: 1.5, fontSize: '0.9rem' }}>
+                {inactiveModal.message}
+              </p>
+            </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
+            <div className="portal-modal-footer">
               <button
-                className="btn btn-primary"
                 onClick={() => setInactiveModal(null)}
-                style={{ minWidth: '100px' }}
+                className="btn btn-secondary"
+                style={{ minWidth: '90px' }}
               >
-                Understood
+                Close
               </button>
             </div>
           </div>

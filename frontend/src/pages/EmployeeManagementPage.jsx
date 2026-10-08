@@ -627,36 +627,39 @@ const EmployeeManagementPage = () => {
               <div className="form-group" style={{ marginTop: '0.5rem', background: 'rgba(15, 23, 42, 0.6)', padding: '1rem', borderRadius: 'var(--radius-sm)' }}>
                 <div style={{ marginBottom: '0.85rem' }}>
                   <label htmlFor="employee-role-select" className="form-label" style={{ marginBottom: '0.4rem', display: 'block', color: 'var(--accent-primary)' }}>
-                    Role Selection Dropdown
+                    BMS Role Selection Dropdown
                   </label>
                   <select
                     id="employee-role-select"
                     className="form-select"
-                    value={formData.roles[0] || 'EMPLOYEE'}
+                    value={formData.roles[0] || 'BMS_EMPLOYEE'}
                     onChange={handlePrimaryRoleChange}
                   >
-                    <option value="EMPLOYEE">Employee</option>
-                    <option value="BREAKFAST_ADMIN">Breakfast Admin</option>
-                    <option value="FINANCE_MANAGER">Finance Manager</option>
-                    <option value="IT_ADMIN">IT Admin</option>
-                    <option value="CEO">CEO</option>
-                    <option value="DIRECTOR_ANALYTICS">Director Analytics</option>
+                    <option value="BMS_EMPLOYEE">BMS Employee</option>
+                    <option value="BMS_ADMIN">BMS Admin</option>
+                    <option value="BMS_FINANCE_MANAGER">BMS Finance Manager</option>
+                    <option value="BMS_DIRECTOR_ANALYTICS">BMS Director Analytics</option>
                   </select>
                 </div>
 
                 <label className="form-label" style={{ marginBottom: '0.5rem', display: 'block', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                  Assign Roles (Multi-Select Support)
+                  Assign BMS Roles (Multi-Select Support)
                 </label>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                  {['EMPLOYEE', 'BREAKFAST_ADMIN', 'FINANCE_MANAGER', 'IT_ADMIN', 'CEO', 'DIRECTOR_ANALYTICS'].map(role => (
-                    <label key={role} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem' }}>
+                  {[
+                    { code: 'BMS_EMPLOYEE', label: 'BMS Employee' },
+                    { code: 'BMS_ADMIN', label: 'BMS Admin' },
+                    { code: 'BMS_FINANCE_MANAGER', label: 'BMS Finance Manager' },
+                    { code: 'BMS_DIRECTOR_ANALYTICS', label: 'BMS Director Analytics' }
+                  ].map(roleItem => (
+                    <label key={roleItem.code} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.85rem' }}>
                       <input
                         type="checkbox"
-                        checked={formData.roles.includes(role)}
-                        onChange={() => handleRoleToggle(role)}
+                        checked={formData.roles.includes(roleItem.code) || (roleItem.code === 'BMS_EMPLOYEE' && formData.roles.includes('EMPLOYEE')) || (roleItem.code === 'BMS_ADMIN' && formData.roles.includes('BREAKFAST_ADMIN')) || (roleItem.code === 'BMS_FINANCE_MANAGER' && formData.roles.includes('FINANCE_MANAGER')) || (roleItem.code === 'BMS_DIRECTOR_ANALYTICS' && formData.roles.includes('DIRECTOR_ANALYTICS'))}
+                        onChange={() => handleRoleToggle(roleItem.code)}
                         style={{ width: '16px', height: '16px', accentColor: 'var(--accent-primary)' }}
                       />
-                      {role === 'FINANCE_MANAGER' ? 'Finance Manager' : role === 'DIRECTOR_ANALYTICS' ? 'Director Analytics' : role.replace('_', ' ')}
+                      {roleItem.label}
                     </label>
                   ))}
                 </div>

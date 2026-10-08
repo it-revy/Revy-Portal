@@ -1,11 +1,18 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Text, UniqueConstraint, Table
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
 def generate_uuid():
     return str(uuid.uuid4())
+
+module_role_permissions = Table(
+    "module_role_permissions",
+    Base.metadata,
+    Column("module_role_id", String(36), ForeignKey("module_roles.id", ondelete="CASCADE"), primary_key=True),
+    Column("permission_id", String(36), ForeignKey("permissions.id", ondelete="CASCADE"), primary_key=True),
+)
 
 class Module(Base):
     __tablename__ = "modules"
@@ -19,7 +26,7 @@ class Module(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
-    roles = relationship("ModuleRole", back_populates="module", cascade="all, delete-orphan", lazy="joined")
+    roles = relationship("ModuleRole", back_populates="module", cascade="all, delete-orphan", lazy="selectin")
     memberships = relationship("UserModuleMembership", back_populates="module", cascade="all, delete-orphan")
 
 
@@ -41,6 +48,7 @@ class ModuleRole(Base):
 
     module = relationship("Module", back_populates="roles")
     memberships = relationship("UserModuleMembership", back_populates="role")
+    permissions = relationship("Permission", secondary=module_role_permissions, lazy="selectin")
 
 
 class UserModuleMembership(Base):
@@ -59,5 +67,5 @@ class UserModuleMembership(Base):
     )
 
     user = relationship("User", back_populates="module_memberships")
-    module = relationship("Module", back_populates="memberships", lazy="joined")
-    role = relationship("ModuleRole", back_populates="memberships", lazy="joined")
+    module = relationship("Module", back_populates="memberships", lazy="selectin")
+    role = relationship("ModuleRole", back_populates="memberships", lazy="selectin")

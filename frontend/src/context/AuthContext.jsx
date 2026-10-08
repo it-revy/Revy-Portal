@@ -3,9 +3,25 @@ import API from '../services/api';
 
 const AuthContext = createContext();
 
-const ROLE_PRIORITY = ['IT_ADMIN', 'DIRECTOR_ANALYTICS', 'CEO', 'FINANCE_MANAGER', 'BREAKFAST_ADMIN', 'EMPLOYEE'];
+const ROLE_PRIORITY = [
+  'IT_ADMIN', 'IT Admin',
+  'DIRECTOR', 'Director',
+  'BMS_ADMIN', 'BMS Admin', 'BREAKFAST_ADMIN',
+  'BMS_DIRECTOR_ANALYTICS', 'BMS Director Analytics', 'DIRECTOR_ANALYTICS',
+  'BMS_FINANCE_MANAGER', 'BMS Finance Manager', 'FINANCE_MANAGER',
+  'USER_MANAGEMENT_ADMIN', 'User Management Admin',
+  'CRM_ADMIN', 'CRM Admin',
+  'LMS_ADMIN', 'LMS Admin',
+  'IMS_ADMIN', 'IMS Admin',
+  'LEAVE_ADMIN', 'Leave Management Admin',
+  'MIS_ADMIN', 'MIS Admin',
+  'DWR_ADMIN', 'DWR Admin',
+  'REPORTS_ADMIN', 'Reports Admin',
+  'BMS_EMPLOYEE', 'BMS Employee', 'EMPLOYEE'
+];
+
 const pickPrimaryRole = (roles = []) => {
-  return ROLE_PRIORITY.find(r => roles.includes(r)) || roles[0] || 'EMPLOYEE';
+  return ROLE_PRIORITY.find(r => roles.includes(r)) || roles[0] || 'BMS_EMPLOYEE';
 };
 
 export const AuthProvider = ({ children }) => {
@@ -112,8 +128,16 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const isGlobalAdmin = () => {
+    if (!user || !user.roles) return false;
+    const normRoles = user.roles.map(r => String(r).toUpperCase().replace(/[\s_-]+/g, ''));
+    return normRoles.includes('ITADMIN') || normRoles.includes('DIRECTOR') || (user.permissions && user.permissions.includes('*'));
+  };
+
   const hasPermission = (permission) => {
     if (!user) return false;
+    if (isGlobalAdmin()) return true;
+
     // Authoritative permissions assigned to the authenticated user
     if (user.permissions && (user.permissions.includes('*') || user.permissions.includes(permission))) {
       return true;
@@ -132,21 +156,43 @@ export const AuthProvider = ({ children }) => {
 
   const hasRole = (role) => {
     if (!user || !user.roles) return false;
-    if (user.roles.includes(role)) return true;
     const normTarget = String(role).toLowerCase().replace(/[\s_-]+/g, '');
-    return user.roles.some(r => String(r).toLowerCase().replace(/[\s_-]+/g, '') === normTarget);
+
+    // Global administrators satisfy all module and admin role requirements
+    if (isGlobalAdmin()) {
+      return true;
+    }
+
+    // Direct match
+    const normRoles = user.roles.map(r => String(r).toLowerCase().replace(/[\s_-]+/g, ''));
+    if (normRoles.includes(normTarget)) return true;
+
+    // Role alias mappings for module vs legacy roles
+    if (normTarget === 'ceo' || normTarget === 'chiefexecutiveofficer') {
+      return normRoles.includes('director') || normRoles.includes('bmsdirectoranalytics');
+    }
+    if (normTarget === 'directoranalytics') {
+      return normRoles.includes('bmsdirectoranalytics') || normRoles.includes('director');
+    }
+    if (normTarget === 'breakfastadmin') {
+      return normRoles.includes('bmsadmin');
+    }
+    if (normTarget === 'financemanager') {
+      return normRoles.includes('bmsfinancemanager');
+    }
+    if (normTarget === 'employee') {
+      return normRoles.includes('bmsemployee') || normRoles.includes('bmsadmin');
+    }
+
+    return false;
   };
 
   const hasModuleAccess = (moduleCode) => {
     if (!user) return false;
+    // Global IT Admin and Director bypass all module boundaries
+    if (isGlobalAdmin()) return true;
+
     const target = String(moduleCode).toUpperCase();
-    // Universal access modules: MIS, DWR, REPORTS
-    if (['MIS', 'DWR', 'REPORTS'].includes(target)) return true;
-
-    // Superadmin override
-    if (hasRole('IT_ADMIN') || hasPermission('*')) return true;
-
-    // Check user module memberships
     if (Array.isArray(user.modules)) {
       return user.modules.some(m => (m.moduleCode || '').toUpperCase() === target);
     }
@@ -174,7 +220,8 @@ export const AuthProvider = ({ children }) => {
         hasPermission,
         hasRole,
         hasModuleAccess,
-        getModuleRole
+        getModuleRole,
+        isGlobalAdmin: isGlobalAdmin()
       }}
     >
       {children}

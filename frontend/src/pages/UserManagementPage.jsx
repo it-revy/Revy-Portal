@@ -69,6 +69,23 @@ const UserManagementPage = () => {
 
   useEffect(() => {
     loadInitialData();
+
+    const handleTriggerCreate = () => {
+      handleOpenCreateModal();
+    };
+    const handleTriggerModuleFilter = () => {
+      const select = document.getElementById('user-module-filter-select');
+      if (select) {
+        select.focus();
+      }
+    };
+
+    window.addEventListener('revy-open-create-user', handleTriggerCreate);
+    window.addEventListener('revy-filter-module-access', handleTriggerModuleFilter);
+    return () => {
+      window.removeEventListener('revy-open-create-user', handleTriggerCreate);
+      window.removeEventListener('revy-filter-module-access', handleTriggerModuleFilter);
+    };
   }, []);
 
   useEffect(() => {
@@ -123,7 +140,7 @@ const UserManagementPage = () => {
       password: '',
       managerId: '',
       status: 'active',
-      roles: ['EMPLOYEE']
+      roles: []
     });
     // Refresh manager list
     try {
@@ -145,7 +162,7 @@ const UserManagementPage = () => {
       password: '',
       managerId: u.managerId || '',
       status: u.status,
-      roles: u.roles || ['EMPLOYEE']
+      roles: u.roles || []
     });
     // Refresh manager list excluding self to prevent self-assignment
     try {
@@ -416,6 +433,7 @@ const UserManagementPage = () => {
         </select>
 
         <select
+          id="user-module-filter-select"
           className="form-select"
           style={{ flex: '0 1 200px', minWidth: '160px' }}
           value={moduleFilter}
@@ -425,6 +443,12 @@ const UserManagementPage = () => {
           <option value="BMS">BMS (Breakfast)</option>
           <option value="CRM">CRM (Sales & Pipeline)</option>
           <option value="LMS">LMS (Laboratory)</option>
+          <option value="IMS">IMS (Inventory)</option>
+          <option value="LEAVE">Leave Management</option>
+          <option value="USERS">User Management</option>
+          <option value="MIS">MIS</option>
+          <option value="DWR">DWR</option>
+          <option value="REPORTS">Reports</option>
         </select>
       </div>
 
@@ -523,20 +547,27 @@ const UserManagementPage = () => {
                     </td>
                     <td>
                       <div style={{ display: 'flex', gap: '0.3rem', flexWrap: 'wrap' }}>
-                        {u.roles?.map(r => (
-                          <span
-                            key={r}
-                            className="badge"
-                            style={{
-                              background: r === 'IT_ADMIN' ? 'rgba(239, 68, 68, 0.12)' : 'rgba(59, 130, 246, 0.12)',
-                              color: r === 'IT_ADMIN' ? '#f87171' : '#93c5fd',
-                              fontSize: '0.7rem',
-                              border: r === 'IT_ADMIN' ? '1px solid rgba(239, 68, 68, 0.25)' : '1px solid rgba(59, 130, 246, 0.25)'
-                            }}
-                          >
-                            {r.replace('_', ' ')}
+                        {u.roles && u.roles.length > 0 ? (
+                          u.roles.map(r => (
+                            <span
+                              key={r}
+                              className="badge"
+                              style={{
+                                background: (r === 'IT_ADMIN' || r === 'IT Admin') ? 'rgba(239, 68, 68, 0.15)' : 'rgba(139, 92, 246, 0.15)',
+                                color: (r === 'IT_ADMIN' || r === 'IT Admin') ? '#f87171' : '#c084fc',
+                                fontSize: '0.75rem',
+                                fontWeight: 600,
+                                border: (r === 'IT_ADMIN' || r === 'IT Admin') ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid rgba(139, 92, 246, 0.3)'
+                              }}
+                            >
+                              {r === 'IT_ADMIN' ? 'IT Admin' : r === 'DIRECTOR' ? 'Director' : r}
+                            </span>
+                          ))
+                        ) : (
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                            Standard User
                           </span>
-                        ))}
+                        )}
                       </div>
                     </td>
                     <td>
@@ -727,36 +758,49 @@ const UserManagementPage = () => {
               )}
 
               <div style={{ marginBottom: '1.5rem' }}>
-                <label className="form-label">System Platform Role</label>
-                <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
-                  {['EMPLOYEE', 'BREAKFAST_ADMIN', 'FINANCE_MANAGER', 'IT_ADMIN', 'CEO', 'DIRECTOR_ANALYTICS'].map(role => {
-                    const isSelected = formData.roles.includes(role);
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                  <label className="form-label" style={{ margin: 0 }}>System Platform Role (Global)</label>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Optional • System-wide access</span>
+                </div>
+                <p style={{ margin: '0 0 0.6rem 0', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                  Only assign for Global Administrators. For normal users, leave unselected and configure module-specific roles via Module Access.
+                </p>
+                <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  {[
+                    { code: 'IT_ADMIN', label: 'IT Admin', desc: 'Full IT administration & all module permissions' },
+                    { code: 'DIRECTOR', label: 'Director', desc: 'Executive leadership & full system administration' }
+                  ].map(roleItem => {
+                    const isSelected = formData.roles.includes(roleItem.code) || formData.roles.includes(roleItem.label);
                     return (
                       <button
                         type="button"
-                        key={role}
+                        key={roleItem.code}
                         onClick={() => {
-                          const curr = [...formData.roles];
-                          if (curr.includes(role)) {
-                            if (curr.length > 1) {
-                              setFormData({ ...formData, roles: curr.filter(r => r !== role) });
-                            }
+                          if (isSelected) {
+                            setFormData({ ...formData, roles: [] });
                           } else {
-                            setFormData({ ...formData, roles: [...curr, role] });
+                            setFormData({ ...formData, roles: [roleItem.code] });
                           }
                         }}
                         style={{
-                          padding: '0.4rem 0.75rem',
+                          flex: '1 1 200px',
+                          padding: '0.65rem 0.85rem',
                           borderRadius: 'var(--radius-sm)',
-                          fontSize: '0.75rem',
-                          fontWeight: 600,
+                          textAlign: 'left',
                           cursor: 'pointer',
-                          border: isSelected ? '1px solid var(--accent-primary)' : '1px solid var(--border-color)',
-                          background: isSelected ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255, 255, 255, 0.05)',
-                          color: isSelected ? '#60a5fa' : 'var(--text-secondary)'
+                          border: isSelected ? '1.5px solid var(--accent-primary)' : '1px solid var(--border-color)',
+                          background: isSelected ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255, 255, 255, 0.03)',
+                          color: isSelected ? '#60a5fa' : 'var(--text-primary)',
+                          transition: 'all 0.15s ease'
                         }}
                       >
-                        {role.replace('_', ' ')}
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <strong style={{ fontSize: '0.85rem' }}>{roleItem.label}</strong>
+                          {isSelected && <span style={{ fontSize: '0.75rem', color: '#60a5fa', fontWeight: 700 }}>✓ Assigned</span>}
+                        </div>
+                        <div style={{ fontSize: '0.7rem', color: isSelected ? '#93c5fd' : 'var(--text-muted)', marginTop: '0.2rem' }}>
+                          {roleItem.desc}
+                        </div>
                       </button>
                     );
                   })}
@@ -828,9 +872,7 @@ const UserManagementPage = () => {
                         )}
                       </div>
                       <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                        {isUniversal
-                          ? 'Accessible by all authenticated users in the company.'
-                          : isEnabled
+                        {isEnabled
                           ? 'User has authorized access to this business module.'
                           : 'Not assigned to user. Access restricted.'}
                       </p>
@@ -838,38 +880,34 @@ const UserManagementPage = () => {
 
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                       {/* Module-Scoped Role Dropdown */}
-                      {isEnabled && !isUniversal && modDef?.roles && modDef.roles.length > 0 && (
+                      {isEnabled && modDef?.roles && modDef.roles.length > 0 && (
                         <div>
                           <select
                             className="form-select"
-                            style={{ padding: '0.35rem 0.6rem', fontSize: '0.8rem', minWidth: '160px' }}
+                            style={{ padding: '0.35rem 0.6rem', fontSize: '0.8rem', minWidth: '170px' }}
                             value={m.roleCode || ''}
                             onChange={(e) => handleModuleRoleChange(m.moduleCode, e.target.value)}
                           >
-                            {modDef.roles.map(r => (
-                              <option key={r.code} value={r.code}>
-                                {r.name}
-                              </option>
-                            ))}
+                            {modDef.roles
+                              .filter(r => r.isActive !== false)
+                              .map(r => (
+                                <option key={r.code} value={r.code}>
+                                  {r.name}
+                                </option>
+                              ))}
                           </select>
                         </div>
                       )}
 
                       {/* Enable/Disable Toggle */}
-                      {!isUniversal ? (
-                        <button
-                          type="button"
-                          onClick={() => handleToggleModule(m.moduleCode)}
-                          className={`btn ${isEnabled ? 'btn-primary' : 'btn-secondary'}`}
-                          style={{ padding: '0.35rem 0.85rem', fontSize: '0.8rem' }}
-                        >
-                          {isEnabled ? 'Enabled ✓' : 'Disabled'}
-                        </button>
-                      ) : (
-                        <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 600, padding: '0.35rem 0.5rem' }}>
-                          Open
-                        </span>
-                      )}
+                      <button
+                        type="button"
+                        onClick={() => handleToggleModule(m.moduleCode)}
+                        className={`btn ${isEnabled ? 'btn-primary' : 'btn-secondary'}`}
+                        style={{ padding: '0.35rem 0.85rem', fontSize: '0.8rem' }}
+                      >
+                        {isEnabled ? 'Enabled ✓' : 'Disabled'}
+                      </button>
                     </div>
                   </div>
                 );

@@ -25,7 +25,7 @@ class Role(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
-    permissions = relationship("Permission", secondary=role_permissions, back_populates="roles", lazy="joined")
+    permissions = relationship("Permission", secondary=role_permissions, back_populates="roles", lazy="selectin")
     users = relationship("User", secondary="user_roles", back_populates="roles")
 
 

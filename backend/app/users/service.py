@@ -157,8 +157,8 @@ class UserService:
             is_hard_deleted=False
         )
 
-        # Assign system roles if provided
-        role_codes = data.get("roles") or ["EMPLOYEE"]
+        # Assign system global roles if provided (IT_ADMIN or DIRECTOR)
+        role_codes = data.get("roles") or []
         if role_codes:
             roles = self.db.query(Role).filter(Role.code.in_(role_codes)).all()
             user.roles = roles

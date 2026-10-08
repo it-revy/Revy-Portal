@@ -124,6 +124,15 @@ def health_check():
         "database": "connected"
     }
 
+from app.modules.services_router import (
+    crm_router,
+    lms_router,
+    ims_router,
+    leave_router,
+    mis_router,
+    dwr_router
+)
+
 # Register Routers under both /api/v1 and /api for full backward compatibility
 for prefix in ["/api/v1", "/api"]:
     app.include_router(auth_router, prefix=prefix)
@@ -139,6 +148,12 @@ for prefix in ["/api/v1", "/api"]:
     app.include_router(finance_router, prefix=prefix)
     app.include_router(users_router, prefix=prefix)
     app.include_router(modules_router, prefix=prefix)
+    app.include_router(crm_router, prefix=prefix)
+    app.include_router(lms_router, prefix=prefix)
+    app.include_router(ims_router, prefix=prefix)
+    app.include_router(leave_router, prefix=prefix)
+    app.include_router(mis_router, prefix=prefix)
+    app.include_router(dwr_router, prefix=prefix)
 
 if __name__ == "__main__":
     import os

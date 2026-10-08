@@ -4,94 +4,134 @@ import app.models  # noqa: F401 ensures all models and table mappers are loaded
 from app.roles.model import Role, Permission
 from app.users.model import User
 
-logger = logging.getLogger("revy.breakfast")
+logger = logging.getLogger("revy.roles")
 
 def ensure_roles_and_permissions():
     """
-    Ensure the DIRECTOR_ANALYTICS role, orders permission, and updated
-    CEO / Finance Manager role assignments exist in the database without
-    affecting existing user accounts.
+    Centralized Global Roles Setup:
+    Ensures that only the two designated system-wide global roles exist in the roles table:
+      1. IT_ADMIN (IT Admin)
+      2. DIRECTOR (Director) - Migrated from legacy CEO
+    Both global roles are granted unrestricted system access (*).
+    Optimized with batch queries for sub-second execution.
     """
     db = SessionLocal()
     try:
-        # 1. Ensure permissions
-        orders_perm = db.query(Permission).filter(Permission.code == "breakfast.orders.view").first()
-        if not orders_perm:
-            orders_perm = Permission(
-                code="breakfast.orders.view",
-                name="View All Breakfast Orders",
-                module="BREAKFAST",
-                description="View all company breakfast orders and order history"
-            )
-            db.add(orders_perm)
-            db.flush()
+        # 1. Fetch all existing permissions in one query
+        existing_perms = {p.code: p for p in db.query(Permission).all()}
 
-        dash_perm = db.query(Permission).filter(Permission.code == "breakfast.dashboard.view").first()
-        if not dash_perm:
-            dash_perm = Permission(
-                code="breakfast.dashboard.view",
-                name="View Director Analytics Dashboard",
-                module="BREAKFAST",
-                description="Executive view of summary analytics"
+        # Ensure '*' superadmin permission exists
+        if "*" not in existing_perms:
+            star_perm = Permission(
+                code="*",
+                name="Full Administrative Access",
+                module="PLATFORM",
+                description="Unrestricted system-wide access"
             )
-            db.add(dash_perm)
+            db.add(star_perm)
             db.flush()
+            existing_perms["*"] = star_perm
+
+        standard_permissions = [
+            ("breakfast.view_own", "View Own Breakfast Status", "BREAKFAST"),
+            ("breakfast.submit", "Submit Daily Breakfast Status", "BREAKFAST"),
+            ("breakfast.history_own", "View Own Breakfast History", "BREAKFAST"),
+            ("breakfast.view", "View All Breakfast Status", "BREAKFAST"),
+            ("breakfast.manage", "Manage Daily Breakfast Operations", "BREAKFAST"),
+            ("breakfast.report", "Generate Breakfast Reports", "BREAKFAST"),
+            ("breakfast.orders.view", "View All Breakfast Orders", "BREAKFAST"),
+            ("breakfast.dashboard.view", "View Director Analytics Dashboard", "BREAKFAST"),
+            ("breakfast.employee.create", "Create Employees", "BREAKFAST"),
+            ("breakfast.employee.read", "Read Employee Records", "BREAKFAST"),
+            ("breakfast.employee.update", "Update Employee Records", "BREAKFAST"),
+            ("breakfast.employee.deactivate", "Deactivate Employees", "BREAKFAST"),
+            ("breakfast.holiday.manage", "Manage Public Holidays", "BREAKFAST"),
+            ("breakfast.settings.manage", "Manage System Settings", "BREAKFAST"),
+            ("breakfast.money.view", "View Breakfast Money Ledger", "MONEY"),
+            ("breakfast.money.request", "Request Breakfast Money", "MONEY"),
+            ("breakfast.money.receive", "Receive Money from Finance", "MONEY"),
+            ("breakfast.money.receipt.verify", "Verify Money Receipt", "MONEY"),
+            ("breakfast.money.expense.view", "View Breakfast Expenses", "MONEY"),
+            ("breakfast.money.expense.create", "Record Breakfast Expenses", "MONEY"),
+            ("breakfast.money.adjust", "Adjust Money Ledger", "MONEY"),
+            ("breakfast.money.report", "Generate Money Statements", "MONEY"),
+            ("breakfast.actual_status.override", "Override Employee Actual Status", "BREAKFAST"),
+            ("breakfast.audit.view", "View Audit Logs", "AUDIT"),
+            ("finance.breakfast_fund.view", "View Finance Breakfast Fund Dashboard", "FINANCE"),
+            ("finance.breakfast_fund.request.view", "View Fund Requests", "FINANCE"),
+            ("finance.breakfast_fund.request.approve", "Approve Fund Requests", "FINANCE"),
+            ("finance.breakfast_fund.request.reject", "Reject Fund Requests", "FINANCE"),
+            ("finance.breakfast_fund.provide", "Provide Money for Fund Request", "FINANCE"),
+            ("finance.breakfast_fund.report", "Finance Fund Reports", "FINANCE"),
+            ("users.view", "View Users", "USERS"),
+            ("users.create", "Create Users", "USERS"),
+            ("users.edit", "Edit Users", "USERS"),
+            ("users.deactivate", "Deactivate Users", "USERS"),
+            ("user.password.reset", "Reset User Passwords", "PLATFORM"),
+        ]
+
+        for code, name, mod in standard_permissions:
+            if code not in existing_perms:
+                p = Permission(code=code, name=name, module=mod, description=name)
+                db.add(p)
+                db.flush()
+                existing_perms[code] = p
+
+        all_perms_list = list(existing_perms.values())
+
+        # 2. Fetch existing roles
+        roles_by_code = {r.code: r for r in db.query(Role).all()}
+
+        # Ensure IT_ADMIN Global Role
+        it_role = roles_by_code.get("IT_ADMIN")
+        if not it_role:
+            it_role = Role(
+                code="IT_ADMIN",
+                name="IT Admin",
+                description="Global IT Administrator with full unrestricted access across all modules"
+            )
+            db.add(it_role)
+            db.flush()
+            roles_by_code["IT_ADMIN"] = it_role
         else:
-            dash_perm.name = "View Director Analytics Dashboard"
+            it_role.name = "IT Admin"
+            it_role.description = "Global IT Administrator with full unrestricted access across all modules"
+        it_role.permissions = all_perms_list
 
-        report_perm = db.query(Permission).filter(Permission.code == "breakfast.report").first()
-        if not report_perm:
-            report_perm = Permission(
-                code="breakfast.report",
-                name="Generate Breakfast Reports",
-                module="BREAKFAST",
-                description="Access daily and monthly reports"
-            )
-            db.add(report_perm)
-            db.flush()
+        # 3. Handle Migration: CEO -> DIRECTOR
+        dir_role = roles_by_code.get("DIRECTOR")
+        ceo_role = roles_by_code.get("CEO")
 
-        # 2. Ensure DIRECTOR_ANALYTICS role
-        dir_role = db.query(Role).filter(Role.code == "DIRECTOR_ANALYTICS").first()
         if not dir_role:
-            dir_role = Role(
-                code="DIRECTOR_ANALYTICS",
-                name="Director Analytics",
-                description="Executive Director Analytics dashboard and management insights"
-            )
-            db.add(dir_role)
-            db.flush()
+            if ceo_role:
+                ceo_role.code = "DIRECTOR"
+                ceo_role.name = "Director"
+                ceo_role.description = "Global Executive Director with full unrestricted access across all modules"
+                dir_role = ceo_role
+            else:
+                dir_role = Role(
+                    code="DIRECTOR",
+                    name="Director",
+                    description="Global Executive Director with full unrestricted access across all modules"
+                )
+                db.add(dir_role)
+                db.flush()
+        else:
+            dir_role.name = "Director"
+            dir_role.description = "Global Executive Director with full unrestricted access across all modules"
+            if ceo_role and ceo_role.id != dir_role.id:
+                for u in list(ceo_role.users):
+                    if dir_role not in u.roles:
+                        u.roles.append(dir_role)
+                ceo_role.users = []
 
-        dir_perms = [p for p in [dash_perm] if p]
-        for code in ["breakfast.view_own", "breakfast.submit", "breakfast.history_own"]:
-            p = db.query(Permission).filter(Permission.code == code).first()
-            if p and p not in dir_perms:
-                dir_perms.append(p)
-        dir_role.permissions = dir_perms
-
-        # 3. Update CEO role permissions:
-        # - Ensure breakfast.orders.view is added so CEO can view all orders across all employees
-        ceo_role = db.query(Role).filter(Role.code == "CEO").first()
-        if ceo_role:
-            ceo_perms = list(ceo_role.permissions)
-            if orders_perm and not any(p.code == "breakfast.orders.view" for p in ceo_perms):
-                ceo_perms.append(orders_perm)
-            if dash_perm and not any(p.code == "breakfast.dashboard.view" for p in ceo_perms):
-                ceo_perms.append(dash_perm)
-            ceo_role.permissions = ceo_perms
-
-        # 4. Update FINANCE_MANAGER role permissions:
-        # - Ensure breakfast.report is present for full reports viewing and downloading
-        fin_role = db.query(Role).filter(Role.code == "FINANCE_MANAGER").first()
-        if fin_role:
-            fin_perms = list(fin_role.permissions)
-            if report_perm and not any(p.code == "breakfast.report" for p in fin_perms):
-                fin_perms.append(report_perm)
-            fin_role.permissions = fin_perms
+        dir_role.permissions = all_perms_list
 
         db.commit()
-        logger.info("Successfully verified and synced RBAC roles and permissions (DIRECTOR_ANALYTICS, CEO, FINANCE_MANAGER).")
+        logger.info("Successfully synced Global System Roles (IT Admin, Director) with full unrestricted access.")
     except Exception as e:
         db.rollback()
-        logger.warning(f"ensure_roles_and_permissions note: {e}")
+        logger.error(f"Error in ensure_roles_and_permissions: {e}", exc_info=True)
+        raise
     finally:
         db.close()

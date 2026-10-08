@@ -1,9 +1,6 @@
-import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
-
-import Sidebar from './components/Sidebar';
-import Header from './components/Header';
 
 import LoginPage from './pages/LoginPage';
 import CentralPortalPage, { getBreakfastDestination } from './pages/CentralPortalPage';
@@ -25,119 +22,8 @@ import BreakfastMoneyPage from './pages/BreakfastMoneyPage';
 import FinanceManagerPage from './pages/FinanceManagerPage';
 import UserManagementPage from './pages/UserManagementPage';
 
-import ForcePasswordChangeModal from './components/ForcePasswordChangeModal';
-
-const ProtectedLayout = ({ children, requiredPermission, requiredRole, requiredModule }) => {
-  const { user, loading, hasPermission, hasRole, hasModuleAccess } = useAuth();
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    try {
-      return localStorage.getItem('revy_sidebar_collapsed') === 'true';
-    } catch {
-      return false;
-    }
-  });
-
-  const toggleSidebarCollapse = () => {
-    setSidebarCollapsed(prev => {
-      const next = !prev;
-      try {
-        localStorage.setItem('revy_sidebar_collapsed', String(next));
-      } catch {}
-      return next;
-    });
-  };
-
-  if (loading) {
-    return <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>Loading session...</div>;
-  }
-
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
-
-  const checkPermission = () => {
-    if (requiredModule && !hasModuleAccess(requiredModule)) {
-      return false;
-    }
-    if (hasRole('IT_ADMIN') || hasPermission('*')) return true;
-
-    // If a required role is explicitly specified (e.g. DIRECTOR_ANALYTICS), enforce it strictly
-    if (requiredRole) {
-      if (Array.isArray(requiredRole)) {
-        return requiredRole.some(r => hasRole(r));
-      }
-      return hasRole(requiredRole);
-    }
-    if (hasRole('FINANCE_MANAGER') || hasRole('Finance Manager')) {
-      if (typeof requiredPermission === 'string' && (requiredPermission.startsWith('finance.') || requiredPermission.startsWith('breakfast.money.') || requiredPermission === 'breakfast.report')) return true;
-      if (Array.isArray(requiredPermission) && requiredPermission.some(p => p.startsWith('finance.') || p.startsWith('breakfast.money.') || p === 'breakfast.report')) return true;
-    }
-    if (hasRole('CEO') || hasRole('Chief Executive Officer')) {
-      if (typeof requiredPermission === 'string' && (requiredPermission === 'breakfast.orders.view' || requiredPermission === 'breakfast.view')) return true;
-      if (Array.isArray(requiredPermission) && requiredPermission.some(p => p === 'breakfast.orders.view' || p === 'breakfast.view')) return true;
-    }
-    if (!requiredPermission) {
-      return hasModuleAccess('BMS');
-    }
-    if (Array.isArray(requiredPermission)) {
-      return requiredPermission.some(p => hasPermission(p));
-    }
-    return hasPermission(requiredPermission);
-  };
-
-  if (!checkPermission()) {
-    return (
-      <div className="app-container">
-        <ForcePasswordChangeModal />
-        <Sidebar
-          isMobileOpen={mobileOpen}
-          onCloseMobile={() => setMobileOpen(false)}
-          isCollapsed={sidebarCollapsed}
-          onToggleCollapse={toggleSidebarCollapse}
-        />
-        <div className={`main-content ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
-          <Header
-            onToggleMobile={() => setMobileOpen(!mobileOpen)}
-            sidebarCollapsed={sidebarCollapsed}
-            onToggleCollapse={toggleSidebarCollapse}
-          />
-          <div className="page-body">
-            <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center' }}>
-              <h2 style={{ color: 'var(--danger)', marginBottom: '1rem' }}>403 - Permission Denied</h2>
-              <p style={{ color: 'var(--text-secondary)', marginBottom: '1.25rem' }}>
-                Your current role does not have authorization to view this section.
-              </p>
-              <Link to="/portal" className="btn btn-primary" style={{ display: 'inline-flex', gap: '0.5rem' }}>
-                ← Return to Services Portal
-              </Link>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="app-container">
-      <ForcePasswordChangeModal />
-      <Sidebar
-        isMobileOpen={mobileOpen}
-        onCloseMobile={() => setMobileOpen(false)}
-        isCollapsed={sidebarCollapsed}
-        onToggleCollapse={toggleSidebarCollapse}
-      />
-      <div className={`main-content ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
-        <Header
-          onToggleMobile={() => setMobileOpen(!mobileOpen)}
-          sidebarCollapsed={sidebarCollapsed}
-          onToggleCollapse={toggleSidebarCollapse}
-        />
-        {children}
-      </div>
-    </div>
-  );
-};
+import BMSLayout from './layouts/BMSLayout';
+import UserManagementLayout from './layouts/UserManagementLayout';
 
 function AppRoutes() {
   const { user, hasPermission, hasRole, hasModuleAccess, loading } = useAuth();
@@ -152,7 +38,7 @@ function AppRoutes() {
 
   const canAccessBreakfast = () => {
     if (!user) return false;
-    return hasModuleAccess('BMS');
+    return hasModuleAccess('BMS') || hasRole('IT_ADMIN') || hasPermission('*');
   };
 
   return (
@@ -163,7 +49,7 @@ function AppRoutes() {
       {/* Login redirects to Central Portal if already authenticated */}
       <Route path="/login" element={user ? <Navigate to="/portal" replace /> : <LoginPage />} />
 
-      {/* NEW Central Module Selection Portal (Protected) */}
+      {/* 1. CENTRAL PORTAL (Module Selection) */}
       <Route
         path="/portal"
         element={
@@ -175,7 +61,39 @@ function AppRoutes() {
         }
       />
 
-      {/* Gateway route for Breakfast Module -> forwards to user's role-based dashboard */}
+      {/* ========================================================================= */}
+      {/* 2. USER MANAGEMENT MODULE (Dedicated UserManagementLayout & Sidebar)       */}
+      {/* ========================================================================= */}
+      <Route
+        path="/user-management"
+        element={
+          <UserManagementLayout>
+            <UserManagementPage />
+          </UserManagementLayout>
+        }
+      />
+      <Route
+        path="/user-management/users"
+        element={
+          <UserManagementLayout>
+            <UserManagementPage />
+          </UserManagementLayout>
+        }
+      />
+      {/* Backward-compatible /users path */}
+      <Route
+        path="/users"
+        element={
+          <UserManagementLayout>
+            <UserManagementPage />
+          </UserManagementLayout>
+        }
+      />
+
+      {/* ========================================================================= */}
+      {/* 3. BREAKFAST MANAGEMENT SYSTEM (BMS) (Dedicated BMSLayout & BMSSidebar)    */}
+      {/* ========================================================================= */}
+      {/* Gateway route for BMS -> forwards to user's role-based breakfast destination */}
       <Route
         path="/breakfast"
         element={
@@ -195,186 +113,255 @@ function AppRoutes() {
         element={<Navigate to="/breakfast" replace />}
       />
 
-      {/* Common Breakfast Response - Accessible by ANY authenticated user with breakfast permission */}
+      {/* BMS: Personal Breakfast Response */}
       <Route
         path="/today"
         element={
-          <ProtectedLayout>
+          <BMSLayout>
             <EmployeeDailyPage />
-          </ProtectedLayout>
+          </BMSLayout>
         }
       />
       <Route
         path="/response"
         element={
-          <ProtectedLayout>
+          <BMSLayout>
             <EmployeeDailyPage />
-          </ProtectedLayout>
+          </BMSLayout>
         }
       />
       <Route
         path="/breakfast-response"
         element={
-          <ProtectedLayout>
+          <BMSLayout>
             <EmployeeDailyPage />
-          </ProtectedLayout>
+          </BMSLayout>
         }
       />
 
+      {/* BMS: Admin Dashboard */}
       <Route
         path="/admin/dashboard"
         element={
-          <ProtectedLayout requiredPermission="breakfast.view">
+          <BMSLayout requiredPermission="breakfast.view">
             <AdminDashboardPage />
-          </ProtectedLayout>
+          </BMSLayout>
         }
       />
+      <Route
+        path="/bms/dashboard"
+        element={<Navigate to="/admin/dashboard" replace />}
+      />
 
+      {/* BMS: Daily Entry */}
       <Route
         path="/admin/daily-entry"
         element={
-          <ProtectedLayout requiredPermission="breakfast.view">
+          <BMSLayout requiredPermission="breakfast.view">
             <DailyEntryPage />
-          </ProtectedLayout>
+          </BMSLayout>
         }
       />
+      <Route
+        path="/bms/daily-entry"
+        element={<Navigate to="/admin/daily-entry" replace />}
+      />
 
+      {/* BMS: Additional Orders */}
       <Route
         path="/admin/additional-orders"
         element={
-          <ProtectedLayout requiredPermission="breakfast.view">
+          <BMSLayout requiredPermission="breakfast.view">
             <AdditionalOrdersPage />
-          </ProtectedLayout>
+          </BMSLayout>
         }
       />
+      <Route
+        path="/bms/additional-orders"
+        element={<Navigate to="/admin/additional-orders" replace />}
+      />
 
+      {/* BMS: Breakfast Money */}
       <Route
         path="/admin/breakfast-money"
         element={
-          <ProtectedLayout requiredPermission="breakfast.money.view">
+          <BMSLayout requiredPermission="breakfast.money.view">
             <BreakfastMoneyPage />
-          </ProtectedLayout>
+          </BMSLayout>
         }
       />
+      <Route
+        path="/bms/breakfast-money"
+        element={<Navigate to="/admin/breakfast-money" replace />}
+      />
 
+      {/* BMS: Finance Fund Requests */}
       <Route
         path="/finance/fund-requests"
         element={
-          <ProtectedLayout requiredPermission="finance.breakfast_fund.view">
+          <BMSLayout requiredPermission="finance.breakfast_fund.view">
             <FinanceManagerPage />
-          </ProtectedLayout>
+          </BMSLayout>
         }
       />
+      <Route
+        path="/bms/fund-requests"
+        element={<Navigate to="/finance/fund-requests" replace />}
+      />
 
+      {/* BMS: Today's Breakfast List */}
       <Route
         path="/admin/today-breakfast"
         element={
-          <ProtectedLayout requiredPermission="breakfast.view">
+          <BMSLayout requiredPermission="breakfast.view">
             <TodayBreakfastListPage />
-          </ProtectedLayout>
+          </BMSLayout>
         }
       />
-
       <Route
         path="/admin/today-list"
         element={
-          <ProtectedLayout requiredPermission="breakfast.view">
+          <BMSLayout requiredPermission="breakfast.view">
             <TodayBreakfastListPage />
-          </ProtectedLayout>
+          </BMSLayout>
         }
       />
+      <Route
+        path="/bms/today-breakfast"
+        element={<Navigate to="/admin/today-breakfast" replace />}
+      />
 
+      {/* BMS: All Orders */}
       <Route
         path="/admin/orders"
         element={
-          <ProtectedLayout requiredPermission={['breakfast.view', 'breakfast.orders.view']}>
+          <BMSLayout requiredPermission={['breakfast.view', 'breakfast.orders.view']}>
             <BreakfastOrdersPage />
-          </ProtectedLayout>
+          </BMSLayout>
         }
       />
+      <Route
+        path="/bms/orders"
+        element={<Navigate to="/admin/orders" replace />}
+      />
 
+      {/* BMS: Employees Directory */}
       <Route
         path="/admin/employees"
         element={
-          <ProtectedLayout requiredPermission="breakfast.employee.read">
+          <BMSLayout requiredPermission="breakfast.employee.read">
             <EmployeeManagementPage />
-          </ProtectedLayout>
+          </BMSLayout>
         }
       />
+      <Route
+        path="/bms/employees"
+        element={<Navigate to="/admin/employees" replace />}
+      />
 
+      {/* BMS: Public Holidays */}
       <Route
         path="/holidays"
         element={
-          <ProtectedLayout requiredPermission="breakfast.view">
+          <BMSLayout requiredPermission="breakfast.view">
             <PublicHolidaysPage />
-          </ProtectedLayout>
+          </BMSLayout>
         }
       />
+      <Route
+        path="/bms/holidays"
+        element={<Navigate to="/holidays" replace />}
+      />
 
+      {/* BMS: Reports */}
       <Route
         path="/reports"
         element={
-          <ProtectedLayout requiredPermission={['breakfast.report', 'breakfast.money.report']}>
+          <BMSLayout requiredPermission={['breakfast.report', 'breakfast.money.report']}>
             <ReportsPage />
-          </ProtectedLayout>
+          </BMSLayout>
         }
       />
-
       <Route
         path="/admin/reports"
         element={
-          <ProtectedLayout requiredPermission={['breakfast.report', 'breakfast.money.report']}>
+          <BMSLayout requiredPermission={['breakfast.report', 'breakfast.money.report']}>
             <ReportsPage />
-          </ProtectedLayout>
+          </BMSLayout>
         }
       />
+      <Route
+        path="/bms/reports"
+        element={<Navigate to="/reports" replace />}
+      />
 
+      {/* BMS: Director Analytics */}
       <Route
         path="/director-analytics"
         element={
-          <ProtectedLayout requiredRole="DIRECTOR_ANALYTICS">
+          <BMSLayout requiredRole="DIRECTOR_ANALYTICS">
             <DirectorAnalyticsPage />
-          </ProtectedLayout>
+          </BMSLayout>
         }
       />
+      <Route
+        path="/bms/director-analytics"
+        element={<Navigate to="/director-analytics" replace />}
+      />
 
+      {/* BMS: Directors Dashboard (CEO) */}
       <Route
         path="/ceo-dashboard"
         element={
-          <ProtectedLayout requiredRole="CEO">
+          <BMSLayout requiredRole="CEO">
             <CEOViewPage />
-          </ProtectedLayout>
+          </BMSLayout>
         }
       />
+      <Route
+        path="/bms/ceo-dashboard"
+        element={<Navigate to="/ceo-dashboard" replace />}
+      />
 
+      {/* BMS: Audit Logs */}
       <Route
         path="/audit-logs"
         element={
-          <ProtectedLayout requiredPermission="breakfast.audit.view">
+          <BMSLayout requiredPermission="breakfast.audit.view">
             <AuditLogsPage />
-          </ProtectedLayout>
+          </BMSLayout>
         }
       />
+      <Route
+        path="/bms/audit-logs"
+        element={<Navigate to="/audit-logs" replace />}
+      />
 
+      {/* BMS: Settings */}
       <Route
         path="/settings"
         element={
-          <ProtectedLayout requiredPermission="breakfast.settings.manage">
+          <BMSLayout requiredPermission="breakfast.settings.manage">
             <SettingsPage />
-          </ProtectedLayout>
+          </BMSLayout>
         }
       />
-
-      {/* Central User Management Route */}
       <Route
-        path="/users"
-        element={
-          <ProtectedLayout requiredPermission={['*', 'users.view', 'users.create', 'users.edit']}>
-            <UserManagementPage />
-          </ProtectedLayout>
-        }
+        path="/bms/settings"
+        element={<Navigate to="/settings" replace />}
       />
 
+      {/* ========================================================================= */}
+      {/* 4. FUTURE MODULE PLACEHOLDERS (Disabled / Coming Soon)                     */}
+      {/* ========================================================================= */}
+      <Route path="/mis/*" element={<Navigate to="/portal" replace />} />
+      <Route path="/crm/*" element={<Navigate to="/portal" replace />} />
+      <Route path="/lms/*" element={<Navigate to="/portal" replace />} />
+      <Route path="/ims/*" element={<Navigate to="/portal" replace />} />
+      <Route path="/leave-management/*" element={<Navigate to="/portal" replace />} />
+      <Route path="/dwr/*" element={<Navigate to="/portal" replace />} />
+
+      {/* Catch-all */}
       <Route path="*" element={<Navigate to={user ? "/portal" : "/login"} replace />} />
     </Routes>
   );
