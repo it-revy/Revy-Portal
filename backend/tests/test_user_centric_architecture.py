@@ -120,7 +120,7 @@ def test_user_centric_architecture_complete():
             {
                 "moduleCode": "CRM",
                 "enabled": True,
-                "roleCode": "SALES_EXECUTIVE"
+                "roleCode": "CRM_SALES_EXECUTIVE"
             }
         ]
     })
@@ -131,7 +131,7 @@ def test_user_centric_architecture_complete():
     assert bms_assigned["isEnabled"] is True
     assert bms_assigned["roleCode"] == "BMS_EMPLOYEE"
     assert crm_assigned["isEnabled"] is True
-    assert crm_assigned["roleCode"] == "SALES_EXECUTIVE"
+    assert crm_assigned["roleCode"] == "CRM_SALES_EXECUTIVE"
 
     # 7. Check that adding to BMS automatically created/synchronized the BMS Employee record
     check_user_res = client.get(f"/api/users/{user_id}", headers=headers)

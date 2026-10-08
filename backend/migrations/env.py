@@ -22,10 +22,13 @@ def get_url():
     # Check -x argument first
     x_args = context.get_x_argument(as_dictionary=True)
     if "sqlalchemy.url" in x_args:
-        return x_args["sqlalchemy.url"]
+        url = x_args["sqlalchemy.url"]
+    else:
+        # Check env var or settings
+        url = os.environ.get("DATABASE_URL") or settings.DATABASE_URL
     
-    # Check env var or settings
-    url = os.environ.get("DATABASE_URL") or settings.DATABASE_URL
+    if url and url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
     return url
 
 def run_migrations_offline() -> None:
