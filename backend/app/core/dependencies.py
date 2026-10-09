@@ -149,6 +149,7 @@ def get_current_user(
         "IT_ADMIN", "IT Admin",
         "DIRECTOR", "Director",
         "BMS_ADMIN", "BMS Admin", "BREAKFAST_ADMIN",
+        "BMS_BF_MANAGER", "BMS BF Manager",
         "BMS_DIRECTOR_ANALYTICS", "BMS Director Analytics", "DIRECTOR_ANALYTICS",
         "BMS_FINANCE_MANAGER", "BMS Finance Manager", "FINANCE_MANAGER",
         "USER_MANAGEMENT_ADMIN", "User Management Admin",

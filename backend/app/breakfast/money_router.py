@@ -158,7 +158,7 @@ def post_create_fund_request(
 def get_fund_requests_controller(
     status: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
-    current_user: CurrentUser = Depends(require_any_permission(["breakfast.money.view", "finance.breakfast_fund.view", "finance.breakfast_fund.request.view"])),
+    current_user: CurrentUser = Depends(require_any_permission(["finance.breakfast_fund.view", "finance.breakfast_fund.request.view"])),
     db: Session = Depends(get_db)
 ):
     requests = money_service.get_fund_requests(status=status, search=search, db=db)

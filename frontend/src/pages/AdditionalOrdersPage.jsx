@@ -38,6 +38,8 @@ const AdditionalOrdersPage = () => {
 
   // Form State
   const [orderTitle, setOrderTitle] = useState('Afternoon Tea');
+  const [clientName, setClientName] = useState('');
+  const [headCount, setHeadCount] = useState('');
   const [orderTime, setOrderTime] = useState('04:00 PM');
   const [breakfastItems, setBreakfastItems] = useState([
     { name: 'Samosa / Snack', unitPrice: 20, quantity: '' }
@@ -71,7 +73,9 @@ const AdditionalOrdersPage = () => {
 
   const handleOpenNewModal = () => {
     setEditingOrder(null);
-    setOrderTitle('Afternoon Tea');
+    setOrderTitle('Client Order / Afternoon Tea');
+    setClientName('');
+    setHeadCount('');
     setOrderTime('04:00 PM');
     setBreakfastItems([{ name: '', unitPrice: '', quantity: '' }]);
     setCommonItems([{ name: '', unitPrice: '', quantity: 1 }]);
@@ -83,6 +87,8 @@ const AdditionalOrdersPage = () => {
   const handleOpenEditModal = (ord) => {
     setEditingOrder(ord);
     setOrderTitle(ord.orderTitle || '');
+    setClientName(ord.clientName || '');
+    setHeadCount(ord.headCount !== undefined && ord.headCount !== null ? String(ord.headCount) : '');
     setOrderTime(ord.orderTime || '');
     setBreakfastItems(
       ord.breakfastItems && ord.breakfastItems.length > 0
@@ -157,9 +163,20 @@ const AdditionalOrdersPage = () => {
       return;
     }
 
+    if (headCount !== '') {
+      const parsedHc = Number(headCount);
+      if (isNaN(parsedHc) || parsedHc <= 0 || !Number.isInteger(parsedHc)) {
+        setMessage({ type: 'danger', text: 'Head Count must be a numeric integer greater than 0.' });
+        setSaving(false);
+        return;
+      }
+    }
+
     const payload = {
       businessDate: selectedDate,
       orderTitle,
+      clientName: clientName.trim() || null,
+      headCount: headCount !== '' ? Number(headCount) : null,
       orderTime,
       breakfastItems: validBreakfast,
       commonItems: validCommon
@@ -195,13 +212,14 @@ const AdditionalOrdersPage = () => {
   };
 
   const applicableCount = data?.applicableCount || 0;
+  const effectiveCount = headCount !== '' && Number(headCount) > 0 ? Number(headCount) : applicableCount;
   const currentFundBalance = data?.fundMetrics?.currentBalance || 0;
 
   // Calculate live preview totals for the modal
   const liveBreakfastTotal = Number(breakfastItems.reduce((sum, item) => {
     if (!item.name.trim()) return sum;
     const price = parseFloat(item.unitPrice) || 0;
-    const qty = item.quantity !== undefined && item.quantity !== '' ? parseFloat(item.quantity) : applicableCount;
+    const qty = item.quantity !== undefined && item.quantity !== '' ? parseFloat(item.quantity) : effectiveCount;
     return sum + (price * qty);
   }, 0).toFixed(2));
 
@@ -503,7 +521,14 @@ const AdditionalOrdersPage = () => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.75rem' }}>
                   <div>
                     <span style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--accent-primary)', fontWeight: 700 }}>{ord.orderId}</span>
-                    <h4 style={{ margin: '0.2rem 0', fontSize: '1.05rem', fontWeight: 700 }}>{ord.orderTitle}</h4>
+                    <h4 style={{ margin: '0.2rem 0', fontSize: '1.05rem', fontWeight: 700 }}>
+                      {ord.orderTitle}
+                      {ord.clientName && (
+                        <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6', padding: '0.2rem 0.5rem', borderRadius: '4px', fontWeight: 600 }}>
+                          Client: {ord.clientName}
+                        </span>
+                      )}
+                    </h4>
                     <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                       <span>{ord.businessDate}</span>
                       <span>•</span>
@@ -517,7 +542,11 @@ const AdditionalOrdersPage = () => {
                 </div>
 
                 <div style={{ padding: '0.6rem 0.8rem', background: '#f1f5f9', borderRadius: 'var(--radius-sm)', marginBottom: '1rem', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                  <div>Employees: <strong>{ord.applicableEmployeeCount}</strong></div>
+                  {ord.headCount ? (
+                    <div>Head Count: <strong style={{ color: 'var(--accent-primary)' }}>{ord.headCount}</strong> (System Emp Count: {ord.systemEmployeeCount || ord.applicableEmployeeCount})</div>
+                  ) : (
+                    <div>Employees: <strong>{ord.applicableEmployeeCount}</strong></div>
+                  )}
                   <div>Created By: <strong>{ord.createdBy || 'BF Admin'}</strong></div>
                 </div>
 
@@ -546,7 +575,7 @@ const AdditionalOrdersPage = () => {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
               <h2 style={{ fontSize: '1.2rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <Coffee size={22} color="var(--accent-primary)" />
-                {editingOrder ? `Edit Order (${editingOrder.orderId})` : 'New Additional Order'}
+                {editingOrder ? `Edit Order (${editingOrder.orderId})` : 'New Additional Order / Client Order'}
               </h2>
               <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }} onClick={() => setShowModal(false)}>
                 <X size={20} />
@@ -610,6 +639,42 @@ const AdditionalOrdersPage = () => {
                 </div>
               </div>
 
+              {/* Client Order Fields (Client Name & Head Count) */}
+              <div className="form-grid-2" style={{ marginBottom: '1.25rem', background: '#f8fafc', padding: '1rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label">Client Name (Optional)</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="e.g. ABC Client"
+                    value={clientName}
+                    onChange={(e) => setClientName(e.target.value)}
+                  />
+                </div>
+                <div className="form-group" style={{ margin: 0 }}>
+                  <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Head Count (Optional)</span>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                      Total Employees: {applicableCount}
+                    </span>
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    className="form-input"
+                    placeholder={`e.g. 6 (Defaults to ${applicableCount})`}
+                    value={headCount}
+                    onChange={(e) => setHeadCount(e.target.value)}
+                  />
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '0.25rem', display: 'block' }}>
+                    {headCount && Number(headCount) > 0
+                      ? `Calculating for Head Count: ${headCount} people`
+                      : `Using full employee count (${applicableCount}) if not specified`}
+                  </span>
+                </div>
+              </div>
+
               {/* Breakfast Items (Optional) */}
               <div style={{ background: '#f8fafc', padding: '1.25rem', borderRadius: 'var(--radius-sm)', marginBottom: '1.25rem', border: '1px solid var(--border-color)' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem' }}>
@@ -623,7 +688,7 @@ const AdditionalOrdersPage = () => {
 
                 {breakfastItems.map((item, idx) => {
                   const price = Number(item.unitPrice) || 0;
-                  const qty = item.quantity !== undefined && item.quantity !== '' ? Number(item.quantity) : applicableCount;
+                  const qty = item.quantity !== undefined && item.quantity !== '' ? Number(item.quantity) : effectiveCount;
                   const total = price * qty;
                   return (
                     <div key={idx} className="item-input-row">
@@ -650,7 +715,7 @@ const AdditionalOrdersPage = () => {
                         min="0"
                         step="any"
                         className="form-input"
-                        placeholder={`Qty (${applicableCount})`}
+                        placeholder={`Qty (${effectiveCount})`}
                         value={item.quantity}
                         onChange={(e) => updateBreakfastItem(idx, 'quantity', e.target.value)}
                         style={{ fontSize: '0.85rem' }}
@@ -766,9 +831,19 @@ const AdditionalOrdersPage = () => {
                 <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.75rem' }}>Order Time</span>
                 <strong>{viewOrder.orderTime}</strong>
               </div>
+              {viewOrder.clientName && (
+                <div>
+                  <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.75rem' }}>Client Name</span>
+                  <strong style={{ color: 'var(--accent-primary)' }}>{viewOrder.clientName}</strong>
+                </div>
+              )}
               <div>
-                <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.75rem' }}>Applicable Employees</span>
-                <strong>{viewOrder.applicableEmployeeCount} Employees</strong>
+                <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.75rem' }}>
+                  {viewOrder.headCount ? 'Head Count (Client)' : 'Applicable Employees'}
+                </span>
+                <strong>
+                  {viewOrder.headCount ? `${viewOrder.headCount} People (System: ${viewOrder.systemEmployeeCount || viewOrder.applicableEmployeeCount})` : `${viewOrder.applicableEmployeeCount} Employees`}
+                </strong>
               </div>
               <div>
                 <span style={{ color: 'var(--text-secondary)', display: 'block', fontSize: '0.75rem' }}>Total Cost</span>

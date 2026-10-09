@@ -239,9 +239,9 @@ class ReportService:
             add_q = add_q.filter(BreakfastAdditionalOrder.business_date.like(f"{selected_year}%"))
             hist_q = hist_q.filter(BreakfastRecord.business_date.like(f"{selected_year}%"))
 
-        daily_entries = daily_q.order_by(desc(BreakfastDailyEntry.business_date)).all()
-        additional_orders = add_q.order_by(desc(BreakfastAdditionalOrder.business_date)).all()
-        hist_entries = hist_q.order_by(desc(BreakfastRecord.business_date)).all()
+        daily_entries = daily_q.order_by(BreakfastDailyEntry.business_date.asc()).all()
+        additional_orders = add_q.order_by(BreakfastAdditionalOrder.business_date.asc()).all()
+        hist_entries = hist_q.order_by(BreakfastRecord.business_date.asc()).all()
 
         def format_items(items):
             if not items:
@@ -261,6 +261,7 @@ class ReportService:
                 "orderTitle": f"Daily Breakfast ({de.business_date})",
                 "orderTime": "10:00 AM",
                 "applicableCount": summary.get("applicableCount", 0),
+                "systemEmployeeCount": summary.get("applicableCount", 0),
                 "employeeRequestQuantity": float(req_qty),
                 "actualResponseQuantity": float(actual_qty),
                 "totalQuantity": float(tot_qty),
@@ -278,8 +279,11 @@ class ReportService:
                 "businessDate": ao.business_date,
                 "orderType": "ADDITIONAL ORDER",
                 "orderTitle": ao.order_title or "Additional Order",
+                "clientName": ao.client_name,
+                "headCount": ao.head_count,
                 "orderTime": ao.order_time or "",
-                "applicableCount": ao.applicable_employee_count or 0,
+                "applicableCount": ao.head_count if ao.head_count is not None else (ao.applicable_employee_count or 0),
+                "systemEmployeeCount": ao.applicable_employee_count or 0,
                 "isHistorical": False,
                 "breakfastItems": format_items(ao.breakfast_items),
                 "commonItems": format_items(ao.common_items),
@@ -298,6 +302,7 @@ class ReportService:
                 "orderTitle": f"Historical Breakfast ({hr.business_date})",
                 "orderTime": "12:00 PM",
                 "applicableCount": 0,
+                "systemEmployeeCount": 0,
                 "isHistorical": True,
                 "recordType": "HISTORICAL",
                 "employeeName": "Not Recorded",
@@ -316,7 +321,7 @@ class ReportService:
                 "createdAt": hr.created_at.isoformat() if hr.created_at else None
             })
 
-        order_summary.sort(key=lambda o: o["businessDate"], reverse=True)
+        order_summary.sort(key=lambda o: (o["businessDate"], o.get("orderId") or ""), reverse=False)
 
         # 4. Money Transactions
         txn_q = self.db.query(BreakfastMoneyTransaction)

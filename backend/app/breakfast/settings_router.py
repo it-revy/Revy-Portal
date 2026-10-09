@@ -1,3 +1,4 @@
+import re
 from typing import Optional
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
@@ -10,7 +11,17 @@ from app.audit.service import AuditService
 
 router = APIRouter(prefix="/settings", tags=["Breakfast Settings"])
 
+TIME_REGEX = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
+
+def validate_time_str(time_str: str, field_name: str) -> str:
+    s = time_str.strip()
+    if not TIME_REGEX.match(s):
+        raise ValidationError(f"Invalid {field_name} '{time_str}'. Expected 24-hour format HH:mm (00:00 to 23:59).")
+    return s
+
 class UpdateSettingsRequest(BaseModel):
+    requestOpenTime: Optional[str] = None
+    requestCloseTime: Optional[str] = None
     cutoffTime: Optional[str] = None
     timezone: Optional[str] = None
     autoLockEnabled: Optional[bool] = None
@@ -22,11 +33,15 @@ class AddReasonRequest(BaseModel):
     displayOrder: Optional[int] = 99
 
 def serialize_setting(s: BreakfastSetting):
+    open_time = s.request_open_time or "17:30"
+    close_time = s.request_close_time or s.cutoff_time or "08:20"
     return {
         "_id": s.id,
         "id": s.id,
-        "cutoffTime": s.cutoff_time,
-        "timezone": s.timezone,
+        "requestOpenTime": open_time,
+        "requestCloseTime": close_time,
+        "cutoffTime": close_time,
+        "timezone": s.timezone or "Asia/Kolkata",
         "autoLockEnabled": s.auto_lock_enabled,
         "breakfastFundLimit": s.breakfast_fund_limit,
         "createdAt": s.created_at.isoformat() if s.created_at else None,
@@ -52,7 +67,13 @@ def get_settings(
 ):
     setting = db.query(BreakfastSetting).first()
     if not setting:
-        setting = BreakfastSetting(cutoff_time="12:00", timezone="Asia/Kolkata", auto_lock_enabled=True)
+        setting = BreakfastSetting(
+            request_open_time="17:30",
+            request_close_time="08:20",
+            cutoff_time="08:20",
+            timezone="Asia/Kolkata",
+            auto_lock_enabled=True
+        )
         db.add(setting)
         db.commit()
         db.refresh(setting)
@@ -75,15 +96,40 @@ def update_settings(
 ):
     setting = db.query(BreakfastSetting).first()
     if not setting:
-        setting = BreakfastSetting()
+        setting = BreakfastSetting(
+            request_open_time="17:30",
+            request_close_time="08:20",
+            cutoff_time="08:20",
+            timezone="Asia/Kolkata",
+            auto_lock_enabled=True
+        )
         db.add(setting)
 
     before_state = serialize_setting(setting)
 
-    if payload.cutoffTime is not None:
-        setting.cutoff_time = payload.cutoffTime
+    # Determine proposed open and close times
+    current_open = setting.request_open_time or "17:30"
+    current_close = setting.request_close_time or setting.cutoff_time or "08:20"
+
+    new_open = current_open
+    if payload.requestOpenTime is not None:
+        new_open = validate_time_str(payload.requestOpenTime, "requestOpenTime")
+
+    new_close = current_close
+    if payload.requestCloseTime is not None:
+        new_close = validate_time_str(payload.requestCloseTime, "requestCloseTime")
+    elif payload.cutoffTime is not None:
+        new_close = validate_time_str(payload.cutoffTime, "cutoffTime")
+
+    if new_open == new_close:
+        raise ValidationError("Request opening time and closing time cannot be identical.")
+
+    setting.request_open_time = new_open
+    setting.request_close_time = new_close
+    setting.cutoff_time = new_close
+
     if payload.timezone is not None:
-        setting.timezone = payload.timezone
+        setting.timezone = payload.timezone.strip()
     if payload.autoLockEnabled is not None:
         setting.auto_lock_enabled = payload.autoLockEnabled
 
@@ -96,14 +142,16 @@ def update_settings(
     audit_service.log(
         action="BREAKFAST_SETTINGS_UPDATED",
         request=request,
-        target_info={"details": f"Updated cutoff time to {setting.cutoff_time}"},
+        target_info={
+            "details": f"Updated breakfast cycle: Opens at {setting.request_open_time}, Closes at {setting.request_close_time} IST"
+        },
         before_state=before_state,
         after_state=after_state
     )
 
     return {
         "success": True,
-        "message": "Settings updated successfully",
+        "message": "Breakfast settings updated successfully",
         "settings": after_state
     }
 

@@ -20,8 +20,26 @@ def get_audit_logs(
     audit_service = AuditService(db)
     logs = audit_service.get_logs(action=action, employee_id=employeeId, search=search, limit=limit)
 
+    from datetime import timezone
+    from app.breakfast.date_utils import KOLKATA_TZ
+
     formatted_logs = []
     for log in logs:
+        ts = log.timestamp
+        if ts is not None:
+            if ts.tzinfo is None:
+                ts_utc = ts.replace(tzinfo=timezone.utc)
+            else:
+                ts_utc = ts.astimezone(timezone.utc)
+            ts_ist = ts_utc.astimezone(KOLKATA_TZ)
+            iso_utc = ts_utc.isoformat().replace("+00:00", "Z")
+            iso_ist = ts_ist.isoformat()
+            display_ist = ts_ist.strftime("%d %b %Y, %I:%M:%S %p IST")
+        else:
+            iso_utc = None
+            iso_ist = None
+            display_ist = None
+
         formatted_logs.append({
             "_id": log.id,
             "id": log.id,
@@ -41,7 +59,10 @@ def get_audit_logs(
             },
             "beforeState": log.before_state,
             "afterState": log.after_state,
-            "timestamp": log.timestamp.isoformat() if log.timestamp else None,
+            "timestamp": iso_utc,
+            "timestampUtc": iso_utc,
+            "timestampIst": iso_ist,
+            "timestampDisplay": display_ist,
             "createdAt": log.created_at.isoformat() if log.created_at else None
         })
 

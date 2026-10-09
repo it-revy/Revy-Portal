@@ -114,6 +114,7 @@ const EmployeeDailyPage = () => {
     setSubmitting(true);
     try {
       const res = await API.post('/breakfast/submit', {
+        businessDate: statusData?.targetDate || statusData?.businessDate,
         response,
         reasonCode: response === 'NO' ? reasonCode : null,
         reasonText: response === 'NO' ? reasonText : null
@@ -293,28 +294,78 @@ const EmployeeDailyPage = () => {
   return (
     <div className="page-body">
       {/* Header Greeting */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
         <div>
           <h1 style={{ fontSize: '1.4rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
             <Utensils size={24} color="var(--accent-primary)" /> My Breakfast Response
           </h1>
           <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem', fontSize: '0.85rem' }}>
-            Logged in as: <strong>{user?.name}</strong> ({user?.employeeId}) • Active Date: <strong style={{ color: 'var(--text-primary)' }}>{statusData?.activeFormattedDisplay || statusData?.businessDate}</strong>
+            Logged in as: <strong>{user?.name}</strong> ({user?.employeeId})
           </p>
-          {statusData?.isCutoffPassed && (
-            <span className="badge badge-warning" style={{ marginTop: '0.35rem', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
-              ⏰ Past 12:00 PM Cutoff — Response applies to Next Working Day ({statusData?.activeFormattedDisplay})
-            </span>
-          )}
         </div>
+      </div>
 
-        <div className="panel-card" style={{ padding: '0.6rem 1rem', display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-          <Clock size={18} color="var(--warning)" />
+      {/* Breakfast Request Window Banner (Section 10 Requirement) */}
+      <div className="panel-card" style={{
+        padding: '1.25rem 1.5rem',
+        marginBottom: '1.5rem',
+        borderLeft: `5px solid ${statusData?.isWindowOpen ? 'var(--success)' : 'var(--danger)'}`,
+        background: statusData?.isWindowOpen ? 'rgba(16, 185, 129, 0.05)' : 'rgba(239, 68, 68, 0.05)'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
           <div>
-            <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>CUTOFF WINDOW</span>
-            <strong style={{ fontSize: '0.85rem', color: statusData?.isCutoffPassed ? 'var(--danger-text)' : 'var(--success-text)' }}>
-              {statusData?.cutoffTime} IST {statusData?.isCutoffPassed ? '(CLOSED FOR TODAY)' : '(OPEN)'}
-            </strong>
+            <div style={{ fontSize: '1.2rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+              Breakfast Request – {statusData?.targetDateFormatted || statusData?.businessDate}
+            </div>
+
+            {statusData?.isWindowOpen ? (
+              <div style={{ marginTop: '0.5rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.2rem' }}>Request Window:</div>
+                <div style={{ fontFamily: 'monospace', fontSize: '0.95rem' }}>
+                  {statusData?.windowStartDisplay}
+                  <br />
+                  to
+                  <br />
+                  {statusData?.windowEndDisplay}
+                </div>
+              </div>
+            ) : (
+              <div style={{ marginTop: '0.5rem', fontSize: '0.9rem' }}>
+                <div style={{ fontWeight: 700, color: 'var(--danger-text)', marginBottom: '0.25rem' }}>
+                  Request Window Closed
+                </div>
+                <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                  Requests were accepted from:
+                  <div style={{ fontFamily: 'monospace', marginTop: '0.2rem' }}>
+                    {statusData?.windowStartDisplay}
+                    <br />
+                    to
+                    <br />
+                    {statusData?.windowEndDisplay}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <div style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', color: 'var(--text-secondary)', marginBottom: '0.25rem' }}>
+              Status:
+            </div>
+            <span style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              padding: '0.45rem 1rem',
+              borderRadius: '9999px',
+              fontWeight: 800,
+              fontSize: '0.9rem',
+              background: statusData?.isWindowOpen ? '#10b981' : '#ef4444',
+              color: '#ffffff',
+              letterSpacing: '0.05em'
+            }}>
+              <Clock size={16} /> {statusData?.windowStatus || (statusData?.isWindowOpen ? 'OPEN' : 'CLOSED')}
+            </span>
           </div>
         </div>
       </div>
@@ -670,7 +721,7 @@ const EmployeeDailyPage = () => {
                       </div>
                     </div>
 
-                    {!statusData.isCutoffPassed && (
+                    {statusData?.isWindowOpen && (
                       <button className="btn btn-secondary" onClick={() => setEditingMode(true)} style={{ fontSize: '0.8rem' }}>
                         <Edit3 size={14} /> Change Response
                       </button>
@@ -680,15 +731,18 @@ const EmployeeDailyPage = () => {
               ) : (
                 /* YES / NO Submission Form */
                 <div>
-                  {statusData?.isCutoffPassed ? (
-                    <div style={{ background: 'var(--danger-bg)', color: 'var(--danger-text)', padding: '1rem', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem' }}>
-                      Submissions for today closed at {statusData.cutoffTime} IST.
+                  {!statusData?.isWindowOpen ? (
+                    <div style={{ background: 'var(--danger-bg)', color: 'var(--danger-text)', padding: '1.25rem', borderRadius: 'var(--radius-sm)', fontSize: '0.875rem' }}>
+                      <div style={{ fontWeight: 700, marginBottom: '0.25rem' }}>Request Window Closed</div>
+                      <div>
+                        Requests for {statusData?.targetDateFormatted || statusData?.businessDate} were accepted from {statusData?.windowStartDisplay} to {statusData?.windowEndDisplay}.
+                      </div>
                     </div>
                   ) : (
                     <form onSubmit={handleSingleSubmit}>
                       <div style={{ marginBottom: '1.25rem' }}>
                         <label className="form-label" style={{ marginBottom: '0.6rem', display: 'block' }}>
-                          Will you take breakfast today? ({statusData?.businessDate})
+                          Will you take breakfast on {statusData?.targetDateFormatted || statusData?.businessDate}?
                         </label>
                         <div className="form-grid-2">
                           <button

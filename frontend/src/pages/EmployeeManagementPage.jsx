@@ -415,9 +415,11 @@ const EmployeeManagementPage = () => {
                         className="badge"
                         style={{
                           background: emp.bmsRoleCode === 'BMS_ADMIN' ? 'rgba(239, 68, 68, 0.15)' :
+                                      emp.bmsRoleCode === 'BMS_BF_MANAGER' ? 'rgba(245, 158, 11, 0.15)' :
                                       emp.bmsRoleCode === 'BMS_FINANCE_MANAGER' ? 'rgba(16, 185, 129, 0.15)' :
                                       emp.bmsRoleCode === 'BMS_DIRECTOR_ANALYTICS' ? 'rgba(139, 92, 246, 0.15)' : 'rgba(59, 130, 246, 0.1)',
                           color: emp.bmsRoleCode === 'BMS_ADMIN' ? '#f87171' :
+                                 emp.bmsRoleCode === 'BMS_BF_MANAGER' ? '#fbbf24' :
                                  emp.bmsRoleCode === 'BMS_FINANCE_MANAGER' ? '#34d399' :
                                  emp.bmsRoleCode === 'BMS_DIRECTOR_ANALYTICS' ? '#a78bfa' : '#93c5fd',
                           border: '1px solid rgba(255, 255, 255, 0.15)',
@@ -637,6 +639,7 @@ const EmployeeManagementPage = () => {
                   >
                     <option value="BMS_EMPLOYEE">BMS Employee (Standard Daily Meals)</option>
                     <option value="BMS_ADMIN">BMS Admin (Operational Breakfast Management)</option>
+                    <option value="BMS_BF_MANAGER">BMS BF Manager (Operations & Orders)</option>
                     <option value="BMS_FINANCE_MANAGER">BMS Finance Manager (Fund Requests & Ledger)</option>
                     <option value="BMS_DIRECTOR_ANALYTICS">BMS Director Analytics (Analytics Dashboard)</option>
                   </select>
@@ -738,6 +741,7 @@ const EmployeeManagementPage = () => {
                   >
                     <option value="BMS_EMPLOYEE">BMS Employee (Standard Meals)</option>
                     <option value="BMS_ADMIN">BMS Admin (Operational Breakfast Management)</option>
+                    <option value="BMS_BF_MANAGER">BMS BF Manager (Operations & Orders)</option>
                     <option value="BMS_FINANCE_MANAGER">BMS Finance Manager (Fund Requests & Ledger)</option>
                     <option value="BMS_DIRECTOR_ANALYTICS">BMS Director Analytics (Analytics Dashboard)</option>
                   </select>

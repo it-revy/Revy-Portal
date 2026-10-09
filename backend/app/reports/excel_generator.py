@@ -150,11 +150,14 @@ def generate_report_excel(data: dict) -> io.BytesIO:
         tot_qty = order.get("totalQuantity")
         if tot_qty is None:
             tot_qty = order.get("actualResponseQuantity", order.get("applicableCount", 0))
+        title = order.get("orderTitle", "")
+        if order.get("clientName"):
+            title = f"{title} [Client: {order.get('clientName')}]"
         ws3.append([
             order.get("orderId"),
             order.get("businessDate"),
             order.get("orderType"),
-            order.get("orderTitle"),
+            title,
             order.get("orderTime"),
             order.get("applicableCount", 0),
             tot_qty,

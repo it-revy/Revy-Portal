@@ -11,6 +11,25 @@ const AuditLogsPage = () => {
   const [selectedLog, setSelectedLog] = useState(null);
   const [showModal, setShowModal] = useState(false);
 
+  const formatIstDateTime = (val) => {
+    if (!val) return '—';
+    const str = typeof val === 'string' && !val.endsWith('Z') && !val.includes('+') && !val.includes('-')
+      ? `${val}Z`
+      : val;
+    const d = new Date(str);
+    if (isNaN(d.getTime())) return String(val);
+    return new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    }).format(d) + ' IST';
+  };
+
   useEffect(() => {
     fetchLogs();
   }, [actionFilter]);
@@ -126,7 +145,7 @@ const AuditLogsPage = () => {
                       {log.target?.targetEmployeeName ? `${log.target.targetEmployeeName} (${log.target.targetEmployeeId})` : log.target?.details || '—'}
                     </td>
                     <td style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                      {new Date(log.timestamp).toLocaleString()}
+                      {log.timestampDisplay || formatIstDateTime(log.timestamp)}
                     </td>
                     <td>
                       <button className="btn btn-secondary" style={{ padding: '0.3rem 0.6rem' }} onClick={() => openLogDetails(log)}>
@@ -156,7 +175,7 @@ const AuditLogsPage = () => {
               <div><strong>Action:</strong> {selectedLog.action}</div>
               <div><strong>Performed By:</strong> {selectedLog.performedBy?.employeeName} ({selectedLog.performedBy?.employeeId})</div>
               <div><strong>Role Used:</strong> {selectedLog.performedBy?.roleUsed}</div>
-              <div><strong>Timestamp:</strong> {new Date(selectedLog.timestamp).toISOString()}</div>
+              <div><strong>Timestamp (IST):</strong> {selectedLog.timestampDisplay || formatIstDateTime(selectedLog.timestamp)}</div>
             </div>
 
             <div className="form-grid-2" style={{ marginTop: '1rem' }}>
