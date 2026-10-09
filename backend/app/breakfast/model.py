@@ -24,7 +24,9 @@ class BreakfastSetting(Base):
     __tablename__ = "breakfast_settings"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
-    cutoff_time = Column(String(10), default="12:00", nullable=False)
+    request_open_time = Column(String(10), default="17:30", nullable=False)
+    request_close_time = Column(String(10), default="08:20", nullable=False)
+    cutoff_time = Column(String(10), default="08:20", nullable=False)
     timezone = Column(String(50), default="Asia/Kolkata", nullable=False)
     auto_lock_enabled = Column(Boolean, default=True, nullable=False)
     breakfast_fund_limit = Column(Float, default=2500.0, nullable=False)

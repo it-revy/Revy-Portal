@@ -212,6 +212,31 @@ const DailyEntryPage = () => {
         </div>
       </div>
 
+      {/* Associated Request Window Info */}
+      {data?.requestWindow && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.6rem',
+          fontSize: '0.82rem',
+          color: 'var(--text-secondary)',
+          background: 'rgba(255, 255, 255, 0.03)',
+          border: '1px solid var(--border-color)',
+          padding: '0.5rem 0.85rem',
+          borderRadius: 'var(--radius-sm)',
+          marginBottom: '1.25rem',
+          flexWrap: 'wrap'
+        }}>
+          <Clock size={15} color="var(--accent-primary)" />
+          <span>
+            Associated Request Window: <strong>{data.requestWindow.windowStartDisplay} – {data.requestWindow.windowEndDisplay} IST</strong>
+          </span>
+          <span className={`badge ${data.requestWindow.isOpen ? 'badge-success' : 'badge-danger'}`} style={{ fontSize: '0.72rem', padding: '0.15rem 0.5rem' }}>
+            {data.requestWindow.isOpen ? 'WINDOW OPEN' : 'WINDOW CLOSED'}
+          </span>
+        </div>
+      )}
+
       {data?.hasHistorical && data?.historicalRecords?.length > 0 && (
         <div style={{ marginBottom: '1.5rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>

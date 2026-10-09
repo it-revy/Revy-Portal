@@ -36,7 +36,8 @@ from app.breakfast.date_utils import (
     get_request_window_for_date,
     is_request_window_open,
     get_applicable_breakfast_date,
-    get_breakfast_window_details
+    get_breakfast_window_details,
+    get_breakfast_cycle_settings
 )
 from app.audit.service import AuditService
 
@@ -321,16 +322,17 @@ def get_today_status(
     db: Session = Depends(get_db)
 ):
     now_ist = get_kolkata_now()
+    open_t, close_t, _ = get_breakfast_cycle_settings(db)
 
     if date and len(date.strip()) == 10:
         try:
             target_date_obj = datetime.strptime(date.strip(), "%Y-%m-%d").date()
         except ValueError:
-            target_date_obj = get_applicable_breakfast_date(now_ist)
+            target_date_obj = get_applicable_breakfast_date(now_ist, open_t, close_t)
     else:
-        target_date_obj = get_applicable_breakfast_date(now_ist)
+        target_date_obj = get_applicable_breakfast_date(now_ist, open_t, close_t)
 
-    window_info = get_breakfast_window_details(target_date=target_date_obj, now=now_ist)
+    window_info = get_breakfast_window_details(target_date=target_date_obj, now=now_ist, open_time=open_t, close_time=close_t)
     active_date_str = window_info["targetDate"]
     active_formatted = window_info["targetDateFullFormatted"]
     today_info = get_formatted_date_and_day(now_ist)
@@ -384,7 +386,9 @@ def get_today_status(
         "windowStartDisplay": window_info["windowStartDisplay"],
         "windowEndDisplay": window_info["windowEndDisplay"],
         "currentIstTime": window_info["currentIstTime"],
-        "cutoffTime": "08:20 AM",
+        "cutoffTime": close_t,
+        "requestOpenTime": open_t,
+        "requestCloseTime": close_t,
         "employeeId": current_user.employee_id,
         "name": current_user.name,
         "participationType": current_user.breakfast_participation_type,
@@ -409,6 +413,7 @@ def submit_daily_breakfast(
     is_perm = (current_user.breakfast_participation_type or "").upper() in ["PERMANENT_NOT_TAKING", "PERMANENT_NON_TAKER", "NON_TAKER"]
 
     now_ist = get_kolkata_now()
+    open_t, close_t, _ = get_breakfast_cycle_settings(db)
 
     if payload.businessDate and len(payload.businessDate.strip()) == 10:
         try:
@@ -416,17 +421,17 @@ def submit_daily_breakfast(
         except ValueError:
             raise ValidationError("Invalid businessDate format. Expected YYYY-MM-DD")
     else:
-        target_date_obj = get_applicable_breakfast_date(now_ist)
+        target_date_obj = get_applicable_breakfast_date(now_ist, open_t, close_t)
 
     target_date_str = target_date_obj.strftime("%Y-%m-%d")
     target_dt_full = datetime(target_date_obj.year, target_date_obj.month, target_date_obj.day, 10, 0, 0, tzinfo=now_ist.tzinfo)
     target_info = get_formatted_date_and_day(target_dt_full)
 
-    # STRICT SERVER-SIDE VALIDATION: Request window is overnight D-1 17:30 IST to D 08:20 IST
-    w_start, w_end = get_request_window_for_date(target_date_obj)
+    # STRICT SERVER-SIDE VALIDATION: Request window is configured open_time to close_time IST
+    w_start, w_end = get_request_window_for_date(target_date_obj, open_time=open_t, close_time=close_t)
     if not (w_start <= now_ist < w_end):
-        w_start_str = w_start.strftime("%d %b %Y %I:%M %p")
-        w_end_str = w_end.strftime("%d %b %Y %I:%M %p")
+        w_start_str = w_start.strftime("%d %b %Y, %I:%M %p")
+        w_end_str = w_end.strftime("%d %b %Y, %I:%M %p")
         target_disp = target_date_obj.strftime("%d %b %Y")
         raise ValidationError(
             f"Breakfast request window is closed for {target_disp}. "
@@ -593,11 +598,26 @@ def create_temporary_breakfast_request(
 
     target_emp_id = current_user.employee_id
     target_emp_name = current_user.name
-    if payload.employeeId and ("BREAKFAST_ADMIN" in current_user.roles or "IT_ADMIN" in current_user.roles or "*" in current_user.permissions):
+    is_admin = ("BREAKFAST_ADMIN" in current_user.roles or "IT_ADMIN" in current_user.roles or "BMS_ADMIN" in current_user.roles or "BMS_BF_MANAGER" in current_user.roles or "*" in current_user.permissions)
+    if payload.employeeId and is_admin:
         target_emp = db.query(Employee).filter(Employee.employee_id == payload.employeeId.upper()).first()
         if target_emp:
             target_emp_id = target_emp.employee_id
             target_emp_name = target_emp.name
+
+    # Validate window for non-admin requests if requesting for current/past date
+    if not is_admin:
+        open_t, close_t, _ = get_breakfast_cycle_settings(db)
+        req_date_obj = datetime.strptime(req_date, "%Y-%m-%d").date()
+        w_start, w_end = get_request_window_for_date(req_date_obj, open_time=open_t, close_time=close_t)
+        now_ist = get_kolkata_now()
+        if req_date_obj <= now_ist.date() and not (w_start <= now_ist < w_end):
+            w_start_str = w_start.strftime("%d %b %Y, %I:%M %p")
+            w_end_str = w_end.strftime("%d %b %Y, %I:%M %p")
+            raise ValidationError(
+                f"Breakfast request window is closed for {req_date_obj.strftime('%d %b %Y')}. "
+                f"Requests were accepted from {w_start_str} to {w_end_str} IST."
+            )
 
     # Prevent duplicate requests for the same date or update if exists
     existing_req = db.query(BreakfastTemporaryRequest).filter(
@@ -966,8 +986,8 @@ def get_admin_summary(
     emp_data = bf_service.get_daily_breakfast_employees(target_date, db)
     summary = emp_data["summary"]
 
-    settings = db.query(BreakfastSetting).first()
-    cutoff_time = settings.cutoff_time if settings else "12:00"
+    open_t, close_t, _ = get_breakfast_cycle_settings(db)
+    cutoff_time = close_t
 
     # Calculate actual breakfast cost for target_date from daily entry, additional orders, and individual orders
     daily_entry = db.query(BreakfastDailyEntry).filter(BreakfastDailyEntry.business_date == target_date).first()
@@ -996,6 +1016,8 @@ def get_admin_summary(
         "isPublicHoliday": bool(is_holiday),
         "holidayName": is_holiday.name if is_holiday else None,
         "cutoffTime": cutoff_time,
+        "requestOpenTime": open_t,
+        "requestCloseTime": close_t,
         "isCutoffPassed": is_after_cutoff(cutoff_time),
         "metrics": {
             "totalActive": summary["totalActive"],
@@ -1215,6 +1237,13 @@ def get_daily_entry(
     db: Session = Depends(get_db)
 ):
     target_date = date or get_kolkata_date_string()
+    open_t, close_t, _ = get_breakfast_cycle_settings(db)
+    try:
+        target_d_obj = datetime.strptime(target_date, "%Y-%m-%d").date()
+    except Exception:
+        target_d_obj = get_kolkata_now().date()
+    window_info = get_breakfast_window_details(target_date=target_d_obj, now=get_kolkata_now(), open_time=open_t, close_time=close_t)
+
     emp_data = bf_service.get_daily_breakfast_employees(target_date, db)
     existing_entry = db.query(BreakfastDailyEntry).filter(BreakfastDailyEntry.business_date == target_date).first()
     historical_records = db.query(BreakfastRecord).filter(
@@ -1229,6 +1258,13 @@ def get_daily_entry(
     return {
         "success": True,
         "businessDate": target_date,
+        "requestWindow": {
+            "windowStartDisplay": window_info["windowStartDisplay"],
+            "windowEndDisplay": window_info["windowEndDisplay"],
+            "isOpen": window_info["isOpen"],
+            "statusCode": window_info["statusCode"],
+            "statusLabel": window_info["statusLabel"]
+        },
         "existingEntry": serialize_daily_entry(existing_entry),
         "historicalRecords": [serialize_record(r) for r in historical_records],
         "hasHistorical": has_historical,

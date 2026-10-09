@@ -57,34 +57,89 @@ def getNextDayDate(dt: Optional[datetime] = None) -> datetime:
     return dt + timedelta(days=1)
 
 # =========================================================================
-# Breakfast Request Window Logic (Overnight Period)
+# =========================================================================
+# Breakfast Request Window Logic (Configurable Period)
 # Rule for breakfast date D:
-#   Request Start: D - 1 day at 17:30 IST
-#   Request End:   D at 08:20 IST
-# Validation rule: window_start <= now < window_end
+#   By default (overnight):
+#     Request Start: D - 1 day at open_time (17:30) IST
+#     Request End:   D at close_time (08:20) IST
+#   Validation rule: window_start <= now < window_end
 # =========================================================================
 
-def get_request_window_for_date(target_date: Union[date, str]) -> Tuple[datetime, datetime]:
+def parse_time_str(time_str: str, default_hour: int = 8, default_min: int = 20) -> Tuple[int, int]:
+    """Parses 'HH:mm' string into (hour, minute)."""
+    try:
+        parts = time_str.strip().split(":")
+        h = int(parts[0])
+        m = int(parts[1]) if len(parts) > 1 else 0
+        return (max(0, min(23, h)), max(0, min(59, m)))
+    except Exception:
+        return (default_hour, default_min)
+
+def get_breakfast_cycle_settings(db: Optional[Any] = None) -> Tuple[str, str, str]:
+    """
+    Loads saved (request_open_time, request_close_time, timezone) from DB.
+    Defaults to ('17:30', '08:20', 'Asia/Kolkata').
+    """
+    from app.breakfast.model import BreakfastSetting
+    if db is not None:
+        try:
+            s = db.query(BreakfastSetting).first()
+            if s:
+                open_t = s.request_open_time or "17:30"
+                close_t = s.request_close_time or s.cutoff_time or "08:20"
+                tz_str = s.timezone or "Asia/Kolkata"
+                return open_t, close_t, tz_str
+        except Exception:
+            pass
+    return "17:30", "08:20", "Asia/Kolkata"
+
+def get_request_window_for_date(
+    target_date: Union[date, str],
+    open_time: str = "17:30",
+    close_time: str = "08:20"
+) -> Tuple[datetime, datetime]:
     """
     Returns (window_start, window_end) in Asia/Kolkata timezone for a given breakfast date D:
-    - window_start: (D - 1 day) at 17:30:00 IST
-    - window_end:   D at 08:20:00 IST
+    - If open_time > close_time (overnight cycle):
+        window_start: (D - 1 day) at open_time:00 IST
+        window_end:   D at close_time:00 IST
+    - If open_time < close_time (same-day cycle):
+        window_start: D at open_time:00 IST
+        window_end:   D at close_time:00 IST
     """
     if isinstance(target_date, str):
         target_date = datetime.strptime(target_date.strip(), "%Y-%m-%d").date()
 
-    window_start = datetime(
-        target_date.year, target_date.month, target_date.day,
-        17, 30, 0, 0, tzinfo=KOLKATA_TZ
-    ) - timedelta(days=1)
+    open_h, open_m = parse_time_str(open_time, 17, 30)
+    close_h, close_m = parse_time_str(close_time, 8, 20)
+
+    # Determine if overnight cycle
+    is_overnight = (open_h, open_m) > (close_h, close_m)
+
+    if is_overnight:
+        window_start = datetime(
+            target_date.year, target_date.month, target_date.day,
+            open_h, open_m, 0, 0, tzinfo=KOLKATA_TZ
+        ) - timedelta(days=1)
+    else:
+        window_start = datetime(
+            target_date.year, target_date.month, target_date.day,
+            open_h, open_m, 0, 0, tzinfo=KOLKATA_TZ
+        )
 
     window_end = datetime(
         target_date.year, target_date.month, target_date.day,
-        8, 20, 0, 0, tzinfo=KOLKATA_TZ
+        close_h, close_m, 0, 0, tzinfo=KOLKATA_TZ
     )
     return window_start, window_end
 
-def is_request_window_open(target_date: Union[date, str], now: Optional[datetime] = None) -> bool:
+def is_request_window_open(
+    target_date: Union[date, str],
+    now: Optional[datetime] = None,
+    open_time: str = "17:30",
+    close_time: str = "08:20"
+) -> bool:
     """
     Checks if current IST time is within the request window for target_date.
     Rule: window_start <= now < window_end
@@ -100,33 +155,43 @@ def is_request_window_open(target_date: Union[date, str], now: Optional[datetime
     else:
         now = to_kolkata_datetime(now)
 
-    window_start, window_end = get_request_window_for_date(target_date)
+    window_start, window_end = get_request_window_for_date(target_date, open_time, close_time)
     return window_start <= now < window_end
 
-def get_applicable_breakfast_date(now: Optional[datetime] = None) -> date:
+def get_applicable_breakfast_date(
+    now: Optional[datetime] = None,
+    open_time: str = "17:30",
+    close_time: str = "08:20"
+) -> date:
     """
-    Intelligently determines the active breakfast date based on IST:
-    - If now.time() < 08:20:00:
-        Today's breakfast date (now.date()). The window opened yesterday at 17:30
-        and remains open until 08:20:00 today.
-    - If now.time() >= 08:20:00:
-        Today's request window closed at 08:20:00.
+    Intelligently determines the active breakfast date based on IST and configured cycle:
+    - If now.time() < close_time:
+        Today's breakfast date (now.date()). The window closes at close_time today.
+    - If now.time() >= close_time:
+        Today's request window closed at close_time.
         The upcoming breakfast date is tomorrow (now.date() + 1 day).
-        Its window opens today at 17:30 and closes tomorrow at 08:20.
+        Its window opens at open_time (today for overnight, or tomorrow morning for same-day)
+        and closes tomorrow at close_time.
     """
     if now is None:
         now = get_kolkata_now()
     else:
         now = to_kolkata_datetime(now)
 
-    # 08:20:00 cutoff time for same-day breakfast request
-    cutoff_time = time(8, 20, 0)
+    close_h, close_m = parse_time_str(close_time, 8, 20)
+    cutoff_time = time(close_h, close_m, 0)
+
     if now.time() < cutoff_time:
         return now.date()
     else:
         return (now + timedelta(days=1)).date()
 
-def get_breakfast_window_details(target_date: Optional[date] = None, now: Optional[datetime] = None) -> Dict[str, Any]:
+def get_breakfast_window_details(
+    target_date: Optional[date] = None,
+    now: Optional[datetime] = None,
+    open_time: str = "17:30",
+    close_time: str = "08:20"
+) -> Dict[str, Any]:
     """
     Builds a full descriptor of the breakfast request window for API response and UI display.
     """
@@ -136,9 +201,9 @@ def get_breakfast_window_details(target_date: Optional[date] = None, now: Option
         now = to_kolkata_datetime(now)
 
     if target_date is None:
-        target_date = get_applicable_breakfast_date(now)
+        target_date = get_applicable_breakfast_date(now, open_time, close_time)
 
-    window_start, window_end = get_request_window_for_date(target_date)
+    window_start, window_end = get_request_window_for_date(target_date, open_time, close_time)
     is_open = window_start <= now < window_end
 
     # Determine status string
@@ -147,16 +212,13 @@ def get_breakfast_window_details(target_date: Optional[date] = None, now: Option
         status_label = "OPEN"
     elif now < window_start:
         status_code = "UPCOMING"
-        status_label = "CLOSED (Opens at 05:30 PM)"
+        status_label = f"CLOSED (Opens at {window_start.strftime('%I:%M %p')})"
     else:
         status_code = "CLOSED"
         status_label = "CLOSED"
 
-    # Display formats
-    # Example: "07 Oct 2026 05:30 PM"
-    start_display = window_start.strftime("%d %b %Y %I:%M %p")
-    # Example: "08 Oct 2026 08:20 AM"
-    end_display = window_end.strftime("%d %b %Y %I:%M %p")
+    start_display = window_start.strftime("%d %b %Y, %I:%M %p")
+    end_display = window_end.strftime("%d %b %Y, %I:%M %p")
     date_display = target_date.strftime("%d %b %Y")
     full_date_display = target_date.strftime("%d %B %Y, %A")
 
@@ -168,14 +230,17 @@ def get_breakfast_window_details(target_date: Optional[date] = None, now: Option
         "windowEnd": window_end.isoformat(),
         "windowStartDisplay": start_display,
         "windowEndDisplay": end_display,
+        "requestOpenTime": open_time,
+        "requestCloseTime": close_time,
+        "cutoffTime": close_time,
         "isOpen": is_open,
         "statusCode": status_code,
         "statusLabel": status_label,
-        "currentIstTime": now.strftime("%d %b %Y %I:%M:%S %p %Z"),
+        "currentIstTime": now.strftime("%d %b %Y, %I:%M:%S %p %Z"),
         "timezone": "Asia/Kolkata (IST, UTC+05:30)"
     }
 
-def is_after_cutoff(cutoff_time: str = "12:00") -> bool:
+def is_after_cutoff(cutoff_time: str = "08:20") -> bool:
     """Legacy helper kept for backward compatibility."""
     now = get_kolkata_now()
     try:
@@ -185,5 +250,5 @@ def is_after_cutoff(cutoff_time: str = "12:00") -> bool:
         cutoff_dt = now.replace(hour=cutoff_hour, minute=cutoff_min, second=0, microsecond=0)
         return now >= cutoff_dt
     except Exception:
-        return now.hour >= 12
+        return now.hour >= 8
 
