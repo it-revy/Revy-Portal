@@ -23,6 +23,8 @@ class OrderItemInput(BaseModel):
 class CreateOrderRequest(BaseModel):
     businessDate: Optional[str] = None
     vendorName: Optional[str] = "Internal Catering / Vendor"
+    clientName: Optional[str] = None
+    headCount: Optional[int] = None
     notes: Optional[str] = ""
     items: List[OrderItemInput]
 
@@ -33,6 +35,8 @@ def serialize_order(o: BreakfastOrder):
         "orderId": o.order_id,
         "businessDate": o.business_date,
         "vendorName": o.vendor_name,
+        "clientName": o.client_name,
+        "headCount": o.head_count,
         "notes": o.notes,
         "createdBy": {
             "employeeId": o.created_by_employee_id,
@@ -66,7 +70,7 @@ def get_orders_by_date(
     db: Session = Depends(get_db)
 ):
     target_date = date or get_kolkata_date_string()
-    orders = db.query(BreakfastOrder).filter(BreakfastOrder.business_date == target_date).order_by(BreakfastOrder.created_at.desc()).all()
+    orders = db.query(BreakfastOrder).filter(BreakfastOrder.business_date == target_date).order_by(BreakfastOrder.created_at.asc()).all()
     order_items = db.query(BreakfastOrderItem).filter(BreakfastOrderItem.business_date == target_date).all()
 
     individual_total = sum(i.total for i in order_items if i.order_type == "INDIVIDUAL")
@@ -107,6 +111,15 @@ def create_order(
     if not payload.items or len(payload.items) == 0:
         raise ValidationError("At least one order item is required")
 
+    head_count = None
+    if payload.headCount is not None:
+        try:
+            head_count = int(payload.headCount)
+            if head_count <= 0:
+                raise ValidationError("Head count must be a positive integer greater than 0")
+        except (ValueError, TypeError):
+            raise ValidationError("Head count must be a valid positive integer")
+
     now_ts = int(uuid.uuid4().hex[:4], 16)
     order_id = f"ORD-{target_date.replace('-', '')}-{str(now_ts)[-4:]}"
 
@@ -114,6 +127,8 @@ def create_order(
         order_id=order_id,
         business_date=target_date,
         vendor_name=(payload.vendorName or "Internal Catering / Vendor").strip(),
+        client_name=payload.clientName.strip() if payload.clientName else None,
+        head_count=head_count,
         notes=(payload.notes or "").strip(),
         created_by_employee_id=current_user.employee_id or "ADMIN",
         created_by_employee_name=current_user.name

@@ -136,6 +136,8 @@ class BreakfastAdditionalOrder(Base):
     order_time = Column(String(20), nullable=True)
     applicable_employee_snapshot = Column(JSON, default=list)
     applicable_employee_count = Column(Integer, default=0, nullable=False)
+    head_count = Column(Integer, nullable=True)
+    client_name = Column(String(255), nullable=True)
     breakfast_items = Column(JSON, default=list)
     common_items = Column(JSON, default=list)
     total_cost = Column(Float, default=0.0, nullable=False)
@@ -153,6 +155,7 @@ class BreakfastOrder(Base):
     order_id = Column(String(100), unique=True, index=True, nullable=False)
     business_date = Column(String(10), index=True, nullable=False)  # YYYY-MM-DD
     vendor_name = Column(String(255), default="Internal Catering / Vendor", nullable=False)
+    head_count = Column(Integer, nullable=True)
     notes = Column(Text, default="", nullable=False)
     created_by_employee_id = Column(String(50), nullable=False)
     created_by_employee_name = Column(String(150), nullable=False)

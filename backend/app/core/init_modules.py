@@ -115,6 +115,7 @@ def ensure_modules_and_memberships():
 
             # --- BMS Roles ---
             {"module_code": "BMS", "code": "BMS_ADMIN", "name": "BMS Admin", "description": "Full access to BMS operations, daily entry, employees, money, reports, and settings."},
+            {"module_code": "BMS", "code": "BMS_BF_MANAGER", "name": "BMS BF Manager", "description": "Operational BMS management access with breakfast operations, daily entry, employee management, orders, and money ledgers."},
             {"module_code": "BMS", "code": "BMS_EMPLOYEE", "name": "BMS Employee", "description": "Employee-level BMS access to submit and view daily breakfast status."},
             {"module_code": "BMS", "code": "BMS_FINANCE_MANAGER", "name": "BMS Finance Manager", "description": "Finance-related BMS access to funds, ledgers, and approval workflows."},
             {"module_code": "BMS", "code": "BMS_DIRECTOR_ANALYTICS", "name": "BMS Director Analytics", "description": "Director/analytics-related BMS access to executive dashboards and order insights."},
@@ -202,6 +203,26 @@ def ensure_modules_and_memberships():
         bms_admin_role = roles_by_module_and_code.get(("BMS", "BMS_ADMIN"))
         if bms_admin_role:
             bms_admin_role.permissions = bms_admin_perms
+
+        bms_bf_manager_role = roles_by_module_and_code.get(("BMS", "BMS_BF_MANAGER"))
+        if bms_bf_manager_role:
+            bms_bf_manager_excluded_codes = {
+                # 1. Director Dashboard & 2. Director Analytics
+                "breakfast.dashboard.view",
+                # 3. Finance Fund Request
+                "finance.breakfast_fund.view",
+                "finance.breakfast_fund.request.view",
+                "finance.breakfast_fund.request.approve",
+                "finance.breakfast_fund.request.reject",
+                "finance.breakfast_fund.provide",
+                "finance.breakfast_fund.report",
+                # 4. Audit Log
+                "breakfast.audit.view",
+            }
+            bms_bf_manager_role.permissions = [
+                p for p in bms_admin_perms
+                if p.code not in bms_bf_manager_excluded_codes
+            ]
 
         bms_emp_role = roles_by_module_and_code.get(("BMS", "BMS_EMPLOYEE"))
         if bms_emp_role:

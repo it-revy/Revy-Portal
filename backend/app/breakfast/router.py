@@ -28,9 +28,15 @@ from app.breakfast import calendar_service
 from app.breakfast.date_utils import (
     get_kolkata_date_string,
     get_kolkata_now,
+    get_kolkata_time_string,
+    to_kolkata_datetime,
     get_formatted_date_and_day,
     is_after_cutoff,
-    getNextDayDate
+    getNextDayDate,
+    get_request_window_for_date,
+    is_request_window_open,
+    get_applicable_breakfast_date,
+    get_breakfast_window_details
 )
 from app.audit.service import AuditService
 
@@ -40,6 +46,7 @@ class SubmitBreakfastRequest(BaseModel):
     response: str
     reasonCode: Optional[str] = None
     reasonText: Optional[str] = None
+    businessDate: Optional[str] = None
 
 class CreateTemporaryBreakfastRequest(BaseModel):
     employeeId: Optional[str] = None
@@ -98,6 +105,10 @@ class AdditionalOrderRequest(BaseModel):
     businessDate: str
     orderTitle: Optional[str] = "Additional Breakfast / Snack Order"
     orderTime: Optional[str] = None
+    headCount: Optional[Union[int, str]] = None
+    head_count: Optional[Union[int, str]] = None
+    clientName: Optional[str] = None
+    client_name: Optional[str] = None
     breakfastItems: Optional[List[ItemInput]] = []
     commonItems: Optional[List[ItemInput]] = []
     totalQuantity: Optional[Union[float, int, str]] = None
@@ -269,6 +280,8 @@ def serialize_additional_order(o: BreakfastAdditionalOrder):
         "orderId": o.order_id,
         "businessDate": o.business_date,
         "orderTitle": o.order_title,
+        "clientName": getattr(o, "client_name", None),
+        "headCount": getattr(o, "head_count", None),
         "orderTime": o.order_time,
         "applicableEmployeeSnapshot": o.applicable_employee_snapshot or [],
         "applicableEmployeeCount": o.applicable_employee_count,
@@ -300,24 +313,27 @@ def serialize_temporary_request(req: BreakfastTemporaryRequest):
         "updatedAt": req.updated_at.isoformat() if req.updated_at else None
     }
 
-# 1. Personal Breakfast Status (Today)
+# 1. Personal Breakfast Status (Today / Active Window)
 @router.get("/today")
 def get_today_status(
+    date: Optional[str] = Query(None),
     current_user: CurrentUser = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    today_dt = get_kolkata_now()
-    today_info = get_formatted_date_and_day(today_dt)
+    now_ist = get_kolkata_now()
 
-    settings = db.query(BreakfastSetting).first()
-    cutoff_time = settings.cutoff_time if settings else "12:00"
-    is_cutoff_passed = is_after_cutoff(cutoff_time)
+    if date and len(date.strip()) == 10:
+        try:
+            target_date_obj = datetime.strptime(date.strip(), "%Y-%m-%d").date()
+        except ValueError:
+            target_date_obj = get_applicable_breakfast_date(now_ist)
+    else:
+        target_date_obj = get_applicable_breakfast_date(now_ist)
 
-    next_day_dt = getNextDayDate(today_dt)
-    next_day_info = get_formatted_date_and_day(next_day_dt)
-
-    active_date_str = next_day_info["dateStr"] if is_cutoff_passed else today_info["dateStr"]
-    active_formatted = next_day_info["displayString"] if is_cutoff_passed else today_info["displayString"]
+    window_info = get_breakfast_window_details(target_date=target_date_obj, now=now_ist)
+    active_date_str = window_info["targetDate"]
+    active_formatted = window_info["targetDateFullFormatted"]
+    today_info = get_formatted_date_and_day(now_ist)
 
     is_holiday = db.query(PublicHoliday).filter(
         PublicHoliday.date == active_date_str,
@@ -328,6 +344,15 @@ def get_today_status(
         BreakfastRecord.employee_id == current_user.employee_id,
         BreakfastRecord.business_date == active_date_str
     ).first()
+
+    # If active date has no record yet, also fetch calendar today's record (if different)
+    calendar_today_str = now_ist.strftime("%Y-%m-%d")
+    calendar_record = None
+    if not today_record and calendar_today_str != active_date_str:
+        calendar_record = db.query(BreakfastRecord).filter(
+            BreakfastRecord.employee_id == current_user.employee_id,
+            BreakfastRecord.business_date == calendar_today_str
+        ).first()
 
     temp_req = db.query(BreakfastTemporaryRequest).filter(
         BreakfastTemporaryRequest.employee_id == current_user.employee_id,
@@ -348,15 +373,27 @@ def get_today_status(
         "businessDate": active_date_str,
         "todayFormattedDisplay": today_info["displayString"],
         "activeFormattedDisplay": active_formatted,
-        "isCutoffPassed": is_cutoff_passed,
-        "cutoffTime": cutoff_time,
+        "targetDateFormatted": window_info["targetDateFormatted"],
+        "isCutoffPassed": not window_info["isOpen"],
+        "isOpen": window_info["isOpen"],
+        "isWindowOpen": window_info["isOpen"],
+        "windowStatus": window_info["statusCode"],
+        "windowStatusLabel": window_info["statusLabel"],
+        "windowStart": window_info["windowStart"],
+        "windowEnd": window_info["windowEnd"],
+        "windowStartDisplay": window_info["windowStartDisplay"],
+        "windowEndDisplay": window_info["windowEndDisplay"],
+        "currentIstTime": window_info["currentIstTime"],
+        "cutoffTime": "08:20 AM",
         "employeeId": current_user.employee_id,
         "name": current_user.name,
         "participationType": current_user.breakfast_participation_type,
         "isPermanentNotTaking": is_perm,
         "isPublicHoliday": bool(is_holiday),
         "holidayName": is_holiday.name if is_holiday else None,
-        "todayRecord": serialize_record(today_record),
+        "todayRecord": serialize_record(today_record or calendar_record),
+        "targetDateRecord": serialize_record(today_record),
+        "calendarRecord": serialize_record(calendar_record),
         "temporaryRequest": serialize_temporary_request(temp_req),
         "reasons": formatted_reasons
     }
@@ -371,14 +408,30 @@ def submit_daily_breakfast(
 ):
     is_perm = (current_user.breakfast_participation_type or "").upper() in ["PERMANENT_NOT_TAKING", "PERMANENT_NON_TAKER", "NON_TAKER"]
 
-    today_dt = get_kolkata_now()
-    settings = db.query(BreakfastSetting).first()
-    cutoff_time = settings.cutoff_time if settings else "12:00"
-    cutoff_passed = is_after_cutoff(cutoff_time)
+    now_ist = get_kolkata_now()
 
-    target_dt = getNextDayDate(today_dt) if cutoff_passed else today_dt
-    target_info = get_formatted_date_and_day(target_dt)
-    target_date_str = target_info["dateStr"]
+    if payload.businessDate and len(payload.businessDate.strip()) == 10:
+        try:
+            target_date_obj = datetime.strptime(payload.businessDate.strip(), "%Y-%m-%d").date()
+        except ValueError:
+            raise ValidationError("Invalid businessDate format. Expected YYYY-MM-DD")
+    else:
+        target_date_obj = get_applicable_breakfast_date(now_ist)
+
+    target_date_str = target_date_obj.strftime("%Y-%m-%d")
+    target_dt_full = datetime(target_date_obj.year, target_date_obj.month, target_date_obj.day, 10, 0, 0, tzinfo=now_ist.tzinfo)
+    target_info = get_formatted_date_and_day(target_dt_full)
+
+    # STRICT SERVER-SIDE VALIDATION: Request window is overnight D-1 17:30 IST to D 08:20 IST
+    w_start, w_end = get_request_window_for_date(target_date_obj)
+    if not (w_start <= now_ist < w_end):
+        w_start_str = w_start.strftime("%d %b %Y %I:%M %p")
+        w_end_str = w_end.strftime("%d %b %Y %I:%M %p")
+        target_disp = target_date_obj.strftime("%d %b %Y")
+        raise ValidationError(
+            f"Breakfast request window is closed for {target_disp}. "
+            f"Requests are accepted from {w_start_str} to {w_end_str} IST."
+        )
 
     resp = payload.response.upper()
     if resp not in ["YES", "NO", "TAKING", "NOT_TAKING"]:
@@ -1396,12 +1449,24 @@ def save_additional_order(
     emp_data = bf_service.get_additional_breakfast_employees(b_date, db)
     applicable_count = emp_data["applicableCount"]
 
+    raw_hc = payload.headCount if payload.headCount is not None else payload.head_count
+    head_count = None
+    if raw_hc is not None:
+        try:
+            head_count = int(raw_hc)
+            if head_count <= 0:
+                raise ValidationError("Head count must be a positive number greater than 0")
+        except (ValueError, TypeError):
+            raise ValidationError("Head count must be a valid positive number")
+
+    calc_count = float(head_count) if head_count is not None else float(applicable_count)
+
     processed_bf = []
     items_total = 0.0
     for item in payload.breakfastItems or []:
         if item and item.name and item.name.strip():
             price = float(item.unitPrice or 0)
-            qty = float(item.quantity) if item.quantity is not None else float(applicable_count)
+            qty = float(item.quantity) if item.quantity is not None else calc_count
             tot = price * qty
             items_total += tot
             processed_bf.append({
@@ -1447,6 +1512,8 @@ def save_additional_order(
         business_date=b_date,
         order_title=payload.orderTitle or "Additional Breakfast / Snack Order",
         order_time=now_time,
+        client_name=payload.clientName.strip() if payload.clientName else None,
+        head_count=head_count,
         applicable_employee_snapshot=emp_data["applicableEmployees"],
         applicable_employee_count=applicable_count,
         breakfast_items=processed_bf,
@@ -1501,12 +1568,24 @@ def update_additional_order(
     emp_data = bf_service.get_additional_breakfast_employees(order.business_date, db)
     applicable_count = emp_data["applicableCount"]
 
+    raw_hc = payload.headCount if payload.headCount is not None else payload.head_count
+    head_count = order.head_count
+    if raw_hc is not None:
+        try:
+            head_count = int(raw_hc)
+            if head_count <= 0:
+                raise ValidationError("Head count must be a positive number greater than 0")
+        except (ValueError, TypeError):
+            raise ValidationError("Head count must be a valid positive number")
+
+    calc_count = float(head_count) if head_count is not None else float(applicable_count)
+
     processed_bf = []
     items_total = 0.0
     for item in payload.breakfastItems or []:
         if item and item.name and item.name.strip():
             price = float(item.unitPrice or 0)
-            qty = float(item.quantity) if item.quantity is not None else float(applicable_count)
+            qty = float(item.quantity) if item.quantity is not None else calc_count
             tot = price * qty
             items_total += tot
             processed_bf.append({
@@ -1545,6 +1624,9 @@ def update_additional_order(
 
     order.order_title = payload.orderTitle or order.order_title
     order.order_time = payload.orderTime or order.order_time
+    order.head_count = head_count
+    if payload.clientName is not None:
+        order.client_name = payload.clientName.strip() if payload.clientName else None
     order.breakfast_items = processed_bf
     order.common_items = processed_cm
     order.total_cost = new_total_cost
@@ -1639,7 +1721,7 @@ def get_all_orders(
     minAmount: Optional[float] = Query(None),
     maxAmount: Optional[float] = Query(None),
     sortBy: str = Query("businessDate"),
-    sortOrder: str = Query("desc"),
+    sortOrder: str = Query("asc"),
     current_user: CurrentUser = Depends(require_any_permission(["breakfast.view", "breakfast.orders.view"])),
     db: Session = Depends(get_db)
 ):
@@ -1688,6 +1770,7 @@ def get_all_orders(
             "employeeId": None if getattr(entry, "record_type", "CURRENT") == "HISTORICAL" else None,
             "employeeName": "Not Recorded" if getattr(entry, "record_type", "CURRENT") == "HISTORICAL" else None,
             "applicableEmployeeCount": (entry.summary or {}).get("applicableCount", len(entry.employee_snapshot or [])),
+            "systemEmployeeCount": (entry.summary or {}).get("applicableCount", len(entry.employee_snapshot or [])),
             "takingEmployeeCount": (entry.summary or {}).get("takingCount", 0),
             "notTakingEmployeeCount": (entry.summary or {}).get("notTakingCount", 0),
             "noResponseEmployeeCount": (entry.summary or {}).get("noResponseCount", 0),
@@ -1722,10 +1805,13 @@ def get_all_orders(
             "orderTypeLabel": "ADDITIONAL ORDER",
             "orderTitle": order.order_title or "Additional Breakfast Order",
             "orderTime": order.order_time or "15:30",
+            "clientName": order.client_name,
+            "headCount": order.head_count,
             "recordType": "CURRENT",
             "isHistorical": False,
-            "applicableEmployeeCount": order.applicable_employee_count or len(order.applicable_employee_snapshot or []),
-            "takingEmployeeCount": order.applicable_employee_count or 0,
+            "applicableEmployeeCount": order.head_count if order.head_count is not None else (order.applicable_employee_count or len(order.applicable_employee_snapshot or [])),
+            "systemEmployeeCount": order.applicable_employee_count or len(order.applicable_employee_snapshot or []),
+            "takingEmployeeCount": order.head_count if order.head_count is not None else (order.applicable_employee_count or 0),
             "employeeSnapshot": order.applicable_employee_snapshot or [],
             "breakfastItems": order.breakfast_items or [],
             "commonItems": order.common_items or [],
