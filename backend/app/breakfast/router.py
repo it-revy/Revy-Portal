@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.dependencies import get_current_user, require_permission, require_any_permission, require_module_access, CurrentUser
 from app.core.exceptions import ValidationError, NotFoundError, PermissionDeniedError

@@ -399,3 +399,109 @@ def test_end_to_end_reported_scenario():
     ).delete()
     db.commit()
     db.close()
+
+
+# =========================================================================
+# Scenario H: Submit Endpoint Configuration, NameError Prevention & Validation
+# =========================================================================
+
+def test_submit_endpoint_configuration_and_validation():
+    """
+    Validates:
+    1. settings is properly imported and defined in breakfast/router.py.
+    2. POST /api/breakfast/submit and POST /api/v1/breakfast/submit both work.
+    3. When TESTING env var is NOT set, settings.ENVIRONMENT is evaluated without NameError.
+    4. Invalid businessDate returns 400 validation error, not 500 NameError.
+    5. Invalid response values return 400 validation error.
+    6. When outside request window in production mode, returns 400 request window closed error.
+    """
+    from app.core.config import settings
+
+    db = SessionLocal()
+    emp = db.query(Employee).filter(Employee.status == "active", Employee.is_hard_deleted == False).first()
+    assert emp is not None
+    user = emp.user
+    token = get_user_token(user.username)
+    emp_headers = {"Authorization": f"Bearer {token}"}
+    db.close()
+
+    # 1. Test when TESTING is unset and settings.ENVIRONMENT is evaluated
+    old_testing = os.environ.pop("TESTING", None)
+    old_env = settings.ENVIRONMENT
+
+    try:
+        # A. Invalid date format must raise 400 ValidationError, NEVER 500 NameError
+        settings.ENVIRONMENT = "development"
+        res_invalid_date = client.post(
+            "/api/breakfast/submit",
+            json={"businessDate": "2026-99-99", "response": "YES"},
+            headers=emp_headers
+        )
+        assert res_invalid_date.status_code == 400
+        assert "Invalid businessDate format" in res_invalid_date.json()["message"]
+
+        # B. In production/development mode: closed window raises 400 window closed, NEVER 500 NameError
+        settings.ENVIRONMENT = "production"
+        res_closed = client.post(
+            "/api/breakfast/submit",
+            json={"businessDate": "2020-01-01", "response": "YES"},
+            headers=emp_headers
+        )
+        assert res_closed.status_code == 400
+        assert "window is closed" in res_closed.json()["message"].lower()
+
+        # C. Under test environment (is_testing=True via settings.ENVIRONMENT="test"):
+        # Invalid response option must raise 400 ValidationError
+        settings.ENVIRONMENT = "test"
+        res_invalid_resp = client.post(
+            "/api/breakfast/submit",
+            json={"businessDate": "2026-10-09", "response": "MAYBE"},
+            headers=emp_headers
+        )
+        assert res_invalid_resp.status_code == 400
+        assert "Response must be YES or NO" in res_invalid_resp.json()["message"]
+
+        # D. Response NO without reasonCode must raise 400 ValidationError
+        res_no_reason = client.post(
+            "/api/breakfast/submit",
+            json={"businessDate": "2026-10-09", "response": "NO"},
+            headers=emp_headers
+        )
+        assert res_no_reason.status_code == 400
+        assert "reason" in res_no_reason.json()["message"].lower()
+
+        # E. Successful submission via /api/breakfast/submit (test environment detection enabled)
+        res_success_api = client.post(
+            "/api/breakfast/submit",
+            json={"businessDate": "2026-10-20", "response": "YES"},
+            headers=emp_headers
+        )
+        assert res_success_api.status_code == 200
+        assert res_success_api.json()["success"] is True
+        assert res_success_api.json()["record"]["businessDate"] == "2026-10-20"
+        assert res_success_api.json()["record"]["employeeResponse"] == "TAKING"
+
+        # F. Also verify /api/v1/breakfast/submit works identically
+        res_success_v1 = client.post(
+            "/api/v1/breakfast/submit",
+            json={"businessDate": "2026-10-20", "response": "YES"},
+            headers=emp_headers
+        )
+        assert res_success_v1.status_code == 200
+        assert res_success_v1.json()["success"] is True
+
+        # Clean up test record
+        db = SessionLocal()
+        db.query(BreakfastRecord).filter(
+            BreakfastRecord.employee_id == emp.employee_id,
+            BreakfastRecord.business_date == "2026-10-20"
+        ).delete()
+        db.commit()
+        db.close()
+
+    finally:
+        # Restore environment settings
+        settings.ENVIRONMENT = old_env
+        if old_testing is not None:
+            os.environ["TESTING"] = old_testing
+
