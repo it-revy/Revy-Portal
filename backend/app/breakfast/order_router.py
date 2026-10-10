@@ -8,7 +8,7 @@ from app.core.dependencies import require_permission, require_any_permission, re
 from app.core.exceptions import ValidationError, NotFoundError
 from app.breakfast.model import BreakfastOrder, BreakfastOrderItem, BreakfastDailyEntry, BreakfastAdditionalOrder
 from app.employees.model import Employee
-from app.breakfast.date_utils import get_kolkata_date_string
+from app.breakfast.date_utils import get_kolkata_date_string, get_authoritative_breakfast_date, serialize_utc_timestamp
 from app.audit.service import AuditService
 
 router = APIRouter(prefix="/orders", tags=["Breakfast Orders"], dependencies=[Depends(require_module_access("BMS"))])
@@ -42,7 +42,7 @@ def serialize_order(o: BreakfastOrder):
             "employeeId": o.created_by_employee_id,
             "employeeName": o.created_by_employee_name
         },
-        "createdAt": o.created_at.isoformat() if o.created_at else None
+        "createdAt": serialize_utc_timestamp(o.created_at)
     }
 
 def serialize_item(i: BreakfastOrderItem):
@@ -59,7 +59,7 @@ def serialize_item(i: BreakfastOrderItem):
         "price": i.price,
         "quantity": i.quantity,
         "total": i.total,
-        "createdAt": i.created_at.isoformat() if i.created_at else None
+        "createdAt": serialize_utc_timestamp(i.created_at)
     }
 
 @router.get("")
@@ -69,7 +69,7 @@ def get_orders_by_date(
     current_user: CurrentUser = Depends(require_any_permission(["breakfast.view", "breakfast.orders.view"])),
     db: Session = Depends(get_db)
 ):
-    target_date = date or get_kolkata_date_string()
+    target_date = date or get_authoritative_breakfast_date(db)
     orders = db.query(BreakfastOrder).filter(BreakfastOrder.business_date == target_date).order_by(BreakfastOrder.created_at.asc()).all()
     order_items = db.query(BreakfastOrderItem).filter(BreakfastOrderItem.business_date == target_date).all()
 
@@ -107,7 +107,7 @@ def create_order(
     current_user: CurrentUser = Depends(require_permission("breakfast.manage")),
     db: Session = Depends(get_db)
 ):
-    target_date = payload.businessDate or get_kolkata_date_string()
+    target_date = payload.businessDate or get_authoritative_breakfast_date(db)
     if not payload.items or len(payload.items) == 0:
         raise ValidationError("At least one order item is required")
 

@@ -25,17 +25,18 @@ const BMSSidebar = ({ isMobileOpen, onCloseMobile, isCollapsed: propIsCollapsed,
   const location = useLocation();
 
   const isBreakfastPath = [
+    '/bms/daily-entry',
+    '/bms/today-breakfast',
+    '/bms/additional-orders',
+    '/bms/orders',
+    '/bms/breakfast-money',
+    '/bms/money',
     '/admin/daily-entry',
     '/admin/today-breakfast',
     '/admin/today-list',
     '/admin/additional-orders',
     '/admin/orders',
-    '/admin/breakfast-money',
-    '/bms/daily-entry',
-    '/bms/today-breakfast',
-    '/bms/additional-orders',
-    '/bms/orders',
-    '/bms/breakfast-money'
+    '/admin/breakfast-money'
   ].some(path => location.pathname.startsWith(path));
 
   const [isCollapsedInternal, setIsCollapsedInternal] = useState(false);
@@ -47,6 +48,11 @@ const BMSSidebar = ({ isMobileOpen, onCloseMobile, isCollapsed: propIsCollapsed,
     if (onCloseMobile) {
       onCloseMobile();
     }
+  };
+
+  const isRouteActive = (canonicalPath, legacyPaths = []) => {
+    if (location.pathname === canonicalPath) return true;
+    return legacyPaths.some(lp => location.pathname === lp || location.pathname.startsWith(`${lp}/`));
   };
 
   const navContent = (
@@ -128,9 +134,9 @@ const BMSSidebar = ({ isMobileOpen, onCloseMobile, isCollapsed: propIsCollapsed,
         {/* 1. Today's Entry - Visible for employees who can submit or standard breakfast view */}
         {(hasPermission('breakfast.submit') || hasPermission('breakfast.view')) && (
           <NavLink
-            to="/today"
+            to="/bms/response"
             onClick={handleLinkClick}
-            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            className={() => `nav-item ${isRouteActive('/bms/response', ['/today', '/response', '/breakfast-response', '/bms/today']) ? 'active' : ''}`}
             title="Today's Entry"
           >
             <Utensils size={18} />
@@ -195,9 +201,9 @@ const BMSSidebar = ({ isMobileOpen, onCloseMobile, isCollapsed: propIsCollapsed,
                 borderLeft: '2px solid rgba(255,255,255,0.1)'
               }}>
                 <NavLink
-                  to="/admin/daily-entry"
+                  to="/bms/daily-entry"
                   onClick={handleLinkClick}
-                  className={({ isActive }) => `subnav-item ${isActive ? 'active' : ''}`}
+                  className={() => `subnav-item ${isRouteActive('/bms/daily-entry', ['/admin/daily-entry']) ? 'active' : ''}`}
                   title="Daily Entry"
                 >
                   <Coffee size={16} />
@@ -205,19 +211,9 @@ const BMSSidebar = ({ isMobileOpen, onCloseMobile, isCollapsed: propIsCollapsed,
                 </NavLink>
 
                 <NavLink
-                  to="/admin/today-breakfast"
+                  to="/bms/additional-orders"
                   onClick={handleLinkClick}
-                  className={({ isActive }) => `subnav-item ${isActive ? 'active' : ''}`}
-                  title="Today's Breakfast"
-                >
-                  <Utensils size={16} />
-                  <span>Today's Breakfast</span>
-                </NavLink>
-
-                <NavLink
-                  to="/admin/additional-orders"
-                  onClick={handleLinkClick}
-                  className={({ isActive }) => `subnav-item ${isActive ? 'active' : ''}`}
+                  className={() => `subnav-item ${isRouteActive('/bms/additional-orders', ['/admin/additional-orders']) ? 'active' : ''}`}
                   title="Additional Orders"
                 >
                   <ShoppingBag size={16} />
@@ -225,9 +221,9 @@ const BMSSidebar = ({ isMobileOpen, onCloseMobile, isCollapsed: propIsCollapsed,
                 </NavLink>
 
                 <NavLink
-                  to="/admin/orders"
+                  to="/bms/orders"
                   onClick={handleLinkClick}
-                  className={({ isActive }) => `subnav-item ${isActive ? 'active' : ''}`}
+                  className={() => `subnav-item ${isRouteActive('/bms/orders', ['/admin/orders']) ? 'active' : ''}`}
                   title="All Orders"
                 >
                   <FileSpreadsheet size={16} />
@@ -236,9 +232,9 @@ const BMSSidebar = ({ isMobileOpen, onCloseMobile, isCollapsed: propIsCollapsed,
 
                 {hasPermission('breakfast.money.view') && (
                   <NavLink
-                    to="/admin/breakfast-money"
+                    to="/bms/money"
                     onClick={handleLinkClick}
-                    className={({ isActive }) => `subnav-item ${isActive ? 'active' : ''}`}
+                    className={() => `subnav-item ${isRouteActive('/bms/money', ['/bms/breakfast-money', '/admin/breakfast-money']) ? 'active' : ''}`}
                     title="Breakfast Money"
                   >
                     <Wallet size={16} />
@@ -253,9 +249,9 @@ const BMSSidebar = ({ isMobileOpen, onCloseMobile, isCollapsed: propIsCollapsed,
         {/* All Orders - for Director if breakfast dropdown is not displayed */}
         {(hasRole('DIRECTOR') || hasRole('Director') || hasRole('CEO') || hasRole('Chief Executive Officer') || hasPermission('breakfast.orders.view')) && !hasPermission('breakfast.view') && (
           <NavLink
-            to="/admin/orders"
+            to="/bms/orders"
             onClick={handleLinkClick}
-            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            className={() => `nav-item ${isRouteActive('/bms/orders', ['/admin/orders']) ? 'active' : ''}`}
             title="All Orders"
           >
             <FileSpreadsheet size={18} />
@@ -266,9 +262,9 @@ const BMSSidebar = ({ isMobileOpen, onCloseMobile, isCollapsed: propIsCollapsed,
         {/* 3. Employees */}
         {hasPermission('breakfast.employee.read') && (
           <NavLink
-            to="/admin/employees"
+            to="/bms/employees"
             onClick={handleLinkClick}
-            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            className={() => `nav-item ${isRouteActive('/bms/employees', ['/admin/employees', '/employees']) ? 'active' : ''}`}
             title="Employees"
           >
             <Users size={18} />
@@ -279,9 +275,9 @@ const BMSSidebar = ({ isMobileOpen, onCloseMobile, isCollapsed: propIsCollapsed,
         {/* 4. Public Holidays */}
         {hasPermission('breakfast.view') && (
           <NavLink
-            to="/holidays"
+            to="/bms/holidays"
             onClick={handleLinkClick}
-            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            className={() => `nav-item ${isRouteActive('/bms/holidays', ['/admin/holidays', '/holidays']) ? 'active' : ''}`}
             title="Public Holidays"
           >
             <CalendarRange size={18} />
@@ -292,9 +288,9 @@ const BMSSidebar = ({ isMobileOpen, onCloseMobile, isCollapsed: propIsCollapsed,
         {/* 5. Reports */}
         {(hasPermission('breakfast.report') || hasPermission('breakfast.money.report') || hasRole('BMS_FINANCE_MANAGER') || hasRole('Finance Manager') || hasRole('FINANCE_MANAGER')) && (
           <NavLink
-            to="/reports"
+            to="/bms/reports"
             onClick={handleLinkClick}
-            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            className={() => `nav-item ${isRouteActive('/bms/reports', ['/reports']) ? 'active' : ''}`}
             title="Reports"
           >
             <FileSpreadsheet size={18} />
@@ -305,9 +301,9 @@ const BMSSidebar = ({ isMobileOpen, onCloseMobile, isCollapsed: propIsCollapsed,
         {/* Director Dashboard (for users with Director / CEO role) */}
         {(hasRole('DIRECTOR') || hasRole('Director') || hasRole('CEO') || hasRole('Chief Executive Officer')) && (
           <NavLink
-            to="/ceo-dashboard"
+            to="/bms/ceo-view"
             onClick={handleLinkClick}
-            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            className={() => `nav-item ${isRouteActive('/bms/ceo-view', ['/ceo-dashboard']) ? 'active' : ''}`}
             title="Directors Dashboard"
           >
             <TrendingUp size={18} />
@@ -318,9 +314,9 @@ const BMSSidebar = ({ isMobileOpen, onCloseMobile, isCollapsed: propIsCollapsed,
         {/* Director Analytics (for users with BMS_DIRECTOR_ANALYTICS role) */}
         {(hasRole('BMS_DIRECTOR_ANALYTICS') || hasRole('BMS Director Analytics') || hasRole('DIRECTOR_ANALYTICS') || hasRole('Director Analytics')) && (
           <NavLink
-            to="/director-analytics"
+            to="/bms/director-analytics"
             onClick={handleLinkClick}
-            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            className={() => `nav-item ${isRouteActive('/bms/director-analytics', ['/director-analytics']) ? 'active' : ''}`}
             title="Director Analytics"
           >
             <PieChart size={18} />
@@ -331,9 +327,9 @@ const BMSSidebar = ({ isMobileOpen, onCloseMobile, isCollapsed: propIsCollapsed,
         {/* Finance Fund Requests */}
         {(hasPermission('finance.breakfast_fund.view') || hasRole('BMS_FINANCE_MANAGER') || hasRole('BMS Finance Manager') || hasRole('FINANCE_MANAGER') || hasRole('Finance Manager')) && (
           <NavLink
-            to="/finance/fund-requests"
+            to="/bms/finance"
             onClick={handleLinkClick}
-            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            className={() => `nav-item ${isRouteActive('/bms/finance', ['/finance/fund-requests']) ? 'active' : ''}`}
             title="Finance Fund Requests"
           >
             <Wallet size={18} />
@@ -344,9 +340,9 @@ const BMSSidebar = ({ isMobileOpen, onCloseMobile, isCollapsed: propIsCollapsed,
         {/* 6. Audit Logs - IT ADMIN only */}
         {hasPermission('breakfast.audit.view') && (
           <NavLink
-            to="/audit-logs"
+            to="/bms/audit-logs"
             onClick={handleLinkClick}
-            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            className={() => `nav-item ${isRouteActive('/bms/audit-logs', ['/audit-logs']) ? 'active' : ''}`}
             title="Audit Logs"
           >
             <ShieldAlert size={18} />
@@ -357,9 +353,9 @@ const BMSSidebar = ({ isMobileOpen, onCloseMobile, isCollapsed: propIsCollapsed,
         {/* 7. Settings - IT ADMIN only */}
         {hasPermission('breakfast.settings.manage') && (
           <NavLink
-            to="/settings"
+            to="/bms/settings"
             onClick={handleLinkClick}
-            className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}
+            className={() => `nav-item ${isRouteActive('/bms/settings', ['/settings']) ? 'active' : ''}`}
             title="Settings"
           >
             <Settings size={18} />

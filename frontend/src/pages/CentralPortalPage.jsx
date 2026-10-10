@@ -145,13 +145,13 @@ export const PORTAL_SERVICES = [
 ];
 
 export const getBreakfastDestination = (hasPermission, hasRole = () => false) => {
-  if (hasRole('DIRECTOR') || hasRole('Director') || hasRole('CEO') || hasRole('Chief Executive Officer')) return '/ceo-dashboard';
-  if (hasRole('BMS_DIRECTOR_ANALYTICS') || hasRole('Director Analytics') || hasRole('DIRECTOR_ANALYTICS') || hasRole('BMS Director Analytics')) return '/director-analytics';
-  if (hasRole('BMS_FINANCE_MANAGER') || hasRole('Finance Manager') || hasRole('FINANCE_MANAGER') || hasRole('BMS Finance Manager')) return '/finance/fund-requests';
-  if (hasPermission('breakfast.orders.view')) return '/admin/orders';
-  if (hasPermission('breakfast.view')) return '/admin/dashboard';
-  if (hasPermission('finance.breakfast_fund.view')) return '/finance/fund-requests';
-  return '/today';
+  if (hasRole('DIRECTOR') || hasRole('Director') || hasRole('CEO') || hasRole('Chief Executive Officer')) return '/bms/ceo-view';
+  if (hasRole('BMS_DIRECTOR_ANALYTICS') || hasRole('Director Analytics') || hasRole('DIRECTOR_ANALYTICS') || hasRole('BMS Director Analytics')) return '/bms/director-analytics';
+  if (hasRole('BMS_FINANCE_MANAGER') || hasRole('Finance Manager') || hasRole('FINANCE_MANAGER') || hasRole('BMS Finance Manager')) return '/bms/finance';
+  if (hasPermission('breakfast.orders.view')) return '/bms/orders';
+  if (hasPermission('breakfast.view')) return '/bms/dashboard';
+  if (hasPermission('finance.breakfast_fund.view')) return '/bms/finance';
+  return '/bms/response';
 };
 
 export default function CentralPortalPage() {

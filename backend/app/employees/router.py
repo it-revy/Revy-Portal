@@ -13,6 +13,7 @@ from app.employees.schema import (
 )
 from app.employees.service import EmployeeService
 from app.breakfast.model import BreakfastRecord
+from app.breakfast.date_utils import serialize_utc_timestamp
 
 router = APIRouter(prefix="/employees", tags=["Employees"])
 
@@ -117,7 +118,7 @@ def get_employee_by_id(
             "reasonCode": r.reason_code,
             "reasonText": r.reason_text,
             "source": r.source,
-            "submittedAt": r.submitted_at.isoformat() if r.submitted_at else None
+            "submittedAt": serialize_utc_timestamp(r.submitted_at)
         }
         for r in recent_records
     ]

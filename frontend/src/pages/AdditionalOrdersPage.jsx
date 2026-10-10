@@ -19,9 +19,10 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
+import { formatISTTimestamp } from '../utils/dateUtils';
 
 const AdditionalOrdersPage = () => {
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().substring(0, 10));
+  const [selectedDate, setSelectedDate] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -49,17 +50,21 @@ const AdditionalOrdersPage = () => {
   ]);
 
   useEffect(() => {
-    fetchAdditionalOrders();
-  }, [selectedDate]);
+    fetchAdditionalOrders('');
+  }, []);
 
-  const fetchAdditionalOrders = async () => {
+  const fetchAdditionalOrders = async (dateToFetch = selectedDate) => {
     setLoading(true);
     setError(false);
     setMessage(null);
     try {
-      const res = await API.get(`/breakfast/additional-orders?date=${selectedDate}`);
+      const url = dateToFetch ? `/breakfast/additional-orders?date=${dateToFetch}` : '/breakfast/additional-orders';
+      const res = await API.get(url);
       if (res.data.success) {
         setData(res.data);
+        if (res.data.businessDate) {
+          setSelectedDate(res.data.businessDate);
+        }
       } else {
         setError(true);
       }
@@ -888,9 +893,9 @@ const AdditionalOrdersPage = () => {
             {/* Audit Trail Info */}
             <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '1rem', fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
               <div>Created By: <strong>{viewOrder.createdBy || 'BF Admin'}</strong></div>
-              <div>Created At: <strong>{viewOrder.createdAt ? new Date(viewOrder.createdAt).toLocaleString() : 'N/A'}</strong></div>
+              <div>Created At: <strong>{viewOrder.createdAt ? `${formatISTTimestamp(viewOrder.createdAt)} IST` : 'N/A'}</strong></div>
               {viewOrder.updatedBy && <div>Updated By: <strong>{viewOrder.updatedBy}</strong></div>}
-              {viewOrder.updatedAt && <div>Updated At: <strong>{new Date(viewOrder.updatedAt).toLocaleString()}</strong></div>}
+              {viewOrder.updatedAt && <div>Updated At: <strong>{`${formatISTTimestamp(viewOrder.updatedAt)} IST`}</strong></div>}
             </div>
           </div>
         </div>

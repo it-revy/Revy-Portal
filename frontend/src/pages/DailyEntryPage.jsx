@@ -21,11 +21,12 @@ import {
 
 const DailyEntryPage = () => {
   const { hasPermission } = useAuth();
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().substring(0, 10));
+  const [selectedDate, setSelectedDate] = useState('');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
+  const activeReqIdRef = React.useRef(0);
 
   // Section: Breakfast Items (Optional, starts empty or with saved items)
   const [breakfastItems, setBreakfastItems] = useState([]);
@@ -39,33 +40,47 @@ const DailyEntryPage = () => {
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
   useEffect(() => {
-    fetchDailyEntryData();
-  }, [selectedDate]);
+    fetchDailyEntryData('');
+  }, []);
 
-  const fetchDailyEntryData = async () => {
+  const fetchDailyEntryData = async (dateToFetch) => {
+    const reqId = ++activeReqIdRef.current;
     setLoading(true);
     setMessage(null);
     try {
-      const res = await API.get(`/breakfast/daily-entry?date=${selectedDate}`);
+      const url = dateToFetch ? `/breakfast/daily-entry?date=${dateToFetch}` : '/breakfast/daily-entry';
+      const res = await API.get(url);
+      if (reqId !== activeReqIdRef.current) return; // Stale async response discarded
+
       if (res.data.success) {
         setData(res.data);
-        const takingCount = res.data.summary?.takingCount || 0;
+        if (res.data.businessDate) {
+          setSelectedDate(res.data.businessDate);
+        }
 
         if (res.data.existingEntry) {
           setBreakfastItems(res.data.existingEntry.breakfastItems || []);
           setCommonItems(res.data.existingEntry.commonItems || []);
         } else {
-          // Default optional items initially empty or customizable by user
           setBreakfastItems([]);
           setCommonItems([]);
         }
       }
     } catch (err) {
+      if (reqId !== activeReqIdRef.current) return;
       console.error('Failed to fetch daily entry data:', err);
       setMessage({ type: 'danger', text: err.response?.data?.message || 'Failed to load daily entry data.' });
     } finally {
-      setLoading(false);
+      if (reqId === activeReqIdRef.current) {
+        setLoading(false);
+      }
     }
+  };
+
+  const handleDateChange = (newDate) => {
+    if (!newDate) return;
+    setSelectedDate(newDate);
+    fetchDailyEntryData(newDate);
   };
 
   const handleActualStatusChange = async (employeeId, actualStatus) => {
@@ -80,7 +95,7 @@ const DailyEntryPage = () => {
       if (res.data.success) {
         setMessage({ type: 'success', text: res.data.message });
         setEditingEmpId(null);
-        fetchDailyEntryData();
+        fetchDailyEntryData(selectedDate);
       }
     } catch (err) {
       setMessage({ type: 'danger', text: err.response?.data?.message || 'Failed to update actual status' });
@@ -205,7 +220,7 @@ const DailyEntryPage = () => {
               type="date"
               className="form-input"
               value={selectedDate}
-              onChange={(e) => setSelectedDate(e.target.value)}
+              onChange={(e) => handleDateChange(e.target.value)}
               style={{ border: 'none', padding: 0, fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)', background: 'transparent' }}
             />
           </div>

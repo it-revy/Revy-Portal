@@ -21,6 +21,7 @@ import {
   Briefcase,
   Utensils
 } from 'lucide-react';
+import { formatISTTimestamp } from '../utils/dateUtils';
 
 const EmployeeManagementPage = () => {
   const [employees, setEmployees] = useState([]);
@@ -886,7 +887,7 @@ const EmployeeManagementPage = () => {
                         </td>
                         <td>{r.reasonText || r.reasonCode || '—'}</td>
                         <td style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                          {new Date(r.submittedAt).toLocaleTimeString()}
+                          {formatISTTimestamp(r.submittedAt)}
                         </td>
                       </tr>
                     ))

@@ -3,6 +3,8 @@ import sys
 import pytest
 from fastapi.testclient import TestClient
 
+os.environ["TESTING"] = "1"
+
 # Add backend directory to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 

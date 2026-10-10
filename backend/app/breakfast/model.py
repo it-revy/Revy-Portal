@@ -157,6 +157,7 @@ class BreakfastOrder(Base):
     order_id = Column(String(100), unique=True, index=True, nullable=False)
     business_date = Column(String(10), index=True, nullable=False)  # YYYY-MM-DD
     vendor_name = Column(String(255), default="Internal Catering / Vendor", nullable=False)
+    client_name = Column(String(255), nullable=True)
     head_count = Column(Integer, nullable=True)
     notes = Column(Text, default="", nullable=False)
     created_by_employee_id = Column(String(50), nullable=False)

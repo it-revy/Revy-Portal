@@ -158,33 +158,66 @@ def is_request_window_open(
     window_start, window_end = get_request_window_for_date(target_date, open_time, close_time)
     return window_start <= now < window_end
 
+def serialize_utc_timestamp(dt: Optional[datetime]) -> Optional[str]:
+    """
+    Serializes a datetime to an explicit UTC ISO-8601 string ending with 'Z'.
+    - If dt is naive, it assumes UTC.
+    - If dt is aware, it converts to UTC first.
+    Always includes trailing 'Z' so client parsers unambiguously interpret it as UTC.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+    return dt.isoformat().replace("+00:00", "Z")
+
 def get_applicable_breakfast_date(
     now: Optional[datetime] = None,
     open_time: str = "17:30",
     close_time: str = "08:20"
 ) -> date:
     """
-    Intelligently determines the active breakfast date based on IST and configured cycle:
-    - If now.time() < close_time:
-        Today's breakfast date (now.date()). The window closes at close_time today.
-    - If now.time() >= close_time:
-        Today's request window closed at close_time.
-        The upcoming breakfast date is tomorrow (now.date() + 1 day).
-        Its window opens at open_time (today for overnight, or tomorrow morning for same-day)
-        and closes tomorrow at close_time.
+    Authoritatively determines the active breakfast business date based on Asia/Kolkata (IST):
+    - In an overnight cycle (open_time > close_time, e.g. 17:30 to 08:20):
+      - When now.time() >= open_time:
+        The request window for tomorrow's breakfast is active/open. Active date is tomorrow (now.date() + 1 day).
+      - When now.time() < open_time:
+        The active breakfast business date is today (now.date()). This applies overnight (midnight to closing)
+        as well as throughout daytime after closing until the next cycle opens at open_time.
+    - In a same-day cycle (open_time <= close_time):
+      - The active business date is today (now.date()).
     """
     if now is None:
         now = get_kolkata_now()
     else:
         now = to_kolkata_datetime(now)
 
+    open_h, open_m = parse_time_str(open_time, 17, 30)
     close_h, close_m = parse_time_str(close_time, 8, 20)
-    cutoff_time = time(close_h, close_m, 0)
+    is_overnight = (open_h, open_m) > (close_h, close_m)
 
-    if now.time() < cutoff_time:
-        return now.date()
+    if is_overnight:
+        open_t = time(open_h, open_m, 0)
+        if now.time() >= open_t:
+            return (now + timedelta(days=1)).date()
+        else:
+            return now.date()
     else:
-        return (now + timedelta(days=1)).date()
+        return now.date()
+
+def get_authoritative_breakfast_date(
+    db: Optional[Any] = None,
+    now: Optional[datetime] = None
+) -> str:
+    """
+    Authoritative single-source-of-truth helper used across all backend endpoints.
+    Retrieves configured cycle settings and returns active breakfast business date as 'YYYY-MM-DD'.
+    """
+    open_t, close_t, _ = get_breakfast_cycle_settings(db)
+    active_date = get_applicable_breakfast_date(now=now, open_time=open_t, close_time=close_t)
+    return active_date.strftime("%Y-%m-%d")
 
 def get_breakfast_window_details(
     target_date: Optional[date] = None,
@@ -228,6 +261,8 @@ def get_breakfast_window_details(
         "targetDateFullFormatted": full_date_display,
         "windowStart": window_start.isoformat(),
         "windowEnd": window_end.isoformat(),
+        "opensAt": window_start.isoformat(),
+        "closesAt": window_end.isoformat(),
         "windowStartDisplay": start_display,
         "windowEndDisplay": end_display,
         "requestOpenTime": open_time,
@@ -251,4 +286,5 @@ def is_after_cutoff(cutoff_time: str = "08:20") -> bool:
         return now >= cutoff_dt
     except Exception:
         return now.hour >= 8
+
 

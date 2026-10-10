@@ -8,6 +8,7 @@ from app.core.dependencies import require_permission, CurrentUser
 from app.core.exceptions import ValidationError, NotFoundError
 from app.breakfast.model import BreakfastSetting, BreakfastReason
 from app.audit.service import AuditService
+from app.breakfast.date_utils import serialize_utc_timestamp
 
 router = APIRouter(prefix="/settings", tags=["Breakfast Settings"])
 
@@ -44,8 +45,8 @@ def serialize_setting(s: BreakfastSetting):
         "timezone": s.timezone or "Asia/Kolkata",
         "autoLockEnabled": s.auto_lock_enabled,
         "breakfastFundLimit": s.breakfast_fund_limit,
-        "createdAt": s.created_at.isoformat() if s.created_at else None,
-        "updatedAt": s.updated_at.isoformat() if s.updated_at else None
+        "createdAt": serialize_utc_timestamp(s.created_at),
+        "updatedAt": serialize_utc_timestamp(s.updated_at)
     }
 
 def serialize_reason(r: BreakfastReason):

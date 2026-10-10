@@ -7,11 +7,12 @@ import { Utensils, CheckCircle2, XCircle, Search, Eye, History, Shield, Edit2, A
 
 const TodayBreakfastListPage = () => {
   const { hasPermission } = useAuth();
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().substring(0, 10));
+  const [selectedDate, setSelectedDate] = useState('');
   const [department, setDepartment] = useState('ALL');
   const [search, setSearch] = useState('');
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
+  const activeReqIdRef = React.useRef(0);
 
   // Drawer state for inspecting employee details & history
   const [selectedEmp, setSelectedEmp] = useState(null);
@@ -28,24 +29,40 @@ const TodayBreakfastListPage = () => {
   const [hasHistorical, setHasHistorical] = useState(false);
 
   useEffect(() => {
-    fetchList();
-  }, [selectedDate, department]);
+    fetchList(selectedDate, department);
+  }, [department]);
 
-  const fetchList = async () => {
+  const fetchList = async (dateToFetch = selectedDate, dept = department) => {
+    const reqId = ++activeReqIdRef.current;
     setLoading(true);
     try {
-      const res = await API.get(`/breakfast/admin/records?date=${selectedDate}&department=${department}&search=${search}`);
+      const dateParam = dateToFetch ? `date=${dateToFetch}&` : '';
+      const res = await API.get(`/breakfast/admin/records?${dateParam}department=${dept}&search=${search}`);
+      if (reqId !== activeReqIdRef.current) return;
+
       if (res.data.success) {
         setList(res.data.allList || []);
         setDayStatus(res.data.dayStatus || null);
         setHistoricalRecords(res.data.historicalRecords || []);
         setHasHistorical(!!res.data.hasHistorical);
+        if (res.data.businessDate) {
+          setSelectedDate(res.data.businessDate);
+        }
       }
     } catch (err) {
+      if (reqId !== activeReqIdRef.current) return;
       console.error('Failed to fetch list:', err);
     } finally {
-      setLoading(false);
+      if (reqId === activeReqIdRef.current) {
+        setLoading(false);
+      }
     }
+  };
+
+  const handleDateChange = (newDate) => {
+    if (!newDate) return;
+    setSelectedDate(newDate);
+    fetchList(newDate, department);
   };
 
   const handleMarkActualStatus = async (employeeId, actualStatus) => {
@@ -103,7 +120,7 @@ const TodayBreakfastListPage = () => {
             type="date"
             className="form-input"
             value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
+            onChange={(e) => handleDateChange(e.target.value)}
             style={{ width: 'auto', minWidth: '140px', padding: '0.45rem 0.75rem' }}
           />
         </div>

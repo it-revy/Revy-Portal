@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import API from '../services/api';
 import { ShieldAlert, Search, Eye, X, UserCheck } from 'lucide-react';
+import { formatISTTimestamp } from '../utils/dateUtils';
 
 const AuditLogsPage = () => {
   const [logs, setLogs] = useState([]);
@@ -13,21 +14,8 @@ const AuditLogsPage = () => {
 
   const formatIstDateTime = (val) => {
     if (!val) return '—';
-    const str = typeof val === 'string' && !val.endsWith('Z') && !val.includes('+') && !val.includes('-')
-      ? `${val}Z`
-      : val;
-    const d = new Date(str);
-    if (isNaN(d.getTime())) return String(val);
-    return new Intl.DateTimeFormat('en-IN', {
-      timeZone: 'Asia/Kolkata',
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: true
-    }).format(d) + ' IST';
+    const formatted = formatISTTimestamp(val);
+    return formatted === '—' ? '—' : `${formatted} IST`;
   };
 
   useEffect(() => {

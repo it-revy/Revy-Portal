@@ -1,5 +1,5 @@
 from typing import Dict, Any, List, Optional
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, distinct, desc
 import app.models  # noqa: F401
 from app.users.model import User  # Ensure User mapper is registered
@@ -11,7 +11,7 @@ from app.breakfast.model import (
     BreakfastNonParticipationPeriod
 )
 from app.employees.model import Employee
-from app.breakfast.date_utils import get_kolkata_date_string, get_kolkata_now
+from app.breakfast.date_utils import get_kolkata_date_string, get_kolkata_now, serialize_utc_timestamp
 from app.breakfast.calendar_service import get_month_calendar_summary
 
 MONTH_NAMES = [
@@ -93,38 +93,41 @@ class ReportService:
         ).order_by(desc(BreakfastMoneyTransaction.created_at)).first()
         running_opening_balance = float(prior_txn.balance_after_transaction) if prior_txn else 0.0
 
+        # Batch query transactions and historical records across processed period
+        txn_batch = self.db.query(BreakfastMoneyTransaction).filter(
+            BreakfastMoneyTransaction.transaction_date >= first_start
+        ).order_by(BreakfastMoneyTransaction.transaction_date.asc(), BreakfastMoneyTransaction.created_at.asc()).all()
+
+        txns_by_month = {}
+        for t in txn_batch:
+            m_key = t.transaction_date[:7] if t.transaction_date else ""
+            txns_by_month.setdefault(m_key, []).append(t)
+
+        hist_batch = self.db.query(BreakfastRecord).filter(
+            BreakfastRecord.business_date >= first_start,
+            BreakfastRecord.record_type == "HISTORICAL"
+        ).all()
+        hist_by_month = {}
+        for hr in hist_batch:
+            m_key = hr.business_date[:7] if hr.business_date else ""
+            hist_by_month.setdefault(m_key, []).append(hr)
+
         monthly_summary = []
         for m_obj in months_to_process:
             ym = m_obj["yearMonth"]
-            s_date = f"{ym}-01"
-            e_date = f"{ym}-31"
-
-            txns = self.db.query(BreakfastMoneyTransaction).filter(
-                BreakfastMoneyTransaction.transaction_date >= s_date,
-                BreakfastMoneyTransaction.transaction_date <= e_date
-            ).order_by(BreakfastMoneyTransaction.created_at.asc()).all()
-
+            txns = txns_by_month.get(ym, [])
             received = sum(t.amount for t in txns if t.type == "MONEY_RECEIVED")
             expenses = sum(t.amount for t in txns if t.type == "BREAKFAST_EXPENSE")
             adjustments = sum(t.amount for t in txns if t.type == "ADJUSTMENT")
             reversals = sum(t.amount for t in txns if t.type == "REVERSAL")
-
             operational_spent = expenses - (adjustments + reversals)
 
-            # Historical records in this month
-            hist_recs = self.db.query(BreakfastRecord).filter(
-                BreakfastRecord.business_date >= s_date,
-                BreakfastRecord.business_date <= e_date,
-                BreakfastRecord.record_type == "HISTORICAL"
-            ).all()
+            hist_recs = hist_by_month.get(ym, [])
             historical_spent = sum(float(r.total_cost or 0.0) for r in hist_recs)
-
             total_spent = operational_spent + historical_spent
 
-            end_txn = self.db.query(BreakfastMoneyTransaction).filter(
-                BreakfastMoneyTransaction.transaction_date <= e_date
-            ).order_by(desc(BreakfastMoneyTransaction.created_at)).first()
-            closing_bal = float(end_txn.balance_after_transaction) if end_txn else (running_opening_balance + received - operational_spent)
+            end_txn = txns[-1] if txns else None
+            closing_bal = float(end_txn.balance_after_transaction) if (end_txn and end_txn.balance_after_transaction is not None) else (running_opening_balance + received - operational_spent)
 
             monthly_summary.append({
                 "year": m_obj["year"],
@@ -155,7 +158,7 @@ class ReportService:
         }
 
         # 2. Employee Monthly Report (strictly CURRENT records with known employees)
-        emp_q = self.db.query(Employee).filter(Employee.is_hard_deleted == False)
+        emp_q = self.db.query(Employee).options(joinedload(Employee.user)).filter(Employee.is_hard_deleted == False)
         if selected_dept and selected_dept != "ALL":
             emp_q = emp_q.filter(Employee.department == selected_dept)
         employees = emp_q.order_by(Employee.employee_id.asc()).all()
@@ -165,7 +168,24 @@ class ReportService:
             emp_target_months = [target_ym]
         else:
             emp_target_months = [m["yearMonth"] for m in months_to_process]
-        month_summaries = {ym: get_month_calendar_summary(ym, self.db) for ym in emp_target_months}
+
+        from app.breakfast.model import PublicHoliday
+        import calendar
+        from datetime import datetime as dt_cls
+        all_active_holidays = self.db.query(PublicHoliday).filter(PublicHoliday.status == "active").all()
+        holiday_date_set = {h.date for h in all_active_holidays}
+
+        month_summaries = {}
+        for ym in emp_target_months:
+            y, m = map(int, ym.split("-"))
+            num_days = calendar.monthrange(y, m)[1]
+            w_dates = []
+            for d in range(1, num_days + 1):
+                d_str = f"{ym}-{d:02d}"
+                d_obj = dt_cls(y, m, d)
+                if d_obj.weekday() != 6 and d_str not in holiday_date_set:
+                    w_dates.append(d_str)
+            month_summaries[ym] = {"workingDates": w_dates}
 
         all_leaves = self.db.query(BreakfastNonParticipationPeriod).all()
 
@@ -270,7 +290,7 @@ class ReportService:
                 "commonItems": format_items(de.common_items),
                 "totalCost": de.total_cost or 0.0,
                 "createdBy": de.created_by or "System",
-                "createdAt": de.created_at.isoformat() if de.created_at else None
+                "createdAt": serialize_utc_timestamp(de.created_at)
             })
 
         for ao in additional_orders:
@@ -289,7 +309,7 @@ class ReportService:
                 "commonItems": format_items(ao.common_items),
                 "totalCost": ao.total_cost or 0.0,
                 "createdBy": ao.created_by or "System",
-                "createdAt": ao.created_at.isoformat() if ao.created_at else None
+                "createdAt": serialize_utc_timestamp(ao.created_at)
             })
 
         for hr in hist_entries:
@@ -318,7 +338,7 @@ class ReportService:
                 "paymentType": hr.payment_type,
                 "totalCost": hr.total_cost or 0.0,
                 "createdBy": f"{hr.paid_by} ({hr.payment_type})" if (hr.paid_by and hr.payment_type) else (hr.paid_by or "Historical Import"),
-                "createdAt": hr.created_at.isoformat() if hr.created_at else None
+                "createdAt": serialize_utc_timestamp(hr.created_at)
             })
 
         order_summary.sort(key=lambda o: (o["businessDate"], o.get("orderId") or ""), reverse=False)

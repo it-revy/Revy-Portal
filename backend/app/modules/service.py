@@ -12,7 +12,7 @@ class ModuleService:
         self.db = db
         self.audit_service = AuditService(db)
 
-    def list_modules(self, only_active: bool = True) -> List[Dict[str, Any]]:
+    def list_modules(self, only_active: bool = True, only_active_roles: bool = True) -> List[Dict[str, Any]]:
         query = self.db.query(Module)
         if only_active:
             query = query.filter(Module.is_active == True)
@@ -28,7 +28,7 @@ class ModuleService:
                     "description": r.description,
                     "isActive": r.is_active
                 }
-                for r in m.roles if not only_active or r.is_active
+                for r in m.roles if (not only_active_roles or r.is_active)
             ]
             result.append({
                 "id": m.id,
@@ -64,7 +64,7 @@ class ModuleService:
         if not user:
             raise NotFoundError(f"User with ID '{user_id}' not found")
 
-        all_modules = self.db.query(Module).filter(Module.is_active == True).order_by(Module.code.asc()).all()
+        all_modules = self.db.query(Module).order_by(Module.code.asc()).all()
         existing_memberships = {m.module_id: m for m in user.module_memberships}
 
         result = []

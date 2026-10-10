@@ -1,11 +1,9 @@
 {
-  "name": "breakfast-management-platform",
+  "name": "revy-portal",
   "version": "1.0.0",
-  "description": "Production-ready enterprise Breakfast Management System and shared company platform core",
-  "main": "backend/src/index.js",
+  "description": "REVY Enterprise Portal — Unified Central Services, BMS, and Role-Based Architecture",
   "scripts": {
     "start": "cd backend && uvicorn app.main:app --host 0.0.0.0 --port 5001",
-    "install:all": "npm install && cd backend && npm install && cd ../frontend && npm install",
     "seed": "python backend/seed/seed_development.py",
     "test": "cd backend && pytest -v tests",
     "dev:backend": "cd backend && uvicorn app.main:app --host 0.0.0.0 --port 5001 --reload",
@@ -14,13 +12,13 @@
   },
   "keywords": [
     "enterprise",
-    "breakfast-management",
+    "revy-portal",
+    "bms",
+    "fastapi",
     "react",
-    "express",
-    "mongodb",
-    "jwt",
-    "rbac",
-    "audit-logs"
+    "postgresql",
+    "alembic",
+    "rbac"
   ],
   "author": "REVY Enterprise Engineering Team",
   "license": "ISC"

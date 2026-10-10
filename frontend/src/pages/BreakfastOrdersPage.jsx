@@ -23,6 +23,7 @@ import {
   Layers,
   Edit2
 } from 'lucide-react';
+import { formatISTTimestamp } from '../utils/dateUtils';
 
 const BreakfastOrdersPage = () => {
   const [orders, setOrders] = useState([]);
@@ -619,7 +620,7 @@ const BreakfastOrdersPage = () => {
                 </div>
                 <div>
                   <span style={{ color: 'var(--text-muted)', display: 'block', fontSize: '0.75rem' }}>Created At</span>
-                  <span>{new Date(selectedOrder.createdAt).toLocaleString('en-IN')}</span>
+                  <span>{formatISTTimestamp(selectedOrder.createdAt)} IST</span>
                 </div>
                 {selectedOrder.updatedBy && (
                   <div>

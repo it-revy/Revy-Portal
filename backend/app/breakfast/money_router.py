@@ -8,7 +8,7 @@ from app.core.dependencies import require_permission, require_any_permission, Cu
 from app.core.exceptions import ValidationError, NotFoundError
 from app.breakfast.model import BreakfastMoneyTransaction, BreakfastFundRequest
 from app.breakfast import money_service
-from app.breakfast.date_utils import get_kolkata_date_string
+from app.breakfast.date_utils import get_kolkata_date_string, serialize_utc_timestamp
 from app.audit.service import AuditService
 
 router = APIRouter(prefix="/breakfast/money", tags=["Breakfast Money"])
@@ -69,20 +69,20 @@ def serialize_fund_request(r: Optional[BreakfastFundRequest]):
         "status": r.status,
         "approvedAmount": r.approved_amount,
         "approvedBy": r.approved_by,
-        "approvedAt": r.approved_at.isoformat() if r.approved_at else None,
+        "approvedAt": serialize_utc_timestamp(r.approved_at),
         "providedAmount": r.provided_amount,
         "providedBy": r.provided_by,
-        "providedAt": r.provided_at.isoformat() if r.provided_at else None,
+        "providedAt": serialize_utc_timestamp(r.provided_at),
         "providedDate": r.provided_date,
         "providedTime": r.provided_time,
         "reference": r.reference,
         "providedNote": r.provided_note,
         "verifiedAmount": r.verified_amount,
         "verifiedBy": r.verified_by,
-        "verifiedAt": r.verified_at.isoformat() if r.verified_at else None,
+        "verifiedAt": serialize_utc_timestamp(r.verified_at),
         "rejectionReason": r.rejection_reason,
         "differenceReported": r.difference_reported or {"reported": False, "expectedAmount": 0, "receivedAmount": 0, "differenceAmount": 0, "note": ""},
-        "createdAt": r.created_at.isoformat() if r.created_at else None
+        "createdAt": serialize_utc_timestamp(r.created_at)
     }
 
 def serialize_transaction(t: BreakfastMoneyTransaction):
@@ -103,7 +103,7 @@ def serialize_transaction(t: BreakfastMoneyTransaction):
         "description": t.description,
         "note": t.note,
         "createdBy": t.created_by,
-        "createdAt": t.created_at.isoformat() if t.created_at else None
+        "createdAt": serialize_utc_timestamp(t.created_at)
     }
 
 @router.get("/balance")

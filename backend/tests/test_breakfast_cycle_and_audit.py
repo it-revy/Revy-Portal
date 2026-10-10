@@ -48,15 +48,15 @@ def test_default_request_window_boundaries():
     assert w_start == datetime(2026, 10, 6, 17, 30, 0, tzinfo=KOLKATA_TZ)
     assert w_end == datetime(2026, 10, 7, 8, 20, 0, tzinfo=KOLKATA_TZ)
 
-    # 1. 6 Oct, 17:29:59 IST — closed
+    # 1. 6 Oct, 17:29:59 IST — before opening time, next cycle is not open, active cycle is 6 Oct
     t1 = datetime(2026, 10, 6, 17, 29, 59, tzinfo=KOLKATA_TZ)
     assert is_request_window_open(target_date, now=t1, open_time=open_time, close_time=close_time) is False
-    assert get_applicable_breakfast_date(t1, open_time, close_time) == date(2026, 10, 7)
+    assert get_applicable_breakfast_date(t1, open_time, close_time) == date(2026, 10, 6)
     d1 = get_breakfast_window_details(target_date, now=t1, open_time=open_time, close_time=close_time)
     assert d1["isOpen"] is False
     assert d1["statusCode"] == "UPCOMING"
 
-    # 2. 6 Oct, 17:30:00 IST — open
+    # 2. 6 Oct, 17:30:00 IST — open for 7 Oct
     t2 = datetime(2026, 10, 6, 17, 30, 0, tzinfo=KOLKATA_TZ)
     assert is_request_window_open(target_date, now=t2, open_time=open_time, close_time=close_time) is True
     assert get_applicable_breakfast_date(t2, open_time, close_time) == date(2026, 10, 7)
@@ -64,33 +64,33 @@ def test_default_request_window_boundaries():
     assert d2["isOpen"] is True
     assert d2["statusCode"] == "OPEN"
 
-    # 3. 6 Oct, 20:00:00 IST — open
+    # 3. 6 Oct, 20:00:00 IST — open for 7 Oct
     t3 = datetime(2026, 10, 6, 20, 0, 0, tzinfo=KOLKATA_TZ)
     assert is_request_window_open(target_date, now=t3, open_time=open_time, close_time=close_time) is True
     assert get_applicable_breakfast_date(t3, open_time, close_time) == date(2026, 10, 7)
 
-    # 4. 7 Oct, 07:30:00 IST — open
+    # 4. 7 Oct, 07:30:00 IST — open for 7 Oct
     t4 = datetime(2026, 10, 7, 7, 30, 0, tzinfo=KOLKATA_TZ)
     assert is_request_window_open(target_date, now=t4, open_time=open_time, close_time=close_time) is True
     assert get_applicable_breakfast_date(t4, open_time, close_time) == date(2026, 10, 7)
 
-    # 5. 7 Oct, 08:19:59 IST — open
+    # 5. 7 Oct, 08:19:59 IST — open for 7 Oct
     t5 = datetime(2026, 10, 7, 8, 19, 59, tzinfo=KOLKATA_TZ)
     assert is_request_window_open(target_date, now=t5, open_time=open_time, close_time=close_time) is True
     assert get_applicable_breakfast_date(t5, open_time, close_time) == date(2026, 10, 7)
 
-    # 6. 7 Oct, 08:20:00 IST — closed
+    # 6. 7 Oct, 08:20:00 IST — closed for requests, active breakfast date remains 7 Oct until next cycle
     t6 = datetime(2026, 10, 7, 8, 20, 0, tzinfo=KOLKATA_TZ)
     assert is_request_window_open(target_date, now=t6, open_time=open_time, close_time=close_time) is False
-    assert get_applicable_breakfast_date(t6, open_time, close_time) == date(2026, 10, 8)
+    assert get_applicable_breakfast_date(t6, open_time, close_time) == date(2026, 10, 7)
     d6 = get_breakfast_window_details(target_date, now=t6, open_time=open_time, close_time=close_time)
     assert d6["isOpen"] is False
     assert d6["statusCode"] == "CLOSED"
 
-    # 7. 7 Oct, 08:21:00 IST — closed
+    # 7. 7 Oct, 08:21:00 IST — closed for requests, active breakfast date remains 7 Oct
     t7 = datetime(2026, 10, 7, 8, 21, 0, tzinfo=KOLKATA_TZ)
     assert is_request_window_open(target_date, now=t7, open_time=open_time, close_time=close_time) is False
-    assert get_applicable_breakfast_date(t7, open_time, close_time) == date(2026, 10, 8)
+    assert get_applicable_breakfast_date(t7, open_time, close_time) == date(2026, 10, 7)
 
     # 8. 7 Oct, 17:30:00 IST — opens the 8 October cycle
     t8 = datetime(2026, 10, 7, 17, 30, 0, tzinfo=KOLKATA_TZ)

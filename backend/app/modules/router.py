@@ -1,5 +1,5 @@
-from typing import List
-from fastapi import APIRouter, Depends, Request
+from typing import List, Optional
+from fastapi import APIRouter, Depends, Request, Query
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.dependencies import require_permission, require_any_permission, CurrentUser
@@ -10,11 +10,12 @@ router = APIRouter(tags=["Modules"])
 
 @router.get("/modules", response_model=List[ModuleResponse])
 def get_all_modules(
+    only_active: Optional[bool] = Query(None),
     current_user: CurrentUser = Depends(require_any_permission(["*", "modules.view", "users.view", "users.edit", "breakfast.employee.read", "breakfast.view"])),
     db: Session = Depends(get_db)
 ):
     service = ModuleService(db)
-    return service.list_modules(only_active=True)
+    return service.list_modules(only_active=False if only_active is None else only_active, only_active_roles=True)
 
 @router.get("/modules/{module_id}/roles", response_model=List[ModuleRoleResponse])
 def get_module_roles(

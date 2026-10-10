@@ -191,7 +191,7 @@ def ensure_modules_and_memberships():
         ]
         bms_director_perms = [
             all_perms[c] for c in [
-                "breakfast.dashboard.view", "breakfast.orders.view", "breakfast.report",
+                "breakfast.dashboard.view", "breakfast.report",
                 "breakfast.submit", "breakfast.view_own", "breakfast.history_own"
             ] if c in all_perms
         ]
@@ -282,12 +282,14 @@ def ensure_modules_and_memberships():
             has_director = "DIRECTOR" in user_role_codes or "CEO" in user_role_codes
 
             target_bms_role_code = None
-            if has_it_admin or "BREAKFAST_ADMIN" in user_role_codes:
+            if "BREAKFAST_ADMIN" in user_role_codes or "BMS_ADMIN" in user_role_codes:
                 target_bms_role_code = "BMS_ADMIN"
-            elif "FINANCE_MANAGER" in user_role_codes:
+            elif "FINANCE_MANAGER" in user_role_codes or "BMS_FINANCE_MANAGER" in user_role_codes:
                 target_bms_role_code = "BMS_FINANCE_MANAGER"
-            elif has_director or "DIRECTOR_ANALYTICS" in user_role_codes:
+            elif "DIRECTOR_ANALYTICS" in user_role_codes or "BMS_DIRECTOR_ANALYTICS" in user_role_codes:
                 target_bms_role_code = "BMS_DIRECTOR_ANALYTICS"
+            elif has_it_admin:
+                target_bms_role_code = "BMS_ADMIN"
             elif "EMPLOYEE" in user_role_codes or u.employee:
                 target_bms_role_code = "BMS_EMPLOYEE"
 
@@ -304,9 +306,10 @@ def ensure_modules_and_memberships():
                     )
                     db.add(mem)
                     existing_mem_map[u.id] = mem
-                elif assigned_bms_role and (not mem.role or mem.role.code == "BMS_EMPLOYEE"):
-                    mem.role_id = assigned_bms_role.id
-                    mem.is_active = True
+                else:
+                    if assigned_bms_role:
+                        mem.role_id = assigned_bms_role.id
+                        mem.is_active = True
 
             # Cleanse user.roles to ONLY hold Global Roles: IT_ADMIN and/or DIRECTOR
             new_global_roles = []

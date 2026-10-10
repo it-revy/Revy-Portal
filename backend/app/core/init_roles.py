@@ -124,6 +124,8 @@ def ensure_roles_and_permissions():
                     if dir_role not in u.roles:
                         u.roles.append(dir_role)
                 ceo_role.users = []
+                ceo_role.permissions = []
+                db.delete(ceo_role)
 
         dir_role.permissions = all_perms_list
 

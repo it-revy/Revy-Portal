@@ -16,6 +16,7 @@ import {
   HelpCircle,
   Info
 } from 'lucide-react';
+import { formatISTTimestamp, formatISTTime } from '../utils/dateUtils';
 
 const EmployeeDailyPage = () => {
   const { user } = useAuth();
@@ -65,6 +66,11 @@ const EmployeeDailyPage = () => {
           setResponse(res.data.todayRecord.response === 'NO' ? 'NO' : 'YES');
           setReasonCode(res.data.todayRecord.reasonCode || '');
           setReasonText(res.data.todayRecord.reasonText || '');
+        } else {
+          setResponse('YES');
+          setReasonCode('');
+          setReasonText('');
+          setEditingMode(false);
         }
       }
     } catch (err) {
@@ -717,7 +723,7 @@ const EmployeeDailyPage = () => {
                         )}
                       </div>
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>
-                        Submitted at: {new Date(statusData.todayRecord.submittedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        Submitted at: {formatISTTimestamp(statusData.todayRecord.submittedAt)} IST
                       </div>
                     </div>
 
