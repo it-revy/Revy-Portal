@@ -236,8 +236,9 @@ def test_module_roles_structure():
 
     # BMS roles check
     bms_role_codes = [r["code"] for r in modules_by_code["BMS"]["roles"]]
-    for expected_r in ["BMS_ADMIN", "BMS_EMPLOYEE", "BMS_FINANCE_MANAGER", "BMS_DIRECTOR_ANALYTICS"]:
+    for expected_r in ["BMS_ADMIN", "BMS_EMPLOYEE", "BMS_FINANCE_MANAGER", "BMS_BF_MANAGER"]:
         assert expected_r in bms_role_codes, f"BMS missing role {expected_r}: found {bms_role_codes}"
+    assert "BMS_DIRECTOR_ANALYTICS" not in bms_role_codes, "Retired role BMS_DIRECTOR_ANALYTICS must not be in active roles"
 
     # CRM roles check
     crm_role_codes = [r["code"] for r in modules_by_code["CRM"]["roles"]]

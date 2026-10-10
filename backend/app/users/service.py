@@ -8,6 +8,8 @@ from app.modules.model import UserModuleMembership
 from app.core.security import get_password_hash
 from app.core.exceptions import ValidationError, NotFoundError
 from app.audit.service import AuditService
+from app.core.dependencies import CurrentUser
+from app.roles.assignment_service import RoleAssignmentService
 
 class UserService:
     def __init__(self, db: Session):
@@ -107,7 +109,10 @@ class UserService:
             for u in users
         ]
 
-    def create_user(self, data: dict, request: Optional[Request] = None) -> Dict[str, Any]:
+    def create_user(self, data: dict, request: Optional[Request] = None, current_user: Optional[CurrentUser] = None) -> Dict[str, Any]:
+        if not current_user and request and hasattr(request.state, "current_user"):
+            current_user = request.state.current_user
+
         name = (data.get("name") or "").strip()
         email = (data.get("email") or "").strip().lower()
 
@@ -160,6 +165,11 @@ class UserService:
         # Assign system global roles if provided (IT_ADMIN or DIRECTOR)
         role_codes = data.get("roles") or []
         if role_codes:
+            if current_user:
+                RoleAssignmentService.validate_global_role_assignment(
+                    actor=current_user,
+                    target_role_codes=role_codes
+                )
             roles = self.db.query(Role).filter(Role.code.in_(role_codes)).all()
             user.roles = roles
 
@@ -194,7 +204,10 @@ class UserService:
 
         return self.serialize_user(user)
 
-    def update_user(self, user_id: str, data: dict, request: Optional[Request] = None) -> Dict[str, Any]:
+    def update_user(self, user_id: str, data: dict, request: Optional[Request] = None, current_user: Optional[CurrentUser] = None) -> Dict[str, Any]:
+        if not current_user and request and hasattr(request.state, "current_user"):
+            current_user = request.state.current_user
+
         user = self.db.query(User).filter(User.id == user_id, User.is_hard_deleted == False).first()
         if not user:
             raise NotFoundError(f"User with ID '{user_id}' not found")
@@ -253,6 +266,12 @@ class UserService:
                     user.employee.status = "inactive"
 
         if "roles" in data and isinstance(data["roles"], list):
+            if current_user:
+                RoleAssignmentService.validate_global_role_assignment(
+                    actor=current_user,
+                    target_role_codes=data["roles"],
+                    target_user_id=user.id
+                )
             new_roles = self.db.query(Role).filter(Role.code.in_(data["roles"])).all()
             user.roles = new_roles
             changes.append(f"Roles: {', '.join(data['roles'])}")

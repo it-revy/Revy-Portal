@@ -146,7 +146,6 @@ export const PORTAL_SERVICES = [
 
 export const getBreakfastDestination = (hasPermission, hasRole = () => false) => {
   if (hasRole('DIRECTOR') || hasRole('Director') || hasRole('CEO') || hasRole('Chief Executive Officer')) return '/bms/ceo-view';
-  if (hasRole('BMS_DIRECTOR_ANALYTICS') || hasRole('Director Analytics') || hasRole('DIRECTOR_ANALYTICS') || hasRole('BMS Director Analytics')) return '/bms/director-analytics';
   if (hasRole('BMS_FINANCE_MANAGER') || hasRole('Finance Manager') || hasRole('FINANCE_MANAGER') || hasRole('BMS Finance Manager')) return '/bms/finance';
   if (hasPermission('breakfast.orders.view')) return '/bms/orders';
   if (hasPermission('breakfast.view')) return '/bms/dashboard';

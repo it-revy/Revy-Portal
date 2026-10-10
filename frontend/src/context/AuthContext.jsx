@@ -8,7 +8,6 @@ const ROLE_PRIORITY = [
   'DIRECTOR', 'Director',
   'BMS_ADMIN', 'BMS Admin', 'BREAKFAST_ADMIN',
   'BMS_BF_MANAGER', 'BMS BF Manager',
-  'BMS_DIRECTOR_ANALYTICS', 'BMS Director Analytics', 'DIRECTOR_ANALYTICS',
   'BMS_FINANCE_MANAGER', 'BMS Finance Manager', 'FINANCE_MANAGER',
   'USER_MANAGEMENT_ADMIN', 'User Management Admin',
   'CRM_ADMIN', 'CRM Admin',
@@ -170,10 +169,7 @@ export const AuthProvider = ({ children }) => {
 
     // Role alias mappings for module vs legacy roles
     if (normTarget === 'ceo' || normTarget === 'chiefexecutiveofficer') {
-      return normRoles.includes('director') || normRoles.includes('bmsdirectoranalytics');
-    }
-    if (normTarget === 'directoranalytics') {
-      return normRoles.includes('bmsdirectoranalytics') || normRoles.includes('director');
+      return normRoles.includes('director');
     }
     if (normTarget === 'breakfastadmin') {
       return normRoles.includes('bmsadmin');

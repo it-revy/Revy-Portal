@@ -56,7 +56,7 @@ export default function BMSLayout({ children, requiredPermission, requiredRole }
       if (Array.isArray(requiredPermission) && requiredPermission.some(p => p.startsWith('finance.') || p.startsWith('breakfast.money.') || p === 'breakfast.report')) return true;
     }
 
-    if (hasRole('DIRECTOR') || hasRole('Director') || hasRole('CEO') || hasRole('Chief Executive Officer') || hasRole('BMS_DIRECTOR_ANALYTICS') || hasRole('Director Analytics')) {
+    if (hasRole('DIRECTOR') || hasRole('Director') || hasRole('CEO') || hasRole('Chief Executive Officer')) {
       if (typeof requiredPermission === 'string' && (requiredPermission === 'breakfast.orders.view' || requiredPermission === 'breakfast.view')) return true;
       if (Array.isArray(requiredPermission) && requiredPermission.some(p => p === 'breakfast.orders.view' || p === 'breakfast.view')) return true;
     }

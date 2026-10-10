@@ -73,10 +73,51 @@ const EmployeeManagementPage = () => {
   const [empHistory, setEmpHistory] = useState([]);
 
   const { hasRole, hasPermission } = useAuth();
+  const [assignableRoles, setAssignableRoles] = useState([]);
 
   useEffect(() => {
     fetchEmployees();
   }, [search, departmentFilter, statusFilter, participationFilter]);
+
+  useEffect(() => {
+    fetchAssignableRoles();
+  }, []);
+
+  const fetchAssignableRoles = async () => {
+    try {
+      const res = await API.get('/employees/assignable-roles');
+      if (res.data?.success && Array.isArray(res.data?.roles) && res.data.roles.length > 0) {
+        setAssignableRoles(res.data.roles);
+        return;
+      }
+    } catch (err) {
+      console.warn('Could not fetch assignable roles from backend, applying role authority matrix fallback', err);
+    }
+    // Authoritative fallback based on current user's role
+    if (hasRole('IT_ADMIN') || hasRole('DIRECTOR')) {
+      setAssignableRoles([
+        { code: 'BMS_EMPLOYEE', name: 'BMS Employee (Standard Daily Meals)' },
+        { code: 'BMS_BF_MANAGER', name: 'BMS BF Manager (Operations & Orders)' },
+        { code: 'BMS_ADMIN', name: 'BMS Admin (Operational Breakfast Management)' },
+        { code: 'BMS_FINANCE_MANAGER', name: 'BMS Finance Manager (Fund Requests & Ledger)' }
+      ]);
+    } else if (hasRole('BMS_ADMIN') || hasRole('BREAKFAST_ADMIN')) {
+      setAssignableRoles([
+        { code: 'BMS_EMPLOYEE', name: 'BMS Employee (Standard Daily Meals)' },
+        { code: 'BMS_BF_MANAGER', name: 'BMS BF Manager (Operations & Orders)' },
+        { code: 'BMS_ADMIN', name: 'BMS Admin (Operational Breakfast Management)' }
+      ]);
+    } else if (hasRole('BMS_BF_MANAGER')) {
+      setAssignableRoles([
+        { code: 'BMS_EMPLOYEE', name: 'BMS Employee (Standard Daily Meals)' },
+        { code: 'BMS_BF_MANAGER', name: 'BMS BF Manager (Operations & Orders)' }
+      ]);
+    } else {
+      setAssignableRoles([
+        { code: 'BMS_EMPLOYEE', name: 'BMS Employee (Standard Daily Meals)' }
+      ]);
+    }
+  };
 
   const fetchEmployees = async () => {
     setLoading(true);
@@ -417,12 +458,10 @@ const EmployeeManagementPage = () => {
                         style={{
                           background: emp.bmsRoleCode === 'BMS_ADMIN' ? 'rgba(239, 68, 68, 0.15)' :
                                       emp.bmsRoleCode === 'BMS_BF_MANAGER' ? 'rgba(245, 158, 11, 0.15)' :
-                                      emp.bmsRoleCode === 'BMS_FINANCE_MANAGER' ? 'rgba(16, 185, 129, 0.15)' :
-                                      emp.bmsRoleCode === 'BMS_DIRECTOR_ANALYTICS' ? 'rgba(139, 92, 246, 0.15)' : 'rgba(59, 130, 246, 0.1)',
+                                      emp.bmsRoleCode === 'BMS_FINANCE_MANAGER' ? 'rgba(16, 185, 129, 0.15)' : 'rgba(59, 130, 246, 0.1)',
                           color: emp.bmsRoleCode === 'BMS_ADMIN' ? '#f87171' :
                                  emp.bmsRoleCode === 'BMS_BF_MANAGER' ? '#fbbf24' :
-                                 emp.bmsRoleCode === 'BMS_FINANCE_MANAGER' ? '#34d399' :
-                                 emp.bmsRoleCode === 'BMS_DIRECTOR_ANALYTICS' ? '#a78bfa' : '#93c5fd',
+                                 emp.bmsRoleCode === 'BMS_FINANCE_MANAGER' ? '#34d399' : '#93c5fd',
                           border: '1px solid rgba(255, 255, 255, 0.15)',
                           fontWeight: 600
                         }}
@@ -638,11 +677,11 @@ const EmployeeManagementPage = () => {
                     value={addFormData.roleCode}
                     onChange={(e) => setAddFormData({ ...addFormData, roleCode: e.target.value })}
                   >
-                    <option value="BMS_EMPLOYEE">BMS Employee (Standard Daily Meals)</option>
-                    <option value="BMS_ADMIN">BMS Admin (Operational Breakfast Management)</option>
-                    <option value="BMS_BF_MANAGER">BMS BF Manager (Operations & Orders)</option>
-                    <option value="BMS_FINANCE_MANAGER">BMS Finance Manager (Fund Requests & Ledger)</option>
-                    <option value="BMS_DIRECTOR_ANALYTICS">BMS Director Analytics (Analytics Dashboard)</option>
+                    {assignableRoles.map((r) => (
+                      <option key={r.code} value={r.code}>
+                        {r.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div className="form-group">
@@ -740,11 +779,16 @@ const EmployeeManagementPage = () => {
                     value={editFormData.roleCode}
                     onChange={(e) => setEditFormData({ ...editFormData, roleCode: e.target.value })}
                   >
-                    <option value="BMS_EMPLOYEE">BMS Employee (Standard Meals)</option>
-                    <option value="BMS_ADMIN">BMS Admin (Operational Breakfast Management)</option>
-                    <option value="BMS_BF_MANAGER">BMS BF Manager (Operations & Orders)</option>
-                    <option value="BMS_FINANCE_MANAGER">BMS Finance Manager (Fund Requests & Ledger)</option>
-                    <option value="BMS_DIRECTOR_ANALYTICS">BMS Director Analytics (Analytics Dashboard)</option>
+                    {!assignableRoles.some(r => r.code === editFormData.roleCode) && editFormData.roleCode && (
+                      <option value={editFormData.roleCode} disabled>
+                        {editFormData.roleCode} (Current — Not authorized to reassign)
+                      </option>
+                    )}
+                    {assignableRoles.map((r) => (
+                      <option key={r.code} value={r.code}>
+                        {r.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
 

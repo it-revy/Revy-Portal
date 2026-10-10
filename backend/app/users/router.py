@@ -42,6 +42,14 @@ def get_managers_list(
     service = UserService(db)
     return service.list_potential_managers(exclude_user_id=excludeUserId)
 
+@router.get("/assignable-roles")
+def get_assignable_global_roles(
+    current_user: CurrentUser = Depends(require_any_permission(["*", "users.view", "users.create", "users.edit"])),
+    db: Session = Depends(get_db)
+):
+    from app.roles.assignment_service import RoleAssignmentService
+    return RoleAssignmentService.get_assignable_global_roles(current_user, db)
+
 @router.post("", response_model=UserResponse)
 @router.post("/", response_model=UserResponse)
 def create_user(
@@ -51,7 +59,7 @@ def create_user(
     db: Session = Depends(get_db)
 ):
     service = UserService(db)
-    return service.create_user(payload.model_dump(), request=request)
+    return service.create_user(payload.model_dump(), request=request, current_user=current_user)
 
 @router.get("/{id}", response_model=UserResponse)
 def get_user_by_id(
@@ -71,7 +79,7 @@ def update_user(
     db: Session = Depends(get_db)
 ):
     service = UserService(db)
-    return service.update_user(id, payload.model_dump(exclude_unset=True), request=request)
+    return service.update_user(id, payload.model_dump(exclude_unset=True), request=request, current_user=current_user)
 
 @router.delete("/{id}")
 def deactivate_user(

@@ -122,12 +122,6 @@ def get_current_user(
             permissions_by_role["Finance Manager"] = r_perms
             if "BMS" not in user_modules:
                 user_modules.append("BMS")
-        elif r.code == "DIRECTOR_ANALYTICS":
-            roles_list.extend(["BMS_DIRECTOR_ANALYTICS", "Director Analytics"])
-            permissions_by_role["BMS_DIRECTOR_ANALYTICS"] = r_perms
-            permissions_by_role["Director Analytics"] = r_perms
-            if "BMS" not in user_modules:
-                user_modules.append("BMS")
         elif r.code == "EMPLOYEE":
             roles_list.extend(["BMS_EMPLOYEE", "Standard Employee"])
             permissions_by_role["BMS_EMPLOYEE"] = r_perms
@@ -167,10 +161,6 @@ def get_current_user(
                     roles_list.extend(["FINANCE_MANAGER", "Finance Manager"])
                     permissions_by_role["FINANCE_MANAGER"] = r_perms
                     permissions_by_role["Finance Manager"] = r_perms
-                elif m.role.code == "BMS_DIRECTOR_ANALYTICS":
-                    roles_list.extend(["DIRECTOR_ANALYTICS", "Director Analytics"])
-                    permissions_by_role["DIRECTOR_ANALYTICS"] = r_perms
-                    permissions_by_role["Director Analytics"] = r_perms
                 elif m.role.code == "BMS_EMPLOYEE":
                     roles_list.extend(["EMPLOYEE", "Standard Employee"])
                     permissions_by_role["EMPLOYEE"] = r_perms
@@ -211,7 +201,6 @@ def get_current_user(
         "DIRECTOR", "Director",
         "BMS_ADMIN", "BMS Admin", "BREAKFAST_ADMIN",
         "BMS_BF_MANAGER", "BMS BF Manager",
-        "BMS_DIRECTOR_ANALYTICS", "BMS Director Analytics", "DIRECTOR_ANALYTICS",
         "BMS_FINANCE_MANAGER", "BMS Finance Manager", "FINANCE_MANAGER",
         "USER_MANAGEMENT_ADMIN", "User Management Admin",
         "CRM_ADMIN", "CRM Admin",
@@ -297,13 +286,6 @@ def require_role(required_role: str):
     def dependency(current_user: CurrentUser = Depends(get_current_user)):
         user_roles_normalized = [r.upper().replace(" ", "_") for r in current_user.roles]
         target_role = required_role.upper().replace(" ", "_")
-
-        # Specific role separation between CEO and DIRECTOR_ANALYTICS
-        if target_role in ["DIRECTOR_ANALYTICS", "BMS_DIRECTOR_ANALYTICS"]:
-            allowed = ["DIRECTOR_ANALYTICS", "BMS_DIRECTOR_ANALYTICS"]
-            if not any(t in user_roles_normalized for t in allowed):
-                raise PermissionDeniedError(f"Access denied. Role '{required_role}' is required.")
-            return current_user
 
         if target_role == "CEO":
             allowed = ["CEO", "DIRECTOR", "IT_ADMIN"]

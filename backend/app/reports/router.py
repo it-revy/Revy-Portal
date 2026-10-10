@@ -62,13 +62,3 @@ def get_ceo_report(
     result = service.get_ceo_report(target_date=date)
     return {"success": True, **result}
 
-
-@router.get("/director-analytics")
-def get_director_analytics_report(
-    date: Optional[str] = Query(None),
-    current_user: CurrentUser = Depends(require_role("DIRECTOR_ANALYTICS")),
-    db: Session = Depends(get_db)
-):
-    service = ReportService(db)
-    result = service.get_ceo_report(target_date=date)
-    return {"success": True, **result}

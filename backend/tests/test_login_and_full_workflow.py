@@ -88,9 +88,10 @@ def test_3_portal_modules_and_role_architecture():
     for r_code in bms_role_codes:
         assert r_code.startswith("BMS_"), f"BMS role {r_code} must only have BMS_ prefix"
     assert "BMS_ADMIN" in bms_role_codes
+    assert "BMS_BF_MANAGER" in bms_role_codes
     assert "BMS_EMPLOYEE" in bms_role_codes
     assert "BMS_FINANCE_MANAGER" in bms_role_codes
-    assert "BMS_DIRECTOR_ANALYTICS" in bms_role_codes
+    assert "BMS_DIRECTOR_ANALYTICS" not in bms_role_codes
 
     # Verify CRM module roles only contain CRM roles
     crm_mod = next(m for m in modules if m["code"] == "CRM")

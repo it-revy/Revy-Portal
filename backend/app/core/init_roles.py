@@ -40,7 +40,7 @@ def ensure_roles_and_permissions():
             ("breakfast.manage", "Manage Daily Breakfast Operations", "BREAKFAST"),
             ("breakfast.report", "Generate Breakfast Reports", "BREAKFAST"),
             ("breakfast.orders.view", "View All Breakfast Orders", "BREAKFAST"),
-            ("breakfast.dashboard.view", "View Director Analytics Dashboard", "BREAKFAST"),
+            ("breakfast.dashboard.view", "View Director Dashboard", "BREAKFAST"),
             ("breakfast.employee.create", "Create Employees", "BREAKFAST"),
             ("breakfast.employee.read", "Read Employee Records", "BREAKFAST"),
             ("breakfast.employee.update", "Update Employee Records", "BREAKFAST"),

@@ -30,6 +30,18 @@ def get_available_users_for_bms(
     service = EmployeeService(db)
     return service.list_available_users_for_bms(search=search)
 
+@router.get("/assignable-roles")
+def get_bms_assignable_roles(
+    current_user: CurrentUser = Depends(require_any_permission(["breakfast.employee.create", "breakfast.employee.update", "breakfast.employee.read", "users.view", "*"])),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns active BMS roles that the current acting user is authorized to assign.
+    """
+    from app.roles.assignment_service import RoleAssignmentService
+    roles = RoleAssignmentService.get_assignable_roles_for_module(current_user, "BMS", db)
+    return {"success": True, "roles": roles}
+
 @router.post("/assign-user")
 @router.post("/add-to-bms")
 def assign_user_to_bms(
@@ -43,7 +55,7 @@ def assign_user_to_bms(
     Does NOT create a new system user. Strictly prevents duplicate assignments.
     """
     service = EmployeeService(db)
-    created = service.add_user_to_bms(payload.model_dump(), request=request)
+    created = service.add_user_to_bms(payload.model_dump(), request=request, current_user=current_user)
     return {
         "success": True,
         "message": f"User {created.get('name') or created.get('username')} successfully added to BMS.",
@@ -83,7 +95,7 @@ def create_employee(
     db: Session = Depends(get_db)
 ):
     service = EmployeeService(db)
-    created = service.create_employee(payload.model_dump(), request=request)
+    created = service.create_employee(payload.model_dump(), request=request, current_user=current_user)
     return {
         "success": True,
         "message": "User added to BMS successfully",
@@ -138,7 +150,7 @@ def update_employee(
     db: Session = Depends(get_db)
 ):
     service = EmployeeService(db)
-    updated = service.update_employee(id, payload.model_dump(exclude_unset=True), request=request)
+    updated = service.update_employee(id, payload.model_dump(exclude_unset=True), request=request, current_user=current_user)
     return {
         "success": True,
         "message": "BMS Employee updated successfully",

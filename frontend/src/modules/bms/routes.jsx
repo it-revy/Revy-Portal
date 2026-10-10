@@ -12,7 +12,6 @@ import EmployeeManagementPage from '../../pages/EmployeeManagementPage';
 import PublicHolidaysPage from '../../pages/PublicHolidaysPage';
 import ReportsPage from '../../pages/ReportsPage';
 import CEOViewPage from '../../pages/CEOViewPage';
-import DirectorAnalyticsPage from '../../pages/DirectorAnalyticsPage';
 import AuditLogsPage from '../../pages/AuditLogsPage';
 import SettingsPage from '../../pages/SettingsPage';
 import BMSLayout from '../../layouts/BMSLayout';
@@ -134,15 +133,6 @@ export function getBMSRoutes() {
       }
     />,
     <Route
-      key="bms-director-analytics"
-      path="/bms/director-analytics"
-      element={
-        <BMSLayout requiredRole="DIRECTOR_ANALYTICS">
-          <DirectorAnalyticsPage />
-        </BMSLayout>
-      }
-    />,
-    <Route
       key="bms-audit-logs"
       path="/bms/audit-logs"
       element={
@@ -175,7 +165,6 @@ export function getBMSRoutes() {
     <Route key="legacy-admin-holidays" path="/admin/holidays" element={<Navigate to="/bms/holidays" replace />} />,
     <Route key="legacy-reports" path="/reports" element={<Navigate to="/bms/reports" replace />} />,
     <Route key="legacy-ceo-dashboard" path="/ceo-dashboard" element={<Navigate to="/bms/ceo-view" replace />} />,
-    <Route key="legacy-director-analytics" path="/director-analytics" element={<Navigate to="/bms/director-analytics" replace />} />,
     <Route key="legacy-audit-logs" path="/audit-logs" element={<Navigate to="/bms/audit-logs" replace />} />,
     <Route key="legacy-settings" path="/settings" element={<Navigate to="/bms/settings" replace />} />
   ];

@@ -246,9 +246,9 @@ def test_bms_bf_manager_rbac_restrictions():
     token = login_res.json()["token"]
     headers = {"Authorization": f"Bearer {token}", "X-Role-Used": "BMS_BF_MANAGER"}
 
-    # 1. Must be FORBIDDEN from Director Analytics
+    # 1. Must be FORBIDDEN or NOT FOUND (endpoint removed) from Director Analytics
     res_dir = client.get("/api/v1/reports/director-analytics", headers=headers)
-    assert res_dir.status_code in [401, 403]
+    assert res_dir.status_code in [401, 403, 404]
 
     # 2. Must be FORBIDDEN from Finance Fund Management
     res_fin = client.get("/api/v1/breakfast/money/requests", headers=headers)

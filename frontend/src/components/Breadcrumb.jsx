@@ -17,7 +17,6 @@ const BMS_PAGES = {
   employees: "Employee Directory",
   holidays: "Public Holidays",
   reports: "Monthly Reports",
-  'director-analytics': "Director Analytics",
   'ceo-dashboard': "Directors Dashboard",
   'audit-logs': "Audit Trail",
   settings: "Settings"

@@ -311,19 +311,6 @@ const BMSSidebar = ({ isMobileOpen, onCloseMobile, isCollapsed: propIsCollapsed,
           </NavLink>
         )}
 
-        {/* Director Analytics (for users with BMS_DIRECTOR_ANALYTICS role) */}
-        {(hasRole('BMS_DIRECTOR_ANALYTICS') || hasRole('BMS Director Analytics') || hasRole('DIRECTOR_ANALYTICS') || hasRole('Director Analytics')) && (
-          <NavLink
-            to="/bms/director-analytics"
-            onClick={handleLinkClick}
-            className={() => `nav-item ${isRouteActive('/bms/director-analytics', ['/director-analytics']) ? 'active' : ''}`}
-            title="Director Analytics"
-          >
-            <PieChart size={18} />
-            {(!isCollapsed || isMobileOpen) && <span>Director Analytics</span>}
-          </NavLink>
-        )}
-
         {/* Finance Fund Requests */}
         {(hasPermission('finance.breakfast_fund.view') || hasRole('BMS_FINANCE_MANAGER') || hasRole('BMS Finance Manager') || hasRole('FINANCE_MANAGER') || hasRole('Finance Manager')) && (
           <NavLink

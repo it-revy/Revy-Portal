@@ -118,7 +118,6 @@ def ensure_modules_and_memberships():
             {"module_code": "BMS", "code": "BMS_BF_MANAGER", "name": "BMS BF Manager", "description": "Operational BMS management access with breakfast operations, daily entry, employee management, orders, and money ledgers."},
             {"module_code": "BMS", "code": "BMS_EMPLOYEE", "name": "BMS Employee", "description": "Employee-level BMS access to submit and view daily breakfast status."},
             {"module_code": "BMS", "code": "BMS_FINANCE_MANAGER", "name": "BMS Finance Manager", "description": "Finance-related BMS access to funds, ledgers, and approval workflows."},
-            {"module_code": "BMS", "code": "BMS_DIRECTOR_ANALYTICS", "name": "BMS Director Analytics", "description": "Director/analytics-related BMS access to executive dashboards and order insights."},
 
             # --- CRM Roles ---
             {"module_code": "CRM", "code": "CRM_ADMIN", "name": "CRM Admin", "description": "Full administrative control over CRM configurations and leads."},
@@ -189,12 +188,6 @@ def ensure_modules_and_memberships():
                 "finance.breakfast_fund.provide", "finance.breakfast_fund.report"
             ] if c in all_perms
         ]
-        bms_director_perms = [
-            all_perms[c] for c in [
-                "breakfast.dashboard.view", "breakfast.report",
-                "breakfast.submit", "breakfast.view_own", "breakfast.history_own"
-            ] if c in all_perms
-        ]
         bms_admin_perms = [
             p for p in all_perms.values()
             if p.module in ["BREAKFAST", "MONEY", "FINANCE", "AUDIT"] and p.code != "*"
@@ -232,9 +225,13 @@ def ensure_modules_and_memberships():
         if bms_fin_role:
             bms_fin_role.permissions = bms_finance_perms
 
-        bms_dir_role = roles_by_module_and_code.get(("BMS", "BMS_DIRECTOR_ANALYTICS"))
-        if bms_dir_role:
-            bms_dir_role.permissions = bms_director_perms
+        # Deactivate retired BMS Director Analytics role if present in DB
+        retired_roles = db.query(ModuleRole).filter(
+            ModuleRole.code.in_(["BMS_DIRECTOR_ANALYTICS", "DIRECTOR_ANALYTICS"])
+        ).all()
+        for r in retired_roles:
+            r.is_active = False
+            r.permissions = []
 
         user_admin_role = roles_by_module_and_code.get(("USERS", "USER_MANAGEMENT_ADMIN"))
         if user_admin_role:
@@ -251,7 +248,9 @@ def ensure_modules_and_memberships():
 
         # Handle legacy memberships that had obsolete role codes (e.g. BMS_FINANCE, BMS_VIEWER, BMS_MANAGER)
         legacy_role_mapping = {
-            "BMS_VIEWER": "BMS_DIRECTOR_ANALYTICS",
+            "BMS_VIEWER": "BMS_EMPLOYEE",
+            "BMS_DIRECTOR_ANALYTICS": "BMS_EMPLOYEE",
+            "DIRECTOR_ANALYTICS": "BMS_EMPLOYEE",
             "BMS_FINANCE": "BMS_FINANCE_MANAGER",
             "BMS_MANAGER": "BMS_ADMIN"
         }
@@ -284,10 +283,8 @@ def ensure_modules_and_memberships():
             target_bms_role_code = None
             if "BREAKFAST_ADMIN" in user_role_codes or "BMS_ADMIN" in user_role_codes:
                 target_bms_role_code = "BMS_ADMIN"
-            elif "FINANCE_MANAGER" in user_role_codes or "BMS_FINANCE_MANAGER" in user_role_codes:
+            elif "FINANCE_MANAGER" in user_role_codes or "BMS_FINANCE_MANAGER" in user_role_codes or u.username in ["finance.manager", "financemanager"]:
                 target_bms_role_code = "BMS_FINANCE_MANAGER"
-            elif "DIRECTOR_ANALYTICS" in user_role_codes or "BMS_DIRECTOR_ANALYTICS" in user_role_codes:
-                target_bms_role_code = "BMS_DIRECTOR_ANALYTICS"
             elif has_it_admin:
                 target_bms_role_code = "BMS_ADMIN"
             elif "EMPLOYEE" in user_role_codes or u.employee:

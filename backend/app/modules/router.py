@@ -35,6 +35,15 @@ def get_user_modules(
     service = ModuleService(db)
     return service.get_user_module_memberships(user_id)
 
+@router.get("/modules/{module_id_or_code}/assignable-roles", response_model=List[ModuleRoleResponse])
+def get_assignable_roles_for_module(
+    module_id_or_code: str,
+    current_user: CurrentUser = Depends(require_any_permission(["*", "modules.view", "users.view", "users.edit", "breakfast.employee.read", "breakfast.employee.create"])),
+    db: Session = Depends(get_db)
+):
+    from app.roles.assignment_service import RoleAssignmentService
+    return RoleAssignmentService.get_assignable_roles_for_module(current_user, module_id_or_code, db)
+
 @router.put("/users/{user_id}/modules", response_model=List[UserModuleMembershipItem])
 def update_user_modules(
     user_id: str,
@@ -47,5 +56,7 @@ def update_user_modules(
     return service.update_user_module_memberships(
         user_id=user_id,
         assignments=[item.model_dump() for item in payload.modules],
-        request=request
+        request=request,
+        current_user=current_user
     )
+

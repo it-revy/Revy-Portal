@@ -6,6 +6,8 @@ from app.users.model import User
 from app.employees.model import Employee
 from app.core.exceptions import NotFoundError, ValidationError
 from app.audit.service import AuditService
+from app.core.dependencies import CurrentUser
+from app.roles.assignment_service import RoleAssignmentService
 
 class ModuleService:
     def __init__(self, db: Session):
@@ -28,7 +30,8 @@ class ModuleService:
                     "description": r.description,
                     "isActive": r.is_active
                 }
-                for r in m.roles if (not only_active_roles or r.is_active)
+                for r in m.roles
+                if (not only_active_roles or r.is_active) and r.code not in ["BMS_DIRECTOR_ANALYTICS", "DIRECTOR_ANALYTICS"]
             ]
             result.append({
                 "id": m.id,
@@ -56,7 +59,8 @@ class ModuleService:
                 "description": r.description,
                 "isActive": r.is_active
             }
-            for r in mod.roles if r.is_active
+            for r in mod.roles
+            if r.is_active and r.code not in ["BMS_DIRECTOR_ANALYTICS", "DIRECTOR_ANALYTICS"]
         ]
 
     def get_user_module_memberships(self, user_id: str) -> List[Dict[str, Any]]:
@@ -91,8 +95,12 @@ class ModuleService:
         self,
         user_id: str,
         assignments: List[dict],
-        request: Optional[Request] = None
+        request: Optional[Request] = None,
+        current_user: Optional[CurrentUser] = None
     ) -> List[Dict[str, Any]]:
+        if not current_user and request and hasattr(request.state, "current_user"):
+            current_user = request.state.current_user
+
         user = self.db.query(User).filter(User.id == user_id, User.is_hard_deleted == False).first()
         if not user:
             raise NotFoundError(f"User with ID '{user_id}' not found")
@@ -125,15 +133,29 @@ class ModuleService:
             # Resolve role if provided
             role = None
             if enabled and (role_id or role_code):
-                role_query = self.db.query(ModuleRole).filter(ModuleRole.module_id == mod.id)
+                role_query = self.db.query(ModuleRole).filter(ModuleRole.module_id == mod.id, ModuleRole.is_active == True)
                 if role_id:
                     role = role_query.filter(ModuleRole.id == role_id).first()
                 elif role_code:
                     role = role_query.filter(ModuleRole.code == role_code.upper()).first()
 
                 if not role and mod.roles:
-                    # Default to first active role if invalid
-                    role = next((r for r in mod.roles if r.is_active), None)
+                    # Default to first active, non-retired role
+                    active_roles = [r for r in mod.roles if r.is_active and r.code not in ["BMS_DIRECTOR_ANALYTICS", "DIRECTOR_ANALYTICS"]]
+                    role = active_roles[0] if active_roles else None
+
+            # Validate role assignment authority
+            if enabled and role:
+                if current_user:
+                    RoleAssignmentService.validate_role_assignment(
+                        actor=current_user,
+                        target_module_code=mod.code,
+                        target_role_code=role.code,
+                        target_user_id=user.id,
+                        db=self.db
+                    )
+                elif role.code in ["BMS_DIRECTOR_ANALYTICS", "DIRECTOR_ANALYTICS"]:
+                    raise ValidationError("BMS Director Analytics has been retired and cannot be assigned.")
 
             # Find existing membership
             membership = self.db.query(UserModuleMembership).filter(

@@ -10,7 +10,6 @@ import {
   CalendarRange,
   FileSpreadsheet,
   PieChart,
-  TrendingUp,
   ShieldAlert,
   Settings
 } from 'lucide-react';
@@ -93,13 +92,6 @@ export const BMS_NAV_ITEMS = [
     label: 'CEO Insights',
     icon: PieChart,
     role: 'CEO'
-  },
-  {
-    path: '/bms/director-analytics',
-    legacyPaths: ['/director-analytics'],
-    label: 'Director Analytics',
-    icon: TrendingUp,
-    role: 'DIRECTOR_ANALYTICS'
   },
   {
     path: '/bms/audit-logs',

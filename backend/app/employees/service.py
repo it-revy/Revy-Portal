@@ -7,6 +7,8 @@ from app.employees.repository import EmployeeRepository
 from app.employees.model import Employee, Department
 from app.users.model import User
 from app.modules.model import Module, ModuleRole, UserModuleMembership
+from app.core.dependencies import CurrentUser
+from app.roles.assignment_service import RoleAssignmentService
 from app.core.exceptions import ValidationError, NotFoundError
 from app.audit.service import AuditService
 
@@ -102,11 +104,14 @@ class EmployeeService:
             for u in users
         ]
 
-    def add_user_to_bms(self, data: dict, request: Optional[Request] = None) -> Dict[str, Any]:
+    def add_user_to_bms(self, data: dict, request: Optional[Request] = None, current_user: Optional[CurrentUser] = None) -> Dict[str, Any]:
         """
         Adds an existing Central User to BMS. Does NOT create a new system user.
-        Strictly prevents duplicates.
+        Strictly prevents duplicates and validates role assignment authority.
         """
+        if not current_user and request and hasattr(request.state, "current_user"):
+            current_user = request.state.current_user
+
         user_id = data.get("userId") or data.get("user_id")
         if not user_id:
             raw_email = (data.get("email") or "").strip().lower()
@@ -142,7 +147,8 @@ class EmployeeService:
             raise ValidationError(f'User "{user.name or user.username}" is already an active member of BMS.')
 
         # Resolve BMS Role
-        target_role_code = (data.get("roleCode") or data.get("role") or "BMS_EMPLOYEE").strip().upper()
+        raw_role_code = (data.get("roleCode") or data.get("role") or "BMS_EMPLOYEE").strip()
+        target_role_code = raw_role_code.upper()
         # Handle role aliases
         if target_role_code in ["EMPLOYEE", "STANDARD_EMPLOYEE"]:
             target_role_code = "BMS_EMPLOYEE"
@@ -150,26 +156,32 @@ class EmployeeService:
             target_role_code = "BMS_ADMIN"
         elif target_role_code in ["FINANCE_MANAGER"]:
             target_role_code = "BMS_FINANCE_MANAGER"
-        elif target_role_code in ["DIRECTOR_ANALYTICS"]:
-            target_role_code = "BMS_DIRECTOR_ANALYTICS"
+
+        # Validate role assignment authority against actor
+        if current_user:
+            RoleAssignmentService.validate_role_assignment(
+                actor=current_user,
+                target_module_code="BMS",
+                target_role_code=target_role_code,
+                target_user_id=user.id,
+                db=self.db
+            )
+        elif target_role_code in ["BMS_DIRECTOR_ANALYTICS", "DIRECTOR_ANALYTICS"]:
+            raise ValidationError("BMS Director Analytics has been retired and cannot be assigned.")
 
         bms_role = self.db.query(ModuleRole).filter(
             ModuleRole.module_id == bms_mod.id,
-            ModuleRole.code == target_role_code
+            ModuleRole.code == target_role_code,
+            ModuleRole.is_active == True
         ).first()
 
         if not bms_role:
-            # Fallback to BMS_EMPLOYEE
-            bms_role = self.db.query(ModuleRole).filter(
-                ModuleRole.module_id == bms_mod.id,
-                ModuleRole.code == "BMS_EMPLOYEE"
-            ).first()
+            raise ValidationError(f"Role '{raw_role_code}' does not exist or is inactive in BMS.")
 
         # Update or create BMS UserModuleMembership
         if existing_mem:
             existing_mem.is_active = True
-            if bms_role:
-                existing_mem.role_id = bms_role.id
+            existing_mem.role_id = bms_role.id
         else:
             new_mem = UserModuleMembership(
                 user_id=user.id,
@@ -235,21 +247,21 @@ class EmployeeService:
 
         return serialized
 
-    def create_employee(self, data: dict, request: Optional[Request] = None) -> Dict[str, Any]:
+    def create_employee(self, data: dict, request: Optional[Request] = None, current_user: Optional[CurrentUser] = None) -> Dict[str, Any]:
         """
         BMS Employee creation gateway. Strictly delegates to add_user_to_bms.
         Creating arbitrary users/passwords from BMS is disabled.
         """
         user_id = data.get("userId") or data.get("user_id")
         if user_id:
-            return self.add_user_to_bms(data, request=request)
+            return self.add_user_to_bms(data, request=request, current_user=current_user)
 
         email = (data.get("email") or "").strip().lower()
         if email:
             existing = self.db.query(User).filter(User.email == email, User.is_hard_deleted == False).first()
             if existing:
                 data["userId"] = existing.id
-                return self.add_user_to_bms(data, request=request)
+                return self.add_user_to_bms(data, request=request, current_user=current_user)
 
         # Reject direct user creation from BMS
         raise ValidationError(
@@ -257,7 +269,10 @@ class EmployeeService:
             "then select them in BMS Employees to grant breakfast participation."
         )
 
-    def update_employee(self, employee_id: str, data: dict, request: Optional[Request] = None) -> Dict[str, Any]:
+    def update_employee(self, employee_id: str, data: dict, request: Optional[Request] = None, current_user: Optional[CurrentUser] = None) -> Dict[str, Any]:
+        if not current_user and request and hasattr(request.state, "current_user"):
+            current_user = request.state.current_user
+
         emp = self.repo.get_by_employee_id(employee_id)
         if not emp:
             raise NotFoundError("Employee not found")
@@ -296,22 +311,35 @@ class EmployeeService:
                     clean_code = "BMS_ADMIN"
                 elif clean_code in ["FINANCE_MANAGER"]:
                     clean_code = "BMS_FINANCE_MANAGER"
-                elif clean_code in ["DIRECTOR_ANALYTICS"]:
-                    clean_code = "BMS_DIRECTOR_ANALYTICS"
+
+                # Validate role assignment authority
+                if current_user:
+                    RoleAssignmentService.validate_role_assignment(
+                        actor=current_user,
+                        target_module_code="BMS",
+                        target_role_code=clean_code,
+                        target_user_id=user.id,
+                        db=self.db
+                    )
+                elif clean_code in ["BMS_DIRECTOR_ANALYTICS", "DIRECTOR_ANALYTICS"]:
+                    raise ValidationError("BMS Director Analytics has been retired and cannot be assigned.")
 
                 role = self.db.query(ModuleRole).filter(
                     ModuleRole.module_id == bms_mod.id,
-                    ModuleRole.code == clean_code
+                    ModuleRole.code == clean_code,
+                    ModuleRole.is_active == True
                 ).first()
 
-                if role:
-                    mem = self.db.query(UserModuleMembership).filter(
-                        UserModuleMembership.user_id == user.id,
-                        UserModuleMembership.module_id == bms_mod.id
-                    ).first()
-                    if mem:
-                        mem.role_id = role.id
-                        mem.is_active = (emp.status == "active")
+                if not role:
+                    raise ValidationError(f"Role '{target_role_code}' does not exist or is inactive in BMS.")
+
+                mem = self.db.query(UserModuleMembership).filter(
+                    UserModuleMembership.user_id == user.id,
+                    UserModuleMembership.module_id == bms_mod.id
+                ).first()
+                if mem:
+                    mem.role_id = role.id
+                    mem.is_active = (emp.status == "active")
 
         self.db.commit()
         self.db.refresh(emp)

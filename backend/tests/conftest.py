@@ -77,49 +77,6 @@ def ceo_headers(client):
         "X-Role-Used": "CEO"
     }
 
-@pytest.fixture
-def director_analytics_headers(client):
-    db = SessionLocal()
-    from app.users.model import User
-    from app.roles.model import Role
-    from app.employees.model import Employee
-    from app.core.security import get_password_hash
 
-    dir_role = db.query(Role).filter(Role.code == "DIRECTOR_ANALYTICS").first()
-    u = db.query(User).filter(User.username == "director.analytics").first()
-    if not u:
-        u = User(
-            username="director.analytics",
-            email="director.analytics@company.com",
-            password_hash=get_password_hash("Director123"),
-            status="active"
-        )
-        if dir_role:
-            u.roles = [dir_role]
-        db.add(u)
-        db.flush()
 
-        emp = Employee(
-            user_id=u.id,
-            employee_id="EMP-DIR01",
-            name="Director Analytics User",
-            email="director.analytics@company.com",
-            department="Executive Office",
-            designation="Director Analytics",
-            status="active"
-        )
-        db.add(emp)
-        db.commit()
-    elif dir_role and dir_role not in u.roles:
-        u.roles.append(dir_role)
-        db.commit()
-    db.close()
-
-    res = client.post("/api/v1/auth/login", json={"username": "director.analytics", "password": "Director123"})
-    assert res.status_code == 200, f"Login failed: {res.text}"
-    token = res.json()["token"]
-    return {
-        "Authorization": f"Bearer {token}",
-        "X-Role-Used": "DIRECTOR_ANALYTICS"
-    }
 

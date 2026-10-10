@@ -141,9 +141,9 @@ def test_bf_manager_cannot_access_restricted_endpoints(bf_manager_headers):
     res_ceo = client.get("/api/v1/reports/ceo", headers=bf_manager_headers)
     assert res_ceo.status_code == 403, f"Expected 403 on Director Dashboard API, got {res_ceo.status_code}"
 
-    # 2. Director Analytics API
+    # 2. Director Analytics API (Removed endpoint -> 404 or 403)
     res_dir = client.get("/api/v1/reports/director-analytics", headers=bf_manager_headers)
-    assert res_dir.status_code == 403, f"Expected 403 on Director Analytics API, got {res_dir.status_code}"
+    assert res_dir.status_code in [403, 404], f"Expected 404 or 403 on retired Director Analytics API, got {res_dir.status_code}"
 
     # 3. Finance Fund Request API
     res_fund = client.get("/api/v1/breakfast/money/requests", headers=bf_manager_headers)
