@@ -68,6 +68,20 @@ def ensure_roles_and_permissions():
             ("users.edit", "Edit Users", "USERS"),
             ("users.deactivate", "Deactivate Users", "USERS"),
             ("user.password.reset", "Reset User Passwords", "PLATFORM"),
+            # --- CRM Module Permissions ---
+            ("crm.dashboard.view", "View CRM Dashboard", "CRM"),
+            ("crm.lead.view", "View Leads", "CRM"),
+            ("crm.lead.create", "Create Leads", "CRM"),
+            ("crm.lead.edit", "Edit Leads", "CRM"),
+            ("crm.lead.status.update", "Update Lead Lifecycle Status", "CRM"),
+            ("crm.lead.assign", "Assign Leads", "CRM"),
+            ("crm.account.view", "View Accounts", "CRM"),
+            ("crm.account.create", "Create Accounts", "CRM"),
+            ("crm.contact.view", "View Contacts", "CRM"),
+            ("crm.contact.create", "Create Contacts", "CRM"),
+            ("crm.communication.view", "View Communication History", "CRM"),
+            ("crm.communication.create", "Add Communication Entries", "CRM"),
+            ("crm.user.manage", "Manage CRM User Hub Access and Roles", "CRM"),
         ]
 
         for code, name, mod in standard_permissions:

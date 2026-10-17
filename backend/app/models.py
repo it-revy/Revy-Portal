@@ -22,6 +22,14 @@ from app.breakfast.model import (
     BreakfastTemporaryRequest
 )
 
+from app.crm.model import (
+    Account,
+    Contact,
+    Lead,
+    LeadCommunicationHistory,
+    CrmSequence
+)
+
 __all__ = [
     "Base",
     "Role",
@@ -48,5 +56,10 @@ __all__ = [
     "BreakfastOrderItem",
     "BreakfastMoneyTransaction",
     "BreakfastFundRequest",
-    "BreakfastTemporaryRequest"
+    "BreakfastTemporaryRequest",
+    "Account",
+    "Contact",
+    "Lead",
+    "LeadCommunicationHistory",
+    "CrmSequence"
 ]

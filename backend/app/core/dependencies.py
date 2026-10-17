@@ -8,7 +8,7 @@ from app.users.model import User
 from app.roles.model import Role, Permission
 
 ALL_SYSTEM_MODULES = ["MIS", "BMS", "CRM", "LMS", "IMS", "LEAVE", "USERS", "DWR", "REPORTS"]
-ACTIVE_SYSTEM_MODULES = ["BMS", "USERS"]
+ACTIVE_SYSTEM_MODULES = ["BMS", "USERS", "CRM"]
 
 class CurrentUser:
     def __init__(

@@ -38,6 +38,7 @@ const Breadcrumb = () => {
 
   // Determine Module Identity
   const isUserMgmt = path.startsWith('/user-management') || path.startsWith('/users');
+  const isCRM = path.startsWith('/crm');
 
   let crumbs = [];
 
@@ -47,7 +48,32 @@ const Breadcrumb = () => {
     to: "/portal"
   });
 
-  if (isUserMgmt) {
+  if (isCRM) {
+    // 2. Module: CRM
+    crumbs.push({
+      label: "CRM",
+      to: "/crm/dashboard"
+    });
+
+    const segments = path.split('/').filter(Boolean);
+    if (segments.length > 1) {
+      const second = segments[1];
+      if (second === 'dashboard') {
+        crumbs.push({ label: "Dashboard", isCurrent: true });
+      } else if (second === 'leads') {
+        if (segments.length > 2) {
+          crumbs.push({ label: "Leads", to: "/crm/leads" });
+          crumbs.push({ label: segments[2].toUpperCase().startsWith("LEAD-") ? segments[2].toUpperCase() : "Lead Details", isCurrent: true });
+        } else {
+          crumbs.push({ label: "Leads", isCurrent: true });
+        }
+      } else if (second === 'user-hub' || second === 'users') {
+        crumbs.push({ label: "CRM User Hub", isCurrent: true });
+      } else {
+        crumbs.push({ label: second.charAt(0).toUpperCase() + second.slice(1).replace(/-/g, ' '), isCurrent: true });
+      }
+    }
+  } else if (isUserMgmt) {
     // 2. Module: User Management
     crumbs.push({
       label: "User Management",

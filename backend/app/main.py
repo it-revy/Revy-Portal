@@ -70,6 +70,8 @@ async def app_exception_handler(request: Request, exc: AppException):
     }
     return JSONResponse(status_code=exc.status_code, content=content)
 
+from fastapi.encoders import jsonable_encoder
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     errors = exc.errors()
@@ -80,7 +82,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "success": False,
             "message": first_error,
             "error_code": "VALIDATION_ERROR",
-            "details": errors
+            "details": jsonable_encoder(errors)
         }
     )
 
@@ -125,8 +127,8 @@ def health_check():
         "database": "connected"
     }
 
+from app.crm.router import router as crm_router
 from app.modules.services_router import (
-    crm_router,
     lms_router,
     ims_router,
     leave_router,

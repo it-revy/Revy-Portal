@@ -66,7 +66,7 @@ export const PORTAL_SERVICES = [
     title: 'Customer Relationship Management',
     description: 'Client accounts, lead pipeline, sales tracking, proposal generation, and corporate customer communications.',
     icon: Building,
-    isClickable: false,
+    isClickable: true,
     accentColor: '#f59e0b',
     category: 'Sales & Growth'
   },
@@ -189,7 +189,35 @@ export default function CentralPortalPage() {
       return;
     }
 
-    // 3. User Management
+    // 3. CRM (Customer Relationship Management)
+    if (mod.id === 'crm' || mod.code === 'CRM') {
+      const canAccessCrm = hasModuleAccess('CRM') ||
+                           hasRole('CRM_ADMIN') ||
+                           hasRole('CRM_SALES_MANAGER') ||
+                           hasRole('CRM_SALES_REP') ||
+                           hasRole('CRM_SALES_EXECUTIVE') ||
+                           hasRole('CRM_SALES_COORDINATOR') ||
+                           hasRole('CRM_PRE_SALES') ||
+                           hasRole('CRM_FINANCE_MANAGER') ||
+                           hasRole('IT_ADMIN') ||
+                           hasRole('DIRECTOR') ||
+                           hasPermission('crm.lead.view') ||
+                           hasPermission('crm.dashboard.view') ||
+                           hasPermission('*');
+      if (canAccessCrm) {
+        navigate('/crm/dashboard');
+      } else {
+        setInactiveModal({
+          name: mod.name,
+          title: mod.title,
+          isPermissionDenied: true,
+          message: 'Your current account does not have membership in the Customer Relationship Management (CRM) module. Please contact your CRM or IT Administrator to be enrolled.'
+        });
+      }
+      return;
+    }
+
+    // 4. User Management
     if (mod.id === 'users' || mod.code === 'USERS') {
       if (canManageUsers) {
         navigate('/user-management');
@@ -270,7 +298,7 @@ export default function CentralPortalPage() {
             <div className="portal-stats-row">
               <span className="portal-stat-badge active-stat">
                 <span className="stat-dot green"></span>
-                Active: BMS & User Management
+                Active: BMS, CRM & User Management
               </span>
               <span className="portal-stat-badge pending-stat">
                 <span className="stat-dot amber"></span>
@@ -291,6 +319,20 @@ export default function CentralPortalPage() {
                 hasAccess = hasModuleAccess('BMS') || hasRole('IT_ADMIN') || hasPermission('*');
               } else if (mod.code === 'USERS') {
                 hasAccess = canManageUsers;
+              } else if (mod.code === 'CRM') {
+                hasAccess = hasModuleAccess('CRM') ||
+                            hasRole('CRM_ADMIN') ||
+                            hasRole('CRM_SALES_MANAGER') ||
+                            hasRole('CRM_SALES_REP') ||
+                            hasRole('CRM_SALES_EXECUTIVE') ||
+                            hasRole('CRM_SALES_COORDINATOR') ||
+                            hasRole('CRM_PRE_SALES') ||
+                            hasRole('CRM_FINANCE_MANAGER') ||
+                            hasRole('IT_ADMIN') ||
+                            hasRole('DIRECTOR') ||
+                            hasPermission('crm.lead.view') ||
+                            hasPermission('crm.dashboard.view') ||
+                            hasPermission('*');
               }
 
               return (

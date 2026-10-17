@@ -44,7 +44,7 @@ def ensure_modules_and_memberships():
                 "code": "CRM",
                 "name": "Customer Relationship Management",
                 "description": "Client accounts, lead pipeline, sales tracking, and customer communications.",
-                "is_active": False,
+                "is_active": True,
                 "is_open_to_all": False
             },
             {
@@ -240,6 +240,45 @@ def ensure_modules_and_memberships():
                 if c in all_perms
             ]
 
+        # CRM Module Roles Permissions
+        crm_admin_role = roles_by_module_and_code.get(("CRM", "CRM_ADMIN"))
+        if crm_admin_role:
+            crm_admin_role.permissions = [p for p in all_perms.values() if p.module == "CRM"]
+
+        crm_sales_mgr_role = roles_by_module_and_code.get(("CRM", "CRM_SALES_MANAGER"))
+        if crm_sales_mgr_role:
+            crm_sales_mgr_role.permissions = [
+                p for p in all_perms.values() if p.module == "CRM" and p.code != "crm.user.manage"
+            ]
+
+        crm_sales_exec_role = roles_by_module_and_code.get(("CRM", "CRM_SALES_EXECUTIVE"))
+        if crm_sales_exec_role:
+            crm_sales_exec_role.permissions = [
+                all_perms[c] for c in [
+                    "crm.dashboard.view", "crm.lead.view", "crm.lead.create", "crm.lead.edit",
+                    "crm.lead.status.update", "crm.account.view", "crm.account.create",
+                    "crm.contact.view", "crm.contact.create", "crm.communication.view",
+                    "crm.communication.create"
+                ] if c in all_perms
+            ]
+
+        crm_sales_coord_role = roles_by_module_and_code.get(("CRM", "CRM_SALES_COORDINATOR"))
+        if crm_sales_coord_role:
+            crm_sales_coord_role.permissions = [
+                all_perms[c] for c in [
+                    "crm.dashboard.view", "crm.lead.view", "crm.lead.create", "crm.lead.edit",
+                    "crm.account.view", "crm.contact.view", "crm.communication.view",
+                    "crm.communication.create"
+                ] if c in all_perms
+            ]
+
+        crm_fin_mgr_role = roles_by_module_and_code.get(("CRM", "CRM_FINANCE_MANAGER"))
+        if crm_fin_mgr_role:
+            crm_fin_mgr_role.permissions = [
+                all_perms[c] for c in ["crm.dashboard.view", "crm.lead.view", "crm.account.view", "crm.contact.view"]
+                if c in all_perms
+            ]
+
         # 4. Migrate users & memberships
         bms_mod = modules_by_code.get("BMS")
         all_roles = {r.code: r for r in db.query(Role).all()}
@@ -334,6 +373,39 @@ def ensure_modules_and_memberships():
         for (m_id, r_code), r_obj in existing_module_roles.items():
             if r_code in legacy_obsolete_module_roles:
                 r_obj.is_active = False
+
+        # 7. Ensure standard CRM Admin user exists for development/testing
+        from app.core.security import get_password_hash
+        crm_admin_role = roles_by_module_and_code.get(("CRM", "CRM_ADMIN"))
+        crm_mod = modules_by_code.get("CRM")
+        if crm_mod and crm_admin_role:
+            crm_admin_user = db.query(User).filter(User.username == "crm.admin").first()
+            if not crm_admin_user:
+                crm_admin_user = User(
+                    name="CRM Administrator",
+                    username="crm.admin",
+                    email="crm.admin@revy.test",
+                    password_hash=get_password_hash("CrmAdmin123!"),
+                    status="active"
+                )
+                db.add(crm_admin_user)
+                db.flush()
+            
+            mem = db.query(UserModuleMembership).filter(
+                UserModuleMembership.user_id == crm_admin_user.id,
+                UserModuleMembership.module_id == crm_mod.id
+            ).first()
+            if not mem:
+                mem = UserModuleMembership(
+                    user_id=crm_admin_user.id,
+                    module_id=crm_mod.id,
+                    role_id=crm_admin_role.id,
+                    is_active=True
+                )
+                db.add(mem)
+            else:
+                mem.role_id = crm_admin_role.id
+                mem.is_active = True
 
         db.commit()
         logger.info("Successfully synced modules, module roles, permissions, and migrated all user assignments.")

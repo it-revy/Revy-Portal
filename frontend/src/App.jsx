@@ -8,6 +8,11 @@ import { getBMSRoutes } from './modules/bms';
 import UserManagementPage from './pages/UserManagementPage';
 
 import UserManagementLayout from './layouts/UserManagementLayout';
+import CrmLayout from './layouts/CrmLayout';
+import CrmDashboardPage from './pages/CrmDashboardPage';
+import CrmLeadsPage from './pages/CrmLeadsPage';
+import CrmLeadDetailPage from './pages/CrmLeadDetailPage';
+import CrmUserHubPage from './pages/CrmUserHubPage';
 
 function AppRoutes() {
   const { user, hasPermission, hasRole, hasModuleAccess, loading } = useAuth();
@@ -101,10 +106,50 @@ function AppRoutes() {
       {getBMSRoutes()}
 
       {/* ========================================================================= */}
-      {/* 4. FUTURE MODULE PLACEHOLDERS (Disabled / Coming Soon)                     */}
+      {/* 4. CUSTOMER RELATIONSHIP MANAGEMENT (CRM) MODULE                          */}
+      {/* ========================================================================= */}
+      <Route path="/crm" element={<Navigate to="/crm/dashboard" replace />} />
+      <Route
+        path="/crm/dashboard"
+        element={
+          <CrmLayout>
+            <CrmDashboardPage />
+          </CrmLayout>
+        }
+      />
+      <Route
+        path="/crm/leads"
+        element={
+          <CrmLayout>
+            <CrmLeadsPage />
+          </CrmLayout>
+        }
+      />
+      <Route
+        path="/crm/leads/:id"
+        element={
+          <CrmLayout>
+            <CrmLeadDetailPage />
+          </CrmLayout>
+        }
+      />
+      <Route
+        path="/crm/user-hub"
+        element={
+          <CrmLayout requiredPermission="crm.user.manage" requiredRole="CRM_ADMIN">
+            <CrmUserHubPage />
+          </CrmLayout>
+        }
+      />
+      <Route
+        path="/crm/users"
+        element={<Navigate to="/crm/user-hub" replace />}
+      />
+
+      {/* ========================================================================= */}
+      {/* 5. FUTURE MODULE PLACEHOLDERS (Disabled / Coming Soon)                     */}
       {/* ========================================================================= */}
       <Route path="/mis/*" element={<Navigate to="/portal" replace />} />
-      <Route path="/crm/*" element={<Navigate to="/portal" replace />} />
       <Route path="/lms/*" element={<Navigate to="/portal" replace />} />
       <Route path="/ims/*" element={<Navigate to="/portal" replace />} />
       <Route path="/leave-management/*" element={<Navigate to="/portal" replace />} />

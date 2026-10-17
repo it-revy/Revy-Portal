@@ -129,9 +129,15 @@ export const AuthProvider = ({ children }) => {
   };
 
   const isGlobalAdmin = () => {
-    if (!user || !user.roles) return false;
-    const normRoles = user.roles.map(r => String(r).toUpperCase().replace(/[\s_-]+/g, ''));
-    return normRoles.includes('ITADMIN') || normRoles.includes('DIRECTOR') || (user.permissions && user.permissions.includes('*'));
+    if (!user) return false;
+    if (user.roles && Array.isArray(user.roles)) {
+      const normRoles = user.roles.map(r => String(r).toUpperCase().replace(/[\s_-]+/g, ''));
+      if (normRoles.includes('ITADMIN') || normRoles.includes('DIRECTOR')) return true;
+    }
+    if (user.permissions && Array.isArray(user.permissions)) {
+      if (user.permissions.includes('*')) return true;
+    }
+    return false;
   };
 
   const hasPermission = (permission) => {
@@ -180,6 +186,9 @@ export const AuthProvider = ({ children }) => {
     if (normTarget === 'employee') {
       return normRoles.includes('bmsemployee') || normRoles.includes('bmsadmin');
     }
+    if (normTarget === 'crmsalesrep' || normTarget === 'crmsalesrepresentative') {
+      return normRoles.includes('crmsalesrep') || normRoles.includes('crmsalesrepresentative') || normRoles.includes('crmsalesexecutive') || normRoles.includes('crmsalescoordinator');
+    }
 
     return false;
   };
@@ -218,7 +227,7 @@ export const AuthProvider = ({ children }) => {
         hasRole,
         hasModuleAccess,
         getModuleRole,
-        isGlobalAdmin: isGlobalAdmin()
+        isGlobalAdmin
       }}
     >
       {children}

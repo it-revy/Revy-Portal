@@ -34,6 +34,20 @@ def get_me(current_user: CurrentUser = Depends(get_current_user)):
         for m in user.module_memberships if m.is_active and m.module
     ]
 
+    if current_user.is_global_admin:
+        from app.core.dependencies import ALL_SYSTEM_MODULES
+        existing_mod_codes = {m["moduleCode"] for m in modules_list}
+        is_it_admin = "IT_ADMIN" in (current_user.roles or [])
+        for mod_code in ALL_SYSTEM_MODULES:
+            if mod_code not in existing_mod_codes:
+                modules_list.append({
+                    "moduleCode": mod_code,
+                    "moduleName": mod_code,
+                    "isOpenToAll": True,
+                    "roleCode": "IT_ADMIN" if is_it_admin else "DIRECTOR",
+                    "roleName": "Global Administrator"
+                })
+
     return {
         "success": True,
         "user": {

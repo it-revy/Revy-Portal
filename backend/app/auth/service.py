@@ -31,15 +31,63 @@ class AuthService:
         if not verify_password(password, user.password_hash):
             raise AuthenticationError("Invalid username or password")
 
-        roles_list = [r.code for r in user.roles]
+        from app.core.dependencies import ALL_SYSTEM_MODULES
+        from app.roles.model import Permission
+
+        # 1. Determine Global Roles
+        user_global_role_codes = [r.code for r in user.roles]
+        is_it_admin = "IT_ADMIN" in user_global_role_codes
+        is_director = "DIRECTOR" in user_global_role_codes or "CEO" in user_global_role_codes
+        is_global_admin = is_it_admin or is_director
+
+        roles_list = []
         permissions_by_role = {}
         permissions_set = set()
 
+        # Add direct / global roles
         for r in user.roles:
-            r_perms = [p.code for p in r.permissions]
+            if r.code and r.code not in roles_list:
+                roles_list.append(r.code)
+            if r.name and r.name not in roles_list:
+                roles_list.append(r.name)
+
+            r_perms = [p.code for p in r.permissions] if r.permissions else []
             permissions_by_role[r.code] = r_perms
+            if r.name:
+                permissions_by_role[r.name] = r_perms
             for p in r_perms:
                 permissions_set.add(p)
+
+        # 2. Add Module Roles from Active Memberships
+        for m in user.module_memberships:
+            if m.is_active and m.module:
+                if m.role:
+                    if m.role.code not in roles_list:
+                        roles_list.append(m.role.code)
+                    if m.role.name and m.role.name not in roles_list:
+                        roles_list.append(m.role.name)
+
+                    r_perms = [p.code for p in m.role.permissions] if m.role.permissions else []
+                    permissions_by_role[m.role.code] = r_perms
+                    if m.role.name:
+                        permissions_by_role[m.role.name] = r_perms
+                    for p in r_perms:
+                        permissions_set.add(p)
+
+        # 3. Global Administrators Override: Full System Access across all modules & permissions
+        if is_global_admin:
+            permissions_set.add("*")
+            all_db_perms = [p.code for p in self.db.query(Permission).all()]
+            for p in all_db_perms:
+                permissions_set.add(p)
+            if is_it_admin:
+                permissions_by_role["IT_ADMIN"] = list(permissions_set)
+                permissions_by_role["IT Admin"] = list(permissions_set)
+            if is_director:
+                permissions_by_role["DIRECTOR"] = list(permissions_set)
+                permissions_by_role["Director"] = list(permissions_set)
+                roles_list.extend(["CEO", "Chief Executive Officer"])
+                permissions_by_role["CEO"] = list(permissions_set)
 
         permissions_list = list(permissions_set)
 
@@ -53,6 +101,18 @@ class AuthService:
             }
             for m in user.module_memberships if m.is_active and m.module
         ]
+
+        if is_global_admin:
+            existing_mod_codes = {m["moduleCode"] for m in modules_list}
+            for mod_code in ALL_SYSTEM_MODULES:
+                if mod_code not in existing_mod_codes:
+                    modules_list.append({
+                        "moduleCode": mod_code,
+                        "moduleName": mod_code,
+                        "isOpenToAll": True,
+                        "roleCode": "IT_ADMIN" if is_it_admin else "DIRECTOR",
+                        "roleName": "Global Administrator"
+                    })
 
         emp = user.employee
         display_name = user.name or (emp.name if emp else user.username)

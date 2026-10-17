@@ -55,6 +55,22 @@ class ValidationError(AppException):
         )
 
 
+class ConflictError(AppException):
+    def __init__(
+        self,
+        message: str = "Resource conflict",
+        details: Optional[Any] = None,
+        extra_fields: Optional[Dict[str, Any]] = None
+    ):
+        super().__init__(
+            status_code=status.HTTP_409_CONFLICT,
+            message=message,
+            error_code="CONFLICT",
+            details=details,
+            extra_fields=extra_fields
+        )
+
+
 class InsufficientFundError(AppException):
     def __init__(
         self,
