@@ -16,6 +16,10 @@ from seed.seed_development import seed_database
 def setup_test_database():
     if os.getenv("RUN_SEED") == "1":
         seed_database()
+        from app.core.init_roles import ensure_roles_and_permissions
+        from app.core.init_modules import ensure_modules_and_memberships
+        ensure_roles_and_permissions()
+        ensure_modules_and_memberships()
     yield
 
 @pytest.fixture

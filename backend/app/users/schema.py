@@ -38,7 +38,7 @@ class CreateUserRequest(BaseModel):
     password: Optional[str] = None
     managerId: Optional[str] = None
     status: Optional[str] = "active"
-    roles: Optional[List[str]] = ["EMPLOYEE"]
+    roles: Optional[List[str]] = []
 
 class UpdateUserRequest(BaseModel):
     name: Optional[str] = None

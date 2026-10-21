@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 import LoginPage from './pages/LoginPage';
+import ChangePasswordPage from './pages/ChangePasswordPage';
 import CentralPortalPage, { getBreakfastDestination } from './pages/CentralPortalPage';
 import { getBMSRoutes } from './modules/bms';
 import UserManagementPage from './pages/UserManagementPage';
@@ -25,6 +26,17 @@ function AppRoutes() {
     );
   }
 
+  // Mandatory Password Change Barrier:
+  // If user has forcePasswordChange flag set, isolate access strictly to /change-password
+  if (user && user.forcePasswordChange) {
+    return (
+      <Routes>
+        <Route path="/change-password" element={<ChangePasswordPage />} />
+        <Route path="*" element={<Navigate to="/change-password" replace />} />
+      </Routes>
+    );
+  }
+
   const canAccessBreakfast = () => {
     if (!user) return false;
     return hasModuleAccess('BMS') || hasRole('IT_ADMIN') || hasPermission('*');
@@ -37,6 +49,12 @@ function AppRoutes() {
 
       {/* Login redirects to Central Portal if already authenticated */}
       <Route path="/login" element={user ? <Navigate to="/portal" replace /> : <LoginPage />} />
+
+      {/* Forced Password Change Route (accessible directly if requested) */}
+      <Route
+        path="/change-password"
+        element={user ? <ChangePasswordPage /> : <Navigate to="/login" replace />}
+      />
 
       {/* 1. CENTRAL PORTAL (Module Selection) */}
       <Route

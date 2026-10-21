@@ -94,18 +94,28 @@ def upgrade() -> None:
         op.add_column("users", sa.Column("phone", sa.String(length=50), nullable=True, server_default=""))
 
     if "manager_id" not in user_columns:
-        op.add_column("users", sa.Column("manager_id", sa.String(length=36), nullable=True))
-        # Add foreign key constraint if not present
-        existing_fks = {fk.get("name") for fk in insp.get_foreign_keys("users")}
-        if "fk_users_manager_id_users" not in existing_fks:
-            op.create_foreign_key(
-                "fk_users_manager_id_users",
-                "users",
-                "users",
-                ["manager_id"],
-                ["id"],
-                ondelete="SET NULL"
-            )
+        if bind.dialect.name == "sqlite":
+            with op.batch_alter_table("users") as batch_op:
+                batch_op.add_column(sa.Column("manager_id", sa.String(length=36), nullable=True))
+                batch_op.create_foreign_key(
+                    "fk_users_manager_id_users",
+                    "users",
+                    ["manager_id"],
+                    ["id"],
+                    ondelete="SET NULL"
+                )
+        else:
+            op.add_column("users", sa.Column("manager_id", sa.String(length=36), nullable=True))
+            existing_fks = {fk.get("name") for fk in insp.get_foreign_keys("users")}
+            if "fk_users_manager_id_users" not in existing_fks:
+                op.create_foreign_key(
+                    "fk_users_manager_id_users",
+                    "users",
+                    "users",
+                    ["manager_id"],
+                    ["id"],
+                    ondelete="SET NULL"
+                )
 
     # Phase B: Populate data for existing rows from employees table if linked
     if "employees" in existing_tables:

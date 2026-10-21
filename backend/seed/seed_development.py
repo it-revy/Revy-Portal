@@ -242,7 +242,22 @@ DEFAULT_ACCOUNTS = [
         "designation": "Finance Manager",
         "status": "active",
         "roles": ["FINANCE_MANAGER", "EMPLOYEE"],
-        "breakfastParticipationType": "NORMAL"
+        "breakfastParticipationType": "NORMAL",
+        "force_password_change": False
+    },
+    {
+        "employeeId": "EMP-0010",
+        "username": "new.employee",
+        "name": "New Test Employee",
+        "email": "new.employee@company.com",
+        "initialPasswordText": "TempPass123",
+        "phone": "+91 9876543219",
+        "department": "Operations",
+        "designation": "Junior Associate",
+        "status": "active",
+        "roles": ["EMPLOYEE"],
+        "breakfastParticipationType": "NORMAL",
+        "force_password_change": True
     }
 ]
 
@@ -316,10 +331,10 @@ def seed_database():
                 d = Department(name=d_name)
                 db.add(d)
 
-        print("[Seed] Seeding default accounts...")
+        print("[Seed] Seeding default accounts (centralized User + Employee)...")
         for acc in DEFAULT_ACCOUNTS:
             emp = db.query(Employee).filter(Employee.employee_id == acc["employeeId"]).first()
-            user = db.query(User).filter(User.username == acc["username"]).first()
+            user = db.query(User).filter(User.username == acc["username"].lower()).first()
 
             if not user:
                 pwd_hash = get_password_hash(acc["initialPasswordText"])
@@ -328,15 +343,18 @@ def seed_database():
                     email=acc["email"].lower(),
                     password_hash=pwd_hash,
                     status=acc["status"],
-                    force_password_change=True,
+                    force_password_change=acc.get("force_password_change", False),
                     is_hard_deleted=False
                 )
                 user.roles = [role_map[rc] for rc in acc["roles"] if rc in role_map]
                 db.add(user)
                 db.flush()
+                print(f"[Seed] Created centralized user account: {acc['username']}")
             else:
-                user.password_hash = get_password_hash(acc["initialPasswordText"])
-                user.roles = [role_map[rc] for rc in acc["roles"] if rc in role_map]
+                # Idempotent: Preserve existing password hash on repeated execution
+                for rc in acc["roles"]:
+                    if rc in role_map and role_map[rc] not in user.roles:
+                        user.roles.append(role_map[rc])
                 db.flush()
 
             if not emp:
@@ -349,11 +367,14 @@ def seed_database():
                     department=acc["department"],
                     designation=acc["designation"],
                     status=acc["status"],
-                    breakfast_participation_type=acc["breakfastParticipationType"],
+                    breakfast_participation_type=acc.get("breakfastParticipationType", "NORMAL"),
                     is_hard_deleted=False
                 )
                 db.add(emp)
-                print(f"[Seed] Created user account: {acc['username']} ({acc['employeeId']})")
+                print(f"[Seed] Created linked employee profile: {acc['name']} ({acc['employeeId']})")
+            else:
+                if emp.user_id != user.id:
+                    emp.user_id = user.id
 
         db.commit()
         print("[Seed] Development seed completed successfully!")

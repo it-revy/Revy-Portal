@@ -28,11 +28,20 @@ class AuthenticationError(AppException):
 
 
 class PermissionDeniedError(AppException):
-    def __init__(self, message: str = "Access denied"):
+    def __init__(self, message: str = "Access denied", error_code: str = "PERMISSION_DENIED"):
         super().__init__(
             status_code=status.HTTP_403_FORBIDDEN,
             message=message,
-            error_code="PERMISSION_DENIED"
+            error_code=error_code
+        )
+
+
+class PasswordChangeRequiredError(AppException):
+    def __init__(self, message: str = "Mandatory password change required before accessing the portal."):
+        super().__init__(
+            status_code=status.HTTP_403_FORBIDDEN,
+            message=message,
+            error_code="PASSWORD_CHANGE_REQUIRED"
         )
 
 

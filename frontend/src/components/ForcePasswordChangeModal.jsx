@@ -4,6 +4,7 @@ import { Lock, AlertCircle, CheckCircle2, ShieldAlert } from 'lucide-react';
 
 const ForcePasswordChangeModal = () => {
   const { user, changePassword, logout } = useAuth();
+  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
@@ -15,8 +16,18 @@ const ForcePasswordChangeModal = () => {
     e.preventDefault();
     setError('');
 
+    if (!currentPassword) {
+      setError('Current temporary password is required.');
+      return;
+    }
+
     if (newPassword.length < 6) {
       setError('Password must be at least 6 characters long.');
+      return;
+    }
+
+    if (newPassword === currentPassword) {
+      setError('New password cannot be the same as current password.');
       return;
     }
 
@@ -27,7 +38,7 @@ const ForcePasswordChangeModal = () => {
 
     setLoading(true);
     try {
-      const res = await changePassword('', newPassword, confirmPassword);
+      const res = await changePassword(currentPassword, newPassword, confirmPassword);
       if (!res.success) {
         setError(res.message || 'Failed to update password.');
       }
@@ -101,6 +112,19 @@ const ForcePasswordChangeModal = () => {
         )}
 
         <form onSubmit={handleSubmit}>
+          <div className="form-group" style={{ marginBottom: '1rem' }}>
+            <label className="form-label" htmlFor="current-password">Current Temporary Password *</label>
+            <input
+              id="current-password"
+              type="password"
+              className="form-input"
+              placeholder="Enter current password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              required
+            />
+          </div>
+
           <div className="form-group" style={{ marginBottom: '1rem' }}>
             <label className="form-label" htmlFor="new-password">New Password *</label>
             <input

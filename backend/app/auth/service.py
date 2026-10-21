@@ -182,10 +182,14 @@ class AuthService:
         if not user:
             raise NotFoundError("User account not found")
 
-        # If not in forced mode, verify current password
-        if not user.force_password_change and current_password:
-            if not verify_password(current_password, user.password_hash):
-                raise ValidationError("Current password is incorrect")
+        if not current_password:
+            raise ValidationError("Current password is required to update your password")
+
+        if not verify_password(current_password, user.password_hash):
+            raise ValidationError("Current password is incorrect")
+
+        if new_password == current_password:
+            raise ValidationError("New password cannot be the same as the current password")
 
         user.password_hash = get_password_hash(new_password)
         user.force_password_change = False

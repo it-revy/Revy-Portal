@@ -99,7 +99,10 @@ def get_current_user(
         r_perms = [p.code for p in r.permissions] if r.permissions else []
         if not r_perms:
             from app.modules.model import ModuleRole
-            m_role = db.query(ModuleRole).filter(ModuleRole.code.in_([r.code, f"BMS_{r.code}"])).first()
+            alias_codes = [r.code, f"BMS_{r.code}"]
+            if r.code == "BREAKFAST_ADMIN":
+                alias_codes.append("BMS_ADMIN")
+            m_role = db.query(ModuleRole).filter(ModuleRole.code.in_(alias_codes)).first()
             if m_role and m_role.permissions:
                 r_perms = [p.code for p in m_role.permissions]
 
@@ -132,10 +135,6 @@ def get_current_user(
     # 2. Add Module Roles from Active Memberships
     for m in user.module_memberships:
         if m.is_active and m.module:
-            if m.role:
-                # If testing or legacy user role assignment is being used for shahil/himani:
-                if m.role.code in ["BMS_FINANCE_MANAGER", "FINANCE_MANAGER"] and user.username in ["shahil", "himani"] and not any(r.code == "FINANCE_MANAGER" for r in user.roles):
-                    continue
             if m.module.code not in user_modules:
                 user_modules.append(m.module.code)
             if m.role:
@@ -168,7 +167,7 @@ def get_current_user(
 
     # Ensure EMPLOYEE default permissions are populated if present in roles_list
     if user.employee or any(e in roles_list for e in ["EMPLOYEE", "BMS_EMPLOYEE"]):
-        emp_perms = ["breakfast.submit", "breakfast.view_own", "breakfast.history_own", "breakfast.report"]
+        emp_perms = ["breakfast.submit", "breakfast.view_own", "breakfast.history_own"]
         if not permissions_by_role.get("EMPLOYEE"):
             permissions_by_role["EMPLOYEE"] = list(emp_perms)
         if not permissions_by_role.get("BMS_EMPLOYEE"):
@@ -233,6 +232,24 @@ def get_current_user(
     )
 
     request.state.current_user = current_user
+
+    # Mandatory First-Login Password Change Enforcement:
+    # Protect backend APIs against access while a mandatory password change is pending.
+    if current_user.force_password_change:
+        req_path = request.url.path.rstrip("/")
+        allowed_paths = [
+            "/api/v1/auth/change-password",
+            "/api/v1/auth/me",
+            "/api/v1/auth/logout"
+        ]
+        is_allowed = any(
+            req_path == ap or req_path.endswith("/change-password") or req_path.endswith("/auth/me") or req_path.endswith("/auth/logout")
+            for ap in allowed_paths
+        )
+        if not is_allowed:
+            from app.core.exceptions import PasswordChangeRequiredError
+            raise PasswordChangeRequiredError("Mandatory password change required before accessing the portal.")
+
     return current_user
 
 

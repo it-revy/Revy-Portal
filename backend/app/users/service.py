@@ -147,8 +147,19 @@ class UserService:
         phone = (data.get("phone") or "").strip()
         status_val = data.get("status") or "active"
 
-        raw_password = data.get("password") or "Password123!"
+        raw_password = data.get("password")
+        is_temporary_initial = False
+        if not raw_password:
+            raw_password = "Password123!"
+            is_temporary_initial = True
+
         password_hash = get_password_hash(raw_password)
+
+        force_pwd = data.get("forcePasswordChange")
+        if force_pwd is None:
+            force_pwd = data.get("force_password_change")
+        if force_pwd is None:
+            force_pwd = is_temporary_initial
 
         user = User(
             name=name,
@@ -158,7 +169,7 @@ class UserService:
             password_hash=password_hash,
             status=status_val,
             manager_id=manager_id,
-            force_password_change=True,
+            force_password_change=bool(force_pwd),
             is_hard_deleted=False
         )
 

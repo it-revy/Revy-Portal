@@ -138,18 +138,6 @@ class RoleAssignmentService:
             if not is_global_admin:
                 raise PermissionDeniedError("Users cannot modify or escalate their own roles.")
 
-        if db:
-            mod = db.query(Module).filter(Module.code == mod_code).first()
-            if not mod:
-                raise ValidationError(f"Module '{target_module_code}' does not exist.")
-            role_record = db.query(ModuleRole).filter(
-                ModuleRole.module_id == mod.id,
-                ModuleRole.code == role_code,
-                ModuleRole.is_active == True
-            ).first()
-            if not role_record:
-                raise ValidationError(f"Role '{target_role_code}' does not exist or is inactive in module '{mod_code}'.")
-
         if is_global_admin:
             return
 
@@ -182,6 +170,18 @@ class RoleAssignmentService:
             mod_admin_role = f"{mod_code}_ADMIN"
             if mod_admin_role not in actor_roles:
                 raise PermissionDeniedError(f"You are not authorized to assign roles in module '{mod_code}'.")
+
+        if db:
+            mod = db.query(Module).filter(Module.code == mod_code).first()
+            if not mod:
+                raise ValidationError(f"Module '{target_module_code}' does not exist.")
+            role_record = db.query(ModuleRole).filter(
+                ModuleRole.module_id == mod.id,
+                ModuleRole.code == role_code,
+                ModuleRole.is_active == True
+            ).first()
+            if not role_record:
+                raise ValidationError(f"Role '{target_role_code}' does not exist or is inactive in module '{mod_code}'.")
 
     @staticmethod
     def validate_global_role_assignment(

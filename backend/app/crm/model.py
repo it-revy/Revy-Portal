@@ -10,7 +10,8 @@ from sqlalchemy import (
     Text,
     Integer,
     UniqueConstraint,
-    Index
+    Index,
+    text
 )
 from sqlalchemy.orm import relationship
 from app.core.database import Base
@@ -70,7 +71,7 @@ class Lead(Base):
     requirement_type = Column(String(50), nullable=False)  # "Direct Product/Service", "Sample Testing", "Undetermined"
     requirement_summary = Column(Text, nullable=True)
     requested_product_service = Column(String(255), nullable=True, index=True)
-    normalized_requirement = Column(String(255), nullable=True, index=True)
+    normalized_requirement = Column(String(255), nullable=True)
     lead_source = Column(String(50), nullable=False, default="Website")  # Website, Email, Phone, WhatsApp, Referral, etc.
     
     account_id = Column(String(36), ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True, index=True)
@@ -101,16 +102,16 @@ class Lead(Base):
             "account_id",
             "normalized_requirement",
             unique=True,
-            postgresql_where="lifecycle_status = 'Open' AND account_id IS NOT NULL AND normalized_requirement IS NOT NULL",
-            sqlite_where="lifecycle_status = 'Open' AND account_id IS NOT NULL AND normalized_requirement IS NOT NULL"
+            postgresql_where=text("lifecycle_status = 'Open' AND account_id IS NOT NULL AND normalized_requirement IS NOT NULL"),
+            sqlite_where=text("lifecycle_status = 'Open' AND account_id IS NOT NULL AND normalized_requirement IS NOT NULL")
         ),
         Index(
             "uq_open_lead_contact_product",
             "contact_id",
             "normalized_requirement",
             unique=True,
-            postgresql_where="lifecycle_status = 'Open' AND account_id IS NULL AND normalized_requirement IS NOT NULL",
-            sqlite_where="lifecycle_status = 'Open' AND account_id IS NULL AND normalized_requirement IS NOT NULL"
+            postgresql_where=text("lifecycle_status = 'Open' AND account_id IS NULL AND normalized_requirement IS NOT NULL"),
+            sqlite_where=text("lifecycle_status = 'Open' AND account_id IS NULL AND normalized_requirement IS NOT NULL")
         ),
     )
 

@@ -184,7 +184,7 @@ const UserManagementPage = () => {
     setError(null);
     try {
       if (modalMode === 'CREATE') {
-        const payload = { ...formData };
+        const payload = { ...formData, forcePasswordChange: true };
         if (!payload.password) delete payload.password;
         if (!payload.managerId) payload.managerId = null;
         await userService.createUser(payload);

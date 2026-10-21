@@ -21,7 +21,11 @@ const LoginPage = () => {
     try {
       const res = await login(username, password);
       if (res.success) {
-        navigate('/portal');
+        if (res.user?.forcePasswordChange) {
+          navigate('/change-password');
+        } else {
+          navigate('/portal');
+        }
       } else {
         setError(res.message || 'Invalid username or password.');
       }

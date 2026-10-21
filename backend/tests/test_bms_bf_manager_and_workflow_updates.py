@@ -338,9 +338,9 @@ def test_automatic_breakfast_date_detection():
     - 8 Oct 08:20 IST -> window closes
     - 8 Oct 18:00 IST -> next window is for 9 Oct
     """
-    # 7 Oct 16:00 IST
+    # 7 Oct 16:00 IST (before opening time, active date is today 7 Oct)
     d1 = get_applicable_breakfast_date(datetime(2026, 10, 7, 16, 0, 0, tzinfo=KOLKATA_TZ))
-    assert str(d1) == "2026-10-08"
+    assert str(d1) == "2026-10-07"
 
     # 7 Oct 17:30 IST
     d2 = get_applicable_breakfast_date(datetime(2026, 10, 7, 17, 30, 0, tzinfo=KOLKATA_TZ))

@@ -69,7 +69,7 @@ export const AuthProvider = ({ children }) => {
         setToken(newToken);
         setUser(userData);
         setActiveRole(primaryRole);
-        return { success: true };
+        return { success: true, user: userData };
       }
       return { success: false, message: res.data.message || 'Login failed' };
     } catch (err) {

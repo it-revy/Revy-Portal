@@ -9,6 +9,14 @@ logger = logging.getLogger("revy.breakfast.db")
 Base = declarative_base()
 
 def get_engine():
+    # CRITICAL P0 SAFETY GUARD: Test mode isolation to protect live databases
+    if os.getenv("TESTING") == "1":
+        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        test_db_path = os.path.join(backend_dir, "test_isolated_suite.db").replace("\\", "/")
+        test_url = os.getenv("TEST_DATABASE_URL", f"sqlite:///{test_db_path}")
+        logger.info(f"Connected to Isolated Test Database: {test_url}")
+        return create_engine(test_url, connect_args={"check_same_thread": False})
+
     db_url = settings.DATABASE_URL
     if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql://", 1)

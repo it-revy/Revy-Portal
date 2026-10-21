@@ -42,7 +42,9 @@ def get_admin_token():
     assert res.status_code == 200, f"Login failed: {res.text}"
     return res.json()["token"]
 
-def test_user_centric_architecture_complete():
+def test_user_centric_architecture_complete(client):
+    from app.core.init_modules import ensure_modules_and_memberships
+    ensure_modules_and_memberships()
     admin_token = get_admin_token()
     headers = {"Authorization": f"Bearer {admin_token}"}
 

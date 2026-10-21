@@ -15,12 +15,15 @@ def get_fund_limit(db: Session) -> float:
     setting = db.query(BreakfastSetting).first()
     return float(setting.breakfast_fund_limit) if setting and setting.breakfast_fund_limit else 2500.0
 
-def get_money_balance_metrics(db: Session) -> Dict[str, Any]:
+def get_money_balance_metrics(db: Session, for_update: bool = False) -> Dict[str, Any]:
     fund_limit = get_fund_limit(db)
 
-    latest_txn = db.query(BreakfastMoneyTransaction).order_by(
+    query = db.query(BreakfastMoneyTransaction).order_by(
         desc(BreakfastMoneyTransaction.created_at)
-    ).first()
+    )
+    if for_update and db.bind and db.bind.dialect.name == "postgresql":
+        query = query.with_for_update()
+    latest_txn = query.first()
     current_balance = float(latest_txn.balance_after_transaction) if latest_txn else 0.0
 
     totals = db.query(
@@ -76,7 +79,7 @@ def record_money_received(
     date_str = transaction_date or get_kolkata_date_string()
     time_str = transaction_time or get_kolkata_now().strftime("%I:%M %p")
 
-    metrics = get_money_balance_metrics(db)
+    metrics = get_money_balance_metrics(db, for_update=True)
     new_balance = metrics["currentBalance"] + parsed_amount
 
     now_ts = int(datetime.now(timezone.utc).timestamp() * 1000)
@@ -123,7 +126,7 @@ def record_expense(
     if parsed_amount <= 0:
         raise ValidationError("Expense amount must be a positive number")
 
-    metrics = get_money_balance_metrics(db)
+    metrics = get_money_balance_metrics(db, for_update=True)
     current_balance = metrics["currentBalance"]
 
     if not allow_negative and current_balance < parsed_amount:

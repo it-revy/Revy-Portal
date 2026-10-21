@@ -343,9 +343,11 @@ def ensure_modules_and_memberships():
                     db.add(mem)
                     existing_mem_map[u.id] = mem
                 else:
+                    # Do not demote existing module roles to employee during startup sweep
                     if assigned_bms_role:
-                        mem.role_id = assigned_bms_role.id
-                        mem.is_active = True
+                        if not mem.role_id or target_bms_role_code in ["BMS_ADMIN", "BMS_FINANCE_MANAGER", "BMS_BF_MANAGER"]:
+                            mem.role_id = assigned_bms_role.id
+                            mem.is_active = True
 
             # Cleanse user.roles to ONLY hold Global Roles: IT_ADMIN and/or DIRECTOR
             new_global_roles = []
