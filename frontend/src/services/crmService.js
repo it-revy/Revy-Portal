@@ -74,6 +74,10 @@ export const crmService = {
     return API.post('/crm/accounts', data);
   },
 
+  updateAccount: async (id, data) => {
+    return API.put(`/crm/accounts/${id}`, data);
+  },
+
   getContacts: async (params = {}) => {
     const query = new URLSearchParams();
     if (params.search) query.append('search', params.search);
@@ -92,6 +96,10 @@ export const crmService = {
 
   createContact: async (data) => {
     return API.post('/crm/contacts', data);
+  },
+
+  updateContact: async (id, data) => {
+    return API.put(`/crm/contacts/${id}`, data);
   },
 
   getEligibleAssignees: async () => {

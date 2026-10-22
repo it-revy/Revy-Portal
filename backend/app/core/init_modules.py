@@ -256,8 +256,8 @@ def ensure_modules_and_memberships():
             crm_sales_exec_role.permissions = [
                 all_perms[c] for c in [
                     "crm.dashboard.view", "crm.lead.view", "crm.lead.create", "crm.lead.edit",
-                    "crm.lead.status.update", "crm.account.view", "crm.account.create",
-                    "crm.contact.view", "crm.contact.create", "crm.communication.view",
+                    "crm.lead.status.update", "crm.account.view", "crm.account.create", "crm.account.edit",
+                    "crm.contact.view", "crm.contact.create", "crm.contact.edit", "crm.communication.view",
                     "crm.communication.create"
                 ] if c in all_perms
             ]
@@ -267,8 +267,8 @@ def ensure_modules_and_memberships():
             crm_sales_coord_role.permissions = [
                 all_perms[c] for c in [
                     "crm.dashboard.view", "crm.lead.view", "crm.lead.create", "crm.lead.edit",
-                    "crm.account.view", "crm.contact.view", "crm.communication.view",
-                    "crm.communication.create"
+                    "crm.account.view", "crm.account.edit", "crm.contact.view", "crm.contact.edit",
+                    "crm.communication.view", "crm.communication.create"
                 ] if c in all_perms
             ]
 

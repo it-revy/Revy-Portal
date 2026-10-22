@@ -171,7 +171,7 @@ export default function CrmLeadDetailPage() {
                 {lead.leadId}
               </span>
               <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 700 }}>
-                {lead.leadName}
+                {lead.leadName || lead.displayName || lead.leadId}
               </h1>
               {getStatusBadge(lead.lifecycleStatus)}
             </div>
@@ -250,10 +250,25 @@ export default function CrmLeadDetailPage() {
 
               <div>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                  Requirement Type
+                  Requirement Types
                 </label>
-                <div style={{ marginTop: '0.2rem', fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                  {lead.requirementType}
+                <div style={{ marginTop: '0.2rem', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  {(lead.requirementTypes && lead.requirementTypes.length > 0 ? lead.requirementTypes : [lead.requirementType || 'Consulting']).map((type, idx) => (
+                    <span
+                      key={idx}
+                      style={{
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        fontSize: '0.825rem',
+                        fontWeight: 600,
+                        background: '#f1f5f9',
+                        color: '#334155',
+                        border: '1px solid #cbd5e1'
+                      }}
+                    >
+                      {type}
+                    </span>
+                  ))}
                 </div>
               </div>
             </div>

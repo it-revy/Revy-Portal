@@ -32,6 +32,22 @@ const CANONICAL_LEAD_SOURCES = [
   'Other'
 ];
 
+export const REQUIREMENT_TYPE_OPTIONS = ['Consulting', 'Sample Testing', 'Product'];
+
+export const parseRequirementTypes = (lead) => {
+  if (!lead) return ['Sample Testing'];
+  if (Array.isArray(lead.requirementTypes) && lead.requirementTypes.length > 0) {
+    return lead.requirementTypes;
+  }
+  if (lead.requirementType) {
+    if (lead.requirementType === 'Direct Product/Service') return ['Product'];
+    if (lead.requirementType === 'Undetermined') return ['Consulting'];
+    if (REQUIREMENT_TYPE_OPTIONS.includes(lead.requirementType)) return [lead.requirementType];
+    return ['Sample Testing'];
+  }
+  return ['Sample Testing'];
+};
+
 export default function LeadModal({
   isOpen,
   onClose,
@@ -43,7 +59,8 @@ export default function LeadModal({
   const [formData, setFormData] = useState({
     leadName: '',
     businessArea: 'Biogas',
-    requirementType: 'Direct Product/Service',
+    requirementTypes: ['Sample Testing'],
+    requirementType: 'Sample Testing',
     requestedProductService: '',
     requirementSummary: '',
     leadSource: 'Website',
@@ -89,10 +106,12 @@ export default function LeadModal({
     loadInitialData();
 
       if (leadToEdit) {
+        const initialReqs = parseRequirementTypes(leadToEdit);
         setFormData({
           leadName: leadToEdit.leadName || '',
           businessArea: leadToEdit.businessArea || 'Biogas',
-          requirementType: leadToEdit.requirementType || 'Direct Product/Service',
+          requirementTypes: initialReqs,
+          requirementType: initialReqs[0] || 'Sample Testing',
           requestedProductService: leadToEdit.requestedProductService || '',
           requirementSummary: leadToEdit.requirementSummary || '',
           leadSource: leadToEdit.leadSource || 'Website',
@@ -112,7 +131,8 @@ export default function LeadModal({
         setFormData({
           leadName: '',
           businessArea: 'Biogas',
-          requirementType: 'Direct Product/Service',
+          requirementTypes: ['Sample Testing'],
+          requirementType: 'Sample Testing',
           requestedProductService: '',
           requirementSummary: '',
           leadSource: 'Website',
@@ -257,16 +277,34 @@ export default function LeadModal({
     }));
   };
 
+  const handleRequirementTypeToggle = (type) => {
+    setFormData(prev => {
+      const current = prev.requirementTypes || [];
+      const exists = current.includes(type);
+      const updated = exists ? current.filter(t => t !== type) : [...current, type];
+      return {
+        ...prev,
+        requirementTypes: updated,
+        requirementType: updated[0] || ''
+      };
+    });
+    if (fieldErrors.requirementTypes) {
+      setFieldErrors(prev => {
+        const next = { ...prev };
+        delete next.requirementTypes;
+        return next;
+      });
+    }
+  };
+
   const validate = () => {
     const errors = {};
-    if (!formData.leadName.trim()) {
-      errors.leadName = 'Lead Title / Name is mandatory for an ordinary enquiry.';
-    }
+    // Lead Title / Name is optional per Phase 1 spec
     if (!formData.businessArea) {
       errors.businessArea = 'Business Area is required (Biogas or WWT).';
     }
-    if (!formData.requirementType) {
-      errors.requirementType = 'Requirement Type is required.';
+    if (!formData.requirementTypes || formData.requirementTypes.length === 0) {
+      errors.requirementTypes = 'At least one requirement type must be selected (Consulting, Sample Testing, or Product).';
     }
     if (!formData.contactId) {
       errors.contactId = 'Primary Contact is mandatory. Please select or quick-create a contact.';
@@ -295,9 +333,10 @@ export default function LeadModal({
     setSubmitting(true);
 
     const payload = {
-      leadName: formData.leadName.trim(),
+      leadName: formData.leadName.trim() || undefined,
       businessArea: formData.businessArea,
-      requirementType: formData.requirementType,
+      requirementTypes: formData.requirementTypes,
+      requirementType: formData.requirementTypes[0] || 'Sample Testing',
       requestedProductService: formData.requestedProductService.trim() || undefined,
       requirementSummary: formData.requirementSummary.trim() || undefined,
       leadSource: formData.leadSource || 'Website',
@@ -564,19 +603,18 @@ export default function LeadModal({
               </div>
 
               {/* Section 2: Enquiry Details & Categorization */}
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '1rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '1rem' }}>
                 <div className="form-group">
                   <label className="form-label" style={{ fontWeight: 600 }}>
-                    Lead Title / Name <span style={{ color: 'var(--danger)' }}>*</span>
+                    Lead Title / Name <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem', fontWeight: 400 }}>(Optional)</span>
                   </label>
                   <input
                     type="text"
                     name="leadName"
                     className={`form-control ${fieldErrors.leadName ? 'is-invalid' : ''}`}
-                    placeholder="e.g. 1000 TPD Biomethanation Inoculum Supply"
+                    placeholder="e.g. 1000 TPD Biomethanation Inoculum Supply (Defaults to Lead ID if left blank)"
                     value={formData.leadName}
                     onChange={handleChange}
-                    required
                   />
                   {fieldErrors.leadName && (
                     <div style={{ color: '#dc2626', fontSize: '0.75rem', marginTop: '0.25rem' }}>
@@ -600,23 +638,56 @@ export default function LeadModal({
                     <option value="WWT">WWT (Wastewater Treatment)</option>
                   </select>
                 </div>
+              </div>
 
-                <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600 }}>
+              {/* Requirement Types: Exactly Three Independent Multi-Select Checkboxes */}
+              <div className="form-group" style={{ background: '#f8fafc', padding: '0.9rem 1rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                <label className="form-label" style={{ fontWeight: 600, display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                  <span>
                     Requirement Type <span style={{ color: 'var(--danger)' }}>*</span>
-                  </label>
-                  <select
-                    name="requirementType"
-                    className="form-control"
-                    value={formData.requirementType}
-                    onChange={handleChange}
-                    required
-                  >
-                    <option value="Direct Product/Service">Direct Product/Service</option>
-                    <option value="Sample Testing">Sample Testing</option>
-                    <option value="Undetermined">Undetermined</option>
-                  </select>
+                  </span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>
+                    Select any one, two, or all three options
+                  </span>
+                </label>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginTop: '0.25rem' }}>
+                  {REQUIREMENT_TYPE_OPTIONS.map(opt => {
+                    const checked = (formData.requirementTypes || []).includes(opt);
+                    return (
+                      <label
+                        key={opt}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.55rem',
+                          cursor: 'pointer',
+                          padding: '0.5rem 0.85rem',
+                          borderRadius: '8px',
+                          background: checked ? '#eff6ff' : '#ffffff',
+                          border: checked ? '1.5px solid #2563eb' : '1.5px solid #cbd5e1',
+                          fontWeight: checked ? 600 : 500,
+                          color: checked ? '#1d4ed8' : '#334155',
+                          fontSize: '0.875rem',
+                          userSelect: 'none',
+                          transition: 'all 0.15s ease'
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => handleRequirementTypeToggle(opt)}
+                          style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                        />
+                        <span>{opt}</span>
+                      </label>
+                    );
+                  })}
                 </div>
+                {fieldErrors.requirementTypes && (
+                  <div style={{ color: '#dc2626', fontSize: '0.75rem', marginTop: '0.45rem' }}>
+                    {fieldErrors.requirementTypes}
+                  </div>
+                )}
               </div>
 
               {/* Section 3: Technical Requirement Specification (OPTIONAL) */}

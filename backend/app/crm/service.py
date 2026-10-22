@@ -1,6 +1,8 @@
 import logging
+import threading
 from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime, timezone, timedelta, date
+from decimal import Decimal, ROUND_HALF_UP
 from fastapi import Request
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_, and_
@@ -19,19 +21,31 @@ from app.crm.model import (
     Account,
     Contact,
     Lead,
+    LeadRequirementType,
     LeadCommunicationHistory,
-    CrmSequence
+    CrmSequence,
+    ConsultingEngagement,
+    SampleSubmission,
+    SampleTestRequest,
+    TestingChargeRecord,
+    ProductTransaction
 )
 from app.crm.schema import (
     AccountCreate,
+    AccountUpdate,
     ContactCreate,
+    ContactUpdate,
     LeadCreate,
     LeadUpdate,
     CommunicationCreate,
+    ConsultingEngagementCreate,
+    SampleSubmissionCreate,
+    ProductTransactionCreate,
     ALLOWED_BUSINESS_AREAS,
     ALLOWED_REQUIREMENT_TYPES,
     ALLOWED_LEAD_SOURCES,
-    ALLOWED_LIFECYCLE_STATUSES
+    ALLOWED_LIFECYCLE_STATUSES,
+    normalize_and_validate_req_types
 )
 from app.roles.assignment_service import RoleAssignmentService
 from app.audit.service import AuditService
@@ -46,26 +60,30 @@ def normalize_text(val: Optional[str]) -> str:
     return " ".join(val.strip().lower().split())
 
 
+_sequence_lock = threading.Lock()
+
+
 def get_next_sequence_id(db: Session, entity_name: str, prefix: str, padding: int = 5) -> str:
     """
-    Concurrency-safe sequence generator using CrmSequence with row locking.
-    Generates IDs like LEAD-00001, ACC-00001, CON-00001, COM-00001.
+    Concurrency-safe sequence generator using CrmSequence with thread locking and row locking.
+    Generates IDs like LEAD-00001, ACC-00001, CON-00001, COM-00001, ENG-00001, SMP-00001, TST-00001, CHG-00001, PRD-00001.
     """
     entity_key = entity_name.strip().upper()
-    seq = db.query(CrmSequence).filter(CrmSequence.entity_name == entity_key).with_for_update().first()
-    if not seq:
-        try:
-            seq = CrmSequence(entity_name=entity_key, current_value=1)
-            db.add(seq)
-            db.flush()
-            return f"{prefix}-{1:0{padding}d}"
-        except IntegrityError:
-            db.rollback()
-            seq = db.query(CrmSequence).filter(CrmSequence.entity_name == entity_key).with_for_update().first()
+    with _sequence_lock:
+        seq = db.query(CrmSequence).filter(CrmSequence.entity_name == entity_key).with_for_update().first()
+        if not seq:
+            try:
+                seq = CrmSequence(entity_name=entity_key, current_value=1)
+                db.add(seq)
+                db.commit()
+                return f"{prefix}-{1:0{padding}d}"
+            except IntegrityError:
+                db.rollback()
+                seq = db.query(CrmSequence).filter(CrmSequence.entity_name == entity_key).with_for_update().first()
 
-    seq.current_value += 1
-    db.flush()
-    return f"{prefix}-{seq.current_value:0{padding}d}"
+        seq.current_value += 1
+        db.commit()
+        return f"{prefix}-{seq.current_value:0{padding}d}"
 
 
 INTERNAL_EVENT_KEYWORDS = [
@@ -382,7 +400,7 @@ class CrmService:
         limit: int = 50,
         offset: int = 0
     ) -> List[Dict[str, Any]]:
-        query = self.db.query(Account).filter(Account.is_active == True)
+        query = self.db.query(Account)
         if search:
             s = f"%{search.strip().lower()}%"
             query = query.filter(
@@ -396,7 +414,6 @@ class CrmService:
 
         accounts = query.order_by(Account.name.asc()).offset(offset).limit(limit).all()
 
-        # Batch load contact & lead counts
         acc_ids = [a.id for a in accounts]
         contact_counts = dict(
             self.db.query(Contact.account_id, func.count(Contact.id))
@@ -424,7 +441,8 @@ class CrmService:
                 "isActive": a.is_active,
                 "contactCount": contact_counts.get(a.id, 0),
                 "leadCount": lead_counts.get(a.id, 0),
-                "createdAt": a.created_at.isoformat() if a.created_at else None
+                "createdAt": a.created_at.isoformat() if a.created_at else None,
+                "updatedAt": a.updated_at.isoformat() if a.updated_at else None
             }
             for a in accounts
         ]
@@ -445,6 +463,29 @@ class CrmService:
             Lead.account_id == acc.id
         ).order_by(Lead.created_at.desc()).all()
 
+        contacts_list = [
+            {
+                "id": c.id,
+                "contactId": c.contact_id,
+                "name": c.name,
+                "email": c.email,
+                "mobileNumber": c.mobile_number,
+                "designation": c.designation
+            }
+            for c in contacts
+        ]
+        leads_list = [
+            {
+                "id": l.id,
+                "leadId": l.lead_id,
+                "leadName": l.lead_name or l.lead_id,
+                "businessArea": l.business_area,
+                "lifecycleStatus": l.lifecycle_status,
+                "requestedProductService": l.requested_product_service
+            }
+            for l in leads
+        ]
+
         return {
             "account": {
                 "id": acc.id,
@@ -458,30 +499,13 @@ class CrmService:
                 "isActive": acc.is_active,
                 "contactCount": len(contacts),
                 "leadCount": len(leads),
-                "createdAt": acc.created_at.isoformat() if acc.created_at else None
+                "contacts": contacts_list,
+                "leads": leads_list,
+                "createdAt": acc.created_at.isoformat() if acc.created_at else None,
+                "updatedAt": acc.updated_at.isoformat() if acc.updated_at else None
             },
-            "contacts": [
-                {
-                    "id": c.id,
-                    "contactId": c.contact_id,
-                    "name": c.name,
-                    "email": c.email,
-                    "mobileNumber": c.mobile_number,
-                    "designation": c.designation
-                }
-                for c in contacts
-            ],
-            "leads": [
-                {
-                    "id": l.id,
-                    "leadId": l.lead_id,
-                    "leadName": l.lead_name,
-                    "businessArea": l.business_area,
-                    "lifecycleStatus": l.lifecycle_status,
-                    "requestedProductService": l.requested_product_service
-                }
-                for l in leads
-            ]
+            "contacts": contacts_list,
+            "leads": leads_list
         }
 
     def create_account(
@@ -557,8 +581,90 @@ class CrmService:
             "isActive": account.is_active,
             "contactCount": 0,
             "leadCount": 0,
-            "createdAt": account.created_at.isoformat() if account.created_at else None
+            "createdAt": account.created_at.isoformat() if account.created_at else None,
+            "updatedAt": account.updated_at.isoformat() if account.updated_at else None
         }
+
+    def update_account(
+        self,
+        actor: CurrentUser,
+        account_id: str,
+        payload: AccountUpdate,
+        request: Optional[Request] = None
+    ) -> Dict[str, Any]:
+        acc = self.db.query(Account).filter(
+            or_(Account.id == account_id, Account.account_id == account_id)
+        ).first()
+        if not acc:
+            raise NotFoundError(f"Account '{account_id}' not found.")
+
+        before_state = {
+            "name": acc.name,
+            "industry": acc.industry,
+            "website": acc.website,
+            "phone": acc.phone,
+            "email": acc.email,
+            "address": acc.address,
+            "isActive": acc.is_active
+        }
+
+        if payload.name is not None:
+            clean_name = payload.name.strip()
+            if not clean_name:
+                raise ValidationError("Account name cannot be empty.")
+            norm_name = normalize_text(clean_name)
+            conflict = self.db.query(Account).filter(
+                func.lower(func.trim(Account.name)) == norm_name,
+                Account.id != acc.id,
+                Account.is_active == True
+            ).first()
+            if conflict:
+                raise ConflictError(f"Another active account with name '{conflict.name}' already exists ({conflict.account_id}).")
+            acc.name = clean_name
+
+        if payload.industry is not None:
+            acc.industry = payload.industry.strip() if payload.industry else None
+        if payload.website is not None:
+            acc.website = payload.website.strip() if payload.website else None
+        if payload.phone is not None:
+            acc.phone = payload.phone.strip() if payload.phone else None
+        if payload.email is not None:
+            acc.email = payload.email.strip() if payload.email else None
+        if payload.address is not None:
+            acc.address = payload.address.strip() if payload.address else None
+        if payload.isActive is not None:
+            acc.is_active = payload.isActive
+
+        self.db.commit()
+        self.db.refresh(acc)
+
+        after_state = {
+            "name": acc.name,
+            "industry": acc.industry,
+            "website": acc.website,
+            "phone": acc.phone,
+            "email": acc.email,
+            "address": acc.address,
+            "isActive": acc.is_active
+        }
+
+        self.audit_service.log(
+            action="CRM_ACCOUNT_UPDATED",
+            request=request,
+            performed_by_employee_id=str(actor.id) if actor.id else None,
+            performed_by_name=actor.name or actor.username,
+            role_used=actor.active_role,
+            target_info={
+                "recordId": acc.id,
+                "accountCode": acc.account_id,
+                "accountName": acc.name,
+                "details": f"Updated CRM Account '{acc.name}' ({acc.account_id})."
+            },
+            before_state=before_state,
+            after_state=after_state
+        )
+
+        return self.get_account(acc.id)["account"]
 
     # =========================================================================
     # 3. CONTACT MANAGEMENT SERVICES
@@ -572,7 +678,7 @@ class CrmService:
         limit: int = 50,
         offset: int = 0
     ) -> List[Dict[str, Any]]:
-        query = self.db.query(Contact).options(joinedload(Contact.account)).filter(Contact.is_active == True)
+        query = self.db.query(Contact).options(joinedload(Contact.account))
 
         if account_id:
             if include_unassigned:
@@ -603,7 +709,8 @@ class CrmService:
                 "mobileNumber": c.mobile_number,
                 "designation": c.designation,
                 "isActive": c.is_active,
-                "createdAt": c.created_at.isoformat() if c.created_at else None
+                "createdAt": c.created_at.isoformat() if c.created_at else None,
+                "updatedAt": c.updated_at.isoformat() if c.updated_at else None
             }
             for c in contacts
         ]
@@ -615,17 +722,38 @@ class CrmService:
         if not c:
             raise NotFoundError(f"Contact '{contact_id}' not found.")
 
+        leads = self.db.query(Lead).filter(
+            Lead.contact_id == c.id
+        ).order_by(Lead.created_at.desc()).all()
+
         return {
             "id": c.id,
             "contactId": c.contact_id,
             "accountId": c.account_id,
             "accountName": c.account.name if c.account else None,
+            "account": {
+                "id": c.account.id,
+                "accountId": c.account.account_id,
+                "name": c.account.name
+            } if c.account else None,
             "name": c.name,
             "email": c.email,
             "mobileNumber": c.mobile_number,
             "designation": c.designation,
             "isActive": c.is_active,
-            "createdAt": c.created_at.isoformat() if c.created_at else None
+            "createdAt": c.created_at.isoformat() if c.created_at else None,
+            "updatedAt": c.updated_at.isoformat() if c.updated_at else None,
+            "leads": [
+                {
+                    "id": l.id,
+                    "leadId": l.lead_id,
+                    "leadName": l.lead_name or l.lead_id,
+                    "businessArea": l.business_area,
+                    "lifecycleStatus": l.lifecycle_status,
+                    "requestedProductService": l.requested_product_service
+                }
+                for l in leads
+            ]
         }
 
     def create_contact(
@@ -694,7 +822,7 @@ class CrmService:
             self.db.refresh(contact)
         except IntegrityError:
             self.db.rollback()
-            raise ConflictError("A contact with this identifying information already exists.")
+            raise ValidationError("Could not save contact due to a database constraint.")
 
         self.audit_service.log(
             action="CRM_CONTACT_CREATED",
@@ -721,15 +849,95 @@ class CrmService:
             "mobileNumber": contact.mobile_number,
             "designation": contact.designation,
             "isActive": contact.is_active,
-            "createdAt": contact.created_at.isoformat() if contact.created_at else None
+            "createdAt": contact.created_at.isoformat() if contact.created_at else None,
+            "updatedAt": contact.updated_at.isoformat() if contact.updated_at else None,
+            "leads": []
         }
+
+    def update_contact(
+        self,
+        actor: CurrentUser,
+        contact_id: str,
+        payload: ContactUpdate,
+        request: Optional[Request] = None
+    ) -> Dict[str, Any]:
+        c = self.db.query(Contact).options(joinedload(Contact.account)).filter(
+            or_(Contact.id == contact_id, Contact.contact_id == contact_id)
+        ).first()
+        if not c:
+            raise NotFoundError(f"Contact '{contact_id}' not found.")
+
+        before_state = {
+            "name": c.name,
+            "accountId": c.account_id,
+            "email": c.email,
+            "mobileNumber": c.mobile_number,
+            "designation": c.designation,
+            "isActive": c.is_active
+        }
+
+        if payload.name is not None:
+            clean_name = payload.name.strip()
+            if not clean_name:
+                raise ValidationError("Contact name cannot be empty.")
+            c.name = clean_name
+
+        if payload.accountId is not None:
+            if payload.accountId == "":
+                c.account_id = None
+            else:
+                account = self.db.query(Account).filter(
+                    or_(Account.id == payload.accountId, Account.account_id == payload.accountId),
+                    Account.is_active == True
+                ).first()
+                if not account:
+                    raise NotFoundError(f"Account '{payload.accountId}' does not exist or is inactive.")
+                c.account_id = account.id
+
+        if payload.email is not None:
+            c.email = payload.email.strip().lower() if payload.email else None
+        if payload.mobileNumber is not None:
+            c.mobile_number = payload.mobileNumber.strip() if payload.mobileNumber else None
+        if payload.designation is not None:
+            c.designation = payload.designation.strip() if payload.designation else None
+        if payload.isActive is not None:
+            c.is_active = payload.isActive
+
+        self.db.commit()
+        self.db.refresh(c)
+
+        after_state = {
+            "name": c.name,
+            "accountId": c.account_id,
+            "email": c.email,
+            "mobileNumber": c.mobile_number,
+            "designation": c.designation,
+            "isActive": c.is_active
+        }
+
+        self.audit_service.log(
+            action="CRM_CONTACT_UPDATED",
+            request=request,
+            performed_by_employee_id=str(actor.id) if actor.id else None,
+            performed_by_name=actor.name or actor.username,
+            role_used=actor.active_role,
+            target_info={
+                "recordId": c.id,
+                "contactCode": c.contact_id,
+                "contactName": c.name,
+                "details": f"Updated CRM Contact '{c.name}' ({c.contact_id})."
+            },
+            before_state=before_state,
+            after_state=after_state
+        )
+
+        return self.get_contact(c.id)
 
     # =========================================================================
     # 4. LEAD MANAGEMENT SERVICES
     # =========================================================================
 
     def _validate_assignee(self, user_id: str) -> User:
-        """Validates that a target assignee is an active portal user with an active CRM role."""
         user = self.db.query(User).filter(User.id == user_id, User.is_hard_deleted == False).first()
         if not user or user.status != "active":
             raise ValidationError(f"Target user '{user_id}' does not exist or is not active.")
@@ -748,41 +956,6 @@ class CrmService:
             raise ValidationError(f"User '{user.username}' does not have an eligible CRM role.")
 
         return user
-
-    def check_open_lead_duplicate(
-        self,
-        account_id: Optional[str],
-        contact_id: str,
-        normalized_requirement: Optional[str],
-        exclude_lead_id: Optional[str] = None
-    ) -> Optional[Lead]:
-        """
-        Duplicate open lead rule:
-        - When normalized_requirement is empty/None: product is unknown, no duplicate conflict checked.
-        - When an Account is provided: compare against account_id + normalized_requirement where lifecycle_status == 'Open'.
-        - When no Account is provided: compare against contact_id + normalized_requirement where lifecycle_status == 'Open' and account_id is None.
-        """
-        if not normalized_requirement:
-            return None
-
-        if account_id:
-            query = self.db.query(Lead).filter(
-                Lead.account_id == account_id,
-                Lead.normalized_requirement == normalized_requirement,
-                Lead.lifecycle_status == "Open"
-            )
-        else:
-            query = self.db.query(Lead).filter(
-                Lead.contact_id == contact_id,
-                Lead.account_id.is_(None),
-                Lead.normalized_requirement == normalized_requirement,
-                Lead.lifecycle_status == "Open"
-            )
-
-        if exclude_lead_id:
-            query = query.filter(Lead.id != exclude_lead_id)
-
-        return query.first()
 
     def create_lead(
         self,
@@ -812,10 +985,9 @@ class CrmService:
             if contact.account_id and contact.account_id != account.id:
                 raise ValidationError("The selected Contact belongs to a different Account.")
             elif not contact.account_id:
-                # Link contact to account
                 contact.account_id = account.id
         elif contact.account_id:
-            # If account was omitted on lead creation, auto-populate from contact's existing account
+            # Auto-populate lead's account from contact's account
             account = self.db.query(Account).filter(
                 Account.id == contact.account_id,
                 Account.is_active == True
@@ -826,79 +998,63 @@ class CrmService:
         if payload.assignedToUserId:
             assignee = self._validate_assignee(payload.assignedToUserId)
 
-        # 4. Normalize requirement (optional for early enquiries and prospective clients)
+        # 4. Multi-Select Requirement Types
+        req_types = payload.requirementTypes or ([payload.requirementType] if payload.requirementType else ["Consulting"])
+        req_types = normalize_and_validate_req_types(req_types)
+        primary_req_type = req_types[0] if req_types else "Consulting"
+
         clean_req = payload.requestedProductService.strip() if payload.requestedProductService and payload.requestedProductService.strip() else None
         norm_req = normalize_text(clean_req) if clean_req else None
-
-        # 5. Check duplicate open lead only if requirement specification is known
         acc_id = account.id if account else None
-        if norm_req:
-            dup_lead = self.check_open_lead_duplicate(
+
+        # Lead Title is optional per Section 4
+        clean_title = payload.leadName.strip() if payload.leadName and payload.leadName.strip() else None
+
+        lead = None
+        for attempt in range(5):
+            lead_code = get_next_sequence_id(self.db, "LEAD", "LEAD")
+            lead = Lead(
+                lead_id=lead_code,
+                lead_name=clean_title,
+                business_area=payload.businessArea,
+                requirement_type=primary_req_type,
+                requirement_summary=payload.requirementSummary.strip() if payload.requirementSummary else None,
+                requested_product_service=clean_req,
+                normalized_requirement=norm_req,
+                lead_source=payload.leadSource or "Website",
                 account_id=acc_id,
                 contact_id=contact.id,
-                normalized_requirement=norm_req
+                assigned_to_user_id=assignee.id if assignee else None,
+                lifecycle_status="Open",
+                communication_channel=payload.communicationChannel or "Email",
+                remarks=payload.remarks.strip() if payload.remarks else None,
+                next_follow_up_date=payload.nextFollowUpDate,
+                next_follow_up_action=payload.nextFollowUpAction.strip() if payload.nextFollowUpAction else None,
+                website_link=payload.websiteLink.strip() if payload.websiteLink else None,
+                location=payload.location.strip() if payload.location else None,
+                site_name=payload.siteName.strip() if payload.siteName else None,
+                created_by_id=str(actor.id) if actor.id else None
             )
-            if dup_lead:
-                target_identity = f"Account '{account.name}'" if account else f"Contact '{contact.name}'"
-                raise ConflictError(
-                    message=f"An open lead already exists for {target_identity} with requirement '{dup_lead.requested_product_service}' ({dup_lead.lead_id}).",
-                    details={
-                        "existingLeadId": dup_lead.id,
-                        "existingLeadNumber": dup_lead.lead_id,
-                        "existingLeadName": dup_lead.lead_name,
-                        "lifecycleStatus": dup_lead.lifecycle_status,
-                        "assignedToUserId": dup_lead.assigned_to_user_id
-                    }
-                )
 
-        lead_code = get_next_sequence_id(self.db, "LEAD", "LEAD")
-        lead = Lead(
-            lead_id=lead_code,
-            lead_name=payload.leadName.strip(),
-            business_area=payload.businessArea,
-            requirement_type=payload.requirementType,
-            requirement_summary=payload.requirementSummary.strip() if payload.requirementSummary else None,
-            requested_product_service=clean_req,
-            normalized_requirement=norm_req,
-            lead_source=payload.leadSource or "Website",
-            account_id=acc_id,
-            contact_id=contact.id,
-            assigned_to_user_id=assignee.id if assignee else None,
-            lifecycle_status="Open",
-            communication_channel=payload.communicationChannel or "Email",
-            remarks=payload.remarks.strip() if payload.remarks else None,
-            next_follow_up_date=payload.nextFollowUpDate,
-            next_follow_up_action=payload.nextFollowUpAction.strip() if payload.nextFollowUpAction else None,
-            website_link=payload.websiteLink.strip() if payload.websiteLink else None,
-            location=payload.location.strip() if payload.location else None,
-            site_name=payload.siteName.strip() if payload.siteName else None,
-            created_by_id=str(actor.id) if actor.id else None
-        )
+            # Add normalized requirement type relationship records
+            for rt in req_types:
+                lead.requirement_types.append(LeadRequirementType(requirement_type=rt))
 
-        try:
-            self.db.add(lead)
-            self.db.commit()
-            self.db.refresh(lead)
-        except IntegrityError:
-            self.db.rollback()
-            if norm_req:
-                collision = self.check_open_lead_duplicate(
-                    account_id=acc_id,
-                    contact_id=contact.id,
-                    normalized_requirement=norm_req
-                )
-                if collision:
-                    target_identity = f"Account '{account.name}'" if account else f"Contact '{contact.name}'"
-                    raise ConflictError(
-                        message=f"An open lead already exists for {target_identity} with requirement '{collision.requested_product_service}' ({collision.lead_id}).",
-                        details={
-                            "existingLeadId": collision.id,
-                            "existingLeadNumber": collision.lead_id,
-                            "existingLeadName": collision.lead_name,
-                            "lifecycleStatus": collision.lifecycle_status
-                        }
-                    )
-            raise ValidationError("Could not save lead due to a database integrity conflict.")
+            try:
+                self.db.add(lead)
+                self.db.commit()
+                self.db.refresh(lead)
+                break
+            except IntegrityError as e:
+                self.db.rollback()
+                err_str = str(e).lower()
+                if "lead_id" in err_str or "leads.lead_id" in err_str:
+                    logger.warning(f"Sequence collision on {lead_code}, retrying ({attempt+1}/5)...")
+                    continue
+                logger.error(f"IntegrityError creating lead: {e}")
+                raise ValidationError("Could not save lead due to a database integrity constraint.")
+        else:
+            raise ValidationError("Could not generate a unique Lead ID after multiple attempts.")
 
         self.audit_service.log(
             action="CRM_LEAD_CREATED",
@@ -909,11 +1065,11 @@ class CrmService:
             target_info={
                 "recordId": lead.id,
                 "leadNumber": lead.lead_id,
-                "leadName": lead.lead_name,
+                "leadName": lead.lead_name or lead.lead_id,
                 "businessArea": lead.business_area,
-                "requirement": lead.requested_product_service,
+                "requirementTypes": req_types,
                 "assignedTo": assignee.username if assignee else None,
-                "details": f"Created Lead '{lead.lead_name}' ({lead.lead_id}) for {lead.business_area}."
+                "details": f"Created Lead '{lead.lead_name or lead.lead_id}' ({lead.lead_id}) for {lead.business_area}."
             }
         )
 
@@ -926,7 +1082,7 @@ class CrmService:
         payload: LeadUpdate,
         request: Optional[Request] = None
     ) -> Dict[str, Any]:
-        lead = self.db.query(Lead).filter(
+        lead = self.db.query(Lead).options(joinedload(Lead.requirement_types)).filter(
             or_(Lead.id == lead_id, Lead.lead_id == lead_id)
         ).first()
         if not lead:
@@ -938,7 +1094,7 @@ class CrmService:
             "assignedTo": lead.assigned_to_user_id
         }
 
-        # Validate Contact if changed or provided
+        # Validate Contact if changed
         if "contactId" in payload.model_fields_set:
             if not payload.contactId or not str(payload.contactId).strip():
                 raise ValidationError("Primary Contact is mandatory and cannot be cleared.")
@@ -955,7 +1111,7 @@ class CrmService:
         if not contact:
             raise ValidationError("A valid Contact is required for the Lead.")
 
-        # Validate Account if changed or provided
+        # Validate Account if changed
         if "accountId" in payload.model_fields_set:
             if not payload.accountId:
                 lead.account_id = None
@@ -984,7 +1140,6 @@ class CrmService:
             else:
                 raise ValidationError("Cannot clear Account while the selected Contact belongs to an Account. Please select an unassigned Contact first.")
 
-
         # Validate Assignee if changed
         assignee_changed = False
         if payload.assignedToUserId is not None:
@@ -998,41 +1153,35 @@ class CrmService:
                     lead.assigned_to_user_id = new_assignee.id
                     assignee_changed = True
 
-        # Validate requirement change or duplicate check
-        req_changed = False
         if payload.requestedProductService is not None:
             clean_req = payload.requestedProductService.strip() if payload.requestedProductService.strip() else None
             norm = normalize_text(clean_req) if clean_req else None
-            if norm != lead.normalized_requirement or clean_req != lead.requested_product_service:
-                lead.requested_product_service = clean_req
-                lead.normalized_requirement = norm
-                req_changed = True
+            lead.requested_product_service = clean_req
+            lead.normalized_requirement = norm
 
         status_changed = False
         if payload.lifecycleStatus and payload.lifecycleStatus != lead.lifecycle_status:
             lead.lifecycle_status = payload.lifecycleStatus
             status_changed = True
 
-        # If lead is Open and requirement is known, verify duplicate rule
-        if lead.lifecycle_status == "Open" and lead.normalized_requirement and (req_changed or status_changed or payload.accountId is not None or payload.contactId):
-            dup = self.check_open_lead_duplicate(
-                account_id=lead.account_id,
-                contact_id=lead.contact_id,
-                normalized_requirement=lead.normalized_requirement,
-                exclude_lead_id=lead.id
-            )
-            if dup:
-                raise ConflictError(
-                    message=f"An open lead already exists with requirement '{dup.requested_product_service}' ({dup.lead_id}).",
-                    details={"existingLeadId": dup.id, "existingLeadNumber": dup.lead_id}
-                )
+        # Lead Title can be changed or cleared (Section 4)
+        if "leadName" in payload.model_fields_set:
+            lead.lead_name = payload.leadName.strip() if payload.leadName and payload.leadName.strip() else None
 
-        if payload.leadName:
-            lead.lead_name = payload.leadName.strip()
         if payload.businessArea:
             lead.business_area = payload.businessArea
-        if payload.requirementType:
-            lead.requirement_type = payload.requirementType
+
+        # Requirement Types update
+        if payload.requirementTypes is not None or payload.requirementType is not None:
+            types = payload.requirementTypes or ([payload.requirementType] if payload.requirementType else ["Consulting"])
+            req_types = normalize_and_validate_req_types(types)
+            lead.requirement_type = req_types[0]
+
+            # Replace relationship rows
+            self.db.query(LeadRequirementType).filter(LeadRequirementType.lead_id == lead.id).delete()
+            for rt in req_types:
+                self.db.add(LeadRequirementType(lead_id=lead.id, requirement_type=rt))
+
         if payload.requirementSummary is not None:
             lead.requirement_summary = payload.requirementSummary.strip() if payload.requirementSummary else None
         if payload.leadSource:
@@ -1057,9 +1206,10 @@ class CrmService:
         try:
             self.db.commit()
             self.db.refresh(lead)
-        except IntegrityError:
+        except IntegrityError as e:
             self.db.rollback()
-            raise ConflictError("Update failed due to a duplicate open lead constraint.")
+            logger.error(f"IntegrityError updating lead: {e}")
+            raise ValidationError("Update failed due to a database integrity constraint.")
 
         if assignee_changed:
             self.audit_service.log(
@@ -1116,21 +1266,6 @@ class CrmService:
             raise NotFoundError(f"Lead '{lead_id}' not found.")
 
         before_status = lead.lifecycle_status
-        if clean_status == "Open" and before_status != "Open":
-            # Check duplicate rule before reopening only if requirement is known
-            if lead.normalized_requirement:
-                dup = self.check_open_lead_duplicate(
-                    account_id=lead.account_id,
-                    contact_id=lead.contact_id,
-                    normalized_requirement=lead.normalized_requirement,
-                    exclude_lead_id=lead.id
-                )
-                if dup:
-                    raise ConflictError(
-                        message=f"Cannot reopen: another open lead already exists with requirement '{dup.requested_product_service}' ({dup.lead_id}).",
-                        details={"existingLeadId": dup.id, "existingLeadNumber": dup.lead_id}
-                    )
-
         lead.lifecycle_status = clean_status
         if remarks:
             lead.remarks = remarks.strip()
@@ -1139,9 +1274,10 @@ class CrmService:
         try:
             self.db.commit()
             self.db.refresh(lead)
-        except IntegrityError:
+        except IntegrityError as e:
             self.db.rollback()
-            raise ConflictError("Reopening lead violated duplicate open lead constraint.")
+            logger.error(f"IntegrityError transitioning status: {e}")
+            raise ValidationError("Status update failed due to a database constraint.")
 
         self.audit_service.log(
             action="CRM_LEAD_STATUS_CHANGED",
@@ -1184,7 +1320,8 @@ class CrmService:
                 joinedload(Lead.account),
                 joinedload(Lead.contact).joinedload(Contact.account),
                 joinedload(Lead.assigned_to),
-                joinedload(Lead.created_by)
+                joinedload(Lead.created_by),
+                joinedload(Lead.requirement_types)
             )
         )
 
@@ -1194,13 +1331,12 @@ class CrmService:
         if clean_view == "open":
             query = query.filter(Lead.lifecycle_status == "Open")
         elif clean_view == "all":
-            pass  # all leads
+            pass
         elif clean_view == "unqualified":
             query = query.filter(Lead.lifecycle_status == "Disqualified")
         elif clean_view == "my_leads":
             query = query.filter(Lead.assigned_to_user_id == str(actor.id))
         elif clean_view == "follow_ups_due":
-            # Due within 24 hours (today or tomorrow) or overdue
             due_window = date.today() + timedelta(days=1)
             query = query.filter(
                 Lead.lifecycle_status == "Open",
@@ -1208,19 +1344,30 @@ class CrmService:
                 Lead.next_follow_up_date <= due_window
             )
 
-        # 2. Additional Facet Filters
-        if business_area:
+        # 2. Facet Filters
+        if business_area and business_area != "ALL":
             query = query.filter(Lead.business_area == business_area.strip())
-        if requirement_type:
-            query = query.filter(Lead.requirement_type == requirement_type.strip())
-        if lifecycle_status and clean_view == "all":
+
+        if requirement_type and requirement_type != "ALL":
+            clean_rt = requirement_type.strip()
+            # Match either the normalized table or legacy column
+            query = query.filter(
+                or_(
+                    Lead.requirement_types.any(LeadRequirementType.requirement_type == clean_rt),
+                    Lead.requirement_type == clean_rt
+                )
+            )
+
+        if lifecycle_status and lifecycle_status != "ALL" and clean_view == "all":
             query = query.filter(Lead.lifecycle_status == lifecycle_status.strip())
+
         if assigned_to_user_id:
             query = query.filter(Lead.assigned_to_user_id == assigned_to_user_id.strip())
+
         if account_id:
             query = query.filter(Lead.account_id == account_id.strip())
 
-        # 3. Global Search across multiple fields
+        # 3. Global Search
         if search:
             s = f"%{search.strip().lower()}%"
             query = query.outerjoin(Lead.account).outerjoin(Lead.contact).filter(
@@ -1232,17 +1379,18 @@ class CrmService:
                     func.lower(Lead.site_name).like(s),
                     func.lower(Contact.name).like(s),
                     func.lower(Contact.email).like(s),
-                    func.lower(Account.name).like(s)
+                    func.lower(Account.name).like(s),
+                    Lead.requirement_types.any(func.lower(LeadRequirementType.requirement_type).like(s))
                 )
             )
 
         total_count = query.count()
 
-        # 4. Allowlisted Sorting
+        # 4. Sorting
         sortable_fields = {
             "created_at": Lead.created_at,
             "lead_id": Lead.lead_id,
-            "lead_name": Lead.lead_name,
+            "lead_name": func.coalesce(Lead.lead_name, Lead.lead_id),
             "next_follow_up_date": Lead.next_follow_up_date,
             "last_connected_date": Lead.last_connected_date,
             "lifecycle_status": Lead.lifecycle_status
@@ -1278,7 +1426,8 @@ class CrmService:
                 joinedload(Lead.account),
                 joinedload(Lead.contact).joinedload(Contact.account),
                 joinedload(Lead.assigned_to),
-                joinedload(Lead.created_by)
+                joinedload(Lead.created_by),
+                joinedload(Lead.requirement_types)
             )
             .filter(or_(Lead.id == lead_id, Lead.lead_id == lead_id))
             .first()
@@ -1289,6 +1438,15 @@ class CrmService:
         return self._format_lead(lead)
 
     def _format_lead(self, lead: Lead) -> Dict[str, Any]:
+        # Multi-select requirement types
+        types = [rt.requirement_type for rt in lead.requirement_types] if lead.requirement_types else []
+        if not types and lead.requirement_type:
+            types = [lead.requirement_type]
+        if not types:
+            types = ["Consulting"]
+
+        display_name = lead.lead_name or lead.lead_id
+
         account_obj = None
         if lead.account:
             account_obj = {
@@ -1343,8 +1501,10 @@ class CrmService:
             "id": lead.id,
             "leadId": lead.lead_id,
             "leadName": lead.lead_name,
+            "displayName": display_name,
             "businessArea": lead.business_area,
-            "requirementType": lead.requirement_type,
+            "requirementType": ", ".join(types),
+            "requirementTypes": types,
             "requirementSummary": lead.requirement_summary,
             "requestedProductService": lead.requested_product_service,
             "leadSource": lead.lead_source,
@@ -1376,7 +1536,6 @@ class CrmService:
             "createdBy": created_by_obj
         }
 
-
     # =========================================================================
     # 5. COMMUNICATION HISTORY SERVICES
     # =========================================================================
@@ -1398,8 +1557,8 @@ class CrmService:
             {
                 "id": c.id,
                 "communicationId": c.communication_id,
-                "leadId": c.lead_id,
-                "communicationDate": c.communication_date.isoformat() if c.communication_date else None,
+                "leadId": lead.lead_id,
+                "communicationDate": c.communication_date.isoformat(),
                 "channel": c.channel,
                 "eventType": c.event_type,
                 "summary": c.summary,
@@ -1431,8 +1590,8 @@ class CrmService:
             communication_id=comm_code,
             lead_id=lead.id,
             communication_date=comm_date,
-            channel=payload.channel.strip(),
-            event_type=payload.eventType.strip(),
+            channel=payload.channel,
+            event_type=payload.eventType,
             summary=payload.summary.strip() if payload.summary else None,
             outcome=payload.outcome.strip() if payload.outcome else None,
             next_action=payload.nextAction.strip() if payload.nextAction else None,
@@ -1441,22 +1600,18 @@ class CrmService:
         )
         self.db.add(comm)
 
-        # Update last_connected_date ONLY if qualifying client interaction
         if is_qualifying_client_interaction(payload.eventType):
             lead.last_connected_date = comm_date
 
-        # Update follow-up info if provided
         if payload.followUpDate:
             lead.next_follow_up_date = payload.followUpDate
-            if payload.nextAction:
-                lead.next_follow_up_action = payload.nextAction.strip()
+        if payload.nextAction:
+            lead.next_follow_up_action = payload.nextAction.strip()
 
-        # Update summary remarks without deleting communication history
         if payload.summary:
             lead.remarks = f"{payload.eventType.strip()}: {payload.summary.strip()}"
 
         lead.updated_by_id = str(actor.id) if actor.id else None
-
         self.db.commit()
         self.db.refresh(comm)
 
@@ -1468,18 +1623,19 @@ class CrmService:
             role_used=actor.active_role,
             target_info={
                 "recordId": comm.id,
-                "leadNumber": lead.lead_id,
                 "communicationCode": comm.communication_id,
+                "leadId": lead.lead_id,
+                "channel": comm.channel,
                 "eventType": comm.event_type,
-                "details": f"Logged interaction '{comm.event_type}' for Lead '{lead.lead_id}'."
+                "details": f"Logged {comm.channel} interaction ({comm.event_type}) for Lead {lead.lead_id}."
             }
         )
 
         return {
             "id": comm.id,
             "communicationId": comm.communication_id,
-            "leadId": comm.lead_id,
-            "communicationDate": comm.communication_date.isoformat() if comm.communication_date else None,
+            "leadId": lead.lead_id,
+            "communicationDate": comm.communication_date.isoformat(),
             "channel": comm.channel,
             "eventType": comm.event_type,
             "summary": comm.summary,
@@ -1492,43 +1648,30 @@ class CrmService:
         }
 
     # =========================================================================
-    # 6. DASHBOARD METRICS SERVICES
+    # 6. DASHBOARD METRICS & ASSIGNEES
     # =========================================================================
 
     def get_dashboard_metrics(self, actor: CurrentUser) -> Dict[str, Any]:
-        """
-        Calculates live dashboard metrics from database:
-        - Total Leads
-        - Open Leads
-        - Qualified Leads
-        - Disqualified Leads
-        - My Leads
-        - Follow-ups Due (within next 24 hours)
-        - Overdue Follow-ups (before current UTC time)
-        """
-        now = datetime.now(timezone.utc)
-        due_window = now + timedelta(hours=24)
-
         total_leads = self.db.query(func.count(Lead.id)).scalar() or 0
         open_leads = self.db.query(func.count(Lead.id)).filter(Lead.lifecycle_status == "Open").scalar() or 0
         qualified_leads = self.db.query(func.count(Lead.id)).filter(Lead.lifecycle_status == "Qualified").scalar() or 0
         disqualified_leads = self.db.query(func.count(Lead.id)).filter(Lead.lifecycle_status == "Disqualified").scalar() or 0
 
-        my_leads = self.db.query(func.count(Lead.id)).filter(
-            Lead.assigned_to_user_id == str(actor.id)
-        ).scalar() or 0
+        my_leads = 0
+        if actor and actor.id:
+            my_leads = self.db.query(func.count(Lead.id)).filter(Lead.assigned_to_user_id == str(actor.id)).scalar() or 0
 
+        due_window = date.today() + timedelta(days=1)
         follow_ups_due = self.db.query(func.count(Lead.id)).filter(
             Lead.lifecycle_status == "Open",
             Lead.next_follow_up_date.isnot(None),
-            Lead.next_follow_up_date <= due_window,
-            Lead.next_follow_up_date >= now - timedelta(hours=2)
+            Lead.next_follow_up_date <= due_window
         ).scalar() or 0
 
         overdue_follow_ups = self.db.query(func.count(Lead.id)).filter(
             Lead.lifecycle_status == "Open",
             Lead.next_follow_up_date.isnot(None),
-            Lead.next_follow_up_date < now
+            Lead.next_follow_up_date < date.today()
         ).scalar() or 0
 
         return {
@@ -1543,37 +1686,426 @@ class CrmService:
         }
 
     def list_eligible_assignees(self) -> List[Dict[str, Any]]:
-        """
-        Returns list of active portal users who have active CRM membership with an eligible CRM role.
-        """
         crm_mod = self._get_crm_module()
         memberships = (
             self.db.query(UserModuleMembership)
-            .options(
-                joinedload(UserModuleMembership.user),
-                joinedload(UserModuleMembership.role)
-            )
-            .filter(
-                UserModuleMembership.module_id == crm_mod.id,
-                UserModuleMembership.is_active == True
-            )
+            .options(joinedload(UserModuleMembership.user), joinedload(UserModuleMembership.role))
+            .filter(UserModuleMembership.module_id == crm_mod.id, UserModuleMembership.is_active == True)
             .all()
         )
 
-        results = []
-        for mem in memberships:
-            if mem.user and mem.user.status == "active" and not mem.user.is_hard_deleted:
-                if mem.role and mem.role.code.startswith("CRM_"):
-                    results.append({
-                        "id": mem.user.id,
-                        "name": mem.user.name or mem.user.username,
-                        "username": mem.user.username,
-                        "email": mem.user.email,
-                        "roleCode": mem.role.code,
-                        "roleName": mem.role.name
+        assignees = []
+        for m in memberships:
+            u = m.user
+            if u and not u.is_hard_deleted and u.status == "active":
+                if m.role and m.role.code.startswith("CRM_"):
+                    assignees.append({
+                        "id": u.id,
+                        "name": u.name or u.username,
+                        "username": u.username,
+                        "email": u.email,
+                        "roleCode": m.role.code,
+                        "roleName": m.role.name
                     })
-        return sorted(results, key=lambda x: x["name"])
+
+        assignees.sort(key=lambda x: x["name"])
+        return assignees
+
+    # =========================================================================
+    # 7. CHARGE-READY BUSINESS DOMAIN SERVICES (PHASE 1 SPECIFICATION)
+    # =========================================================================
+
+    def create_consulting_engagement(
+        self,
+        actor: CurrentUser,
+        payload: ConsultingEngagementCreate
+    ) -> ConsultingEngagement:
+        acc = self.db.query(Account).filter(Account.id == payload.accountId).first()
+        if not acc:
+            raise NotFoundError(f"Account '{payload.accountId}' not found.")
+
+        eng_code = get_next_sequence_id(self.db, "ENGAGEMENT", "ENG")
+        engagement = ConsultingEngagement(
+            engagement_id=eng_code,
+            account_id=acc.id,
+            contact_id=payload.contactId,
+            lead_id=payload.leadId,
+            title=payload.title,
+            scope_description=payload.scopeDescription,
+            contract_start_date=payload.contractStartDate,
+            contract_end_date=payload.contractEndDate,
+            duration_months=payload.durationMonths,
+            agreed_fee=Decimal(str(payload.agreedFee)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+            billing_arrangement=payload.billingArrangement or "Monthly",
+            status=payload.status or "Draft"
+        )
+        self.db.add(engagement)
+        self.db.commit()
+        self.db.refresh(engagement)
+        return engagement
+
+    def create_sample_submission(
+        self,
+        actor: CurrentUser,
+        payload: SampleSubmissionCreate
+    ) -> SampleSubmission:
+        acc = self.db.query(Account).filter(Account.id == payload.accountId).first()
+        if not acc:
+            raise NotFoundError(f"Account '{payload.accountId}' not found.")
+
+        smp_code = get_next_sequence_id(self.db, "SAMPLE", "SMP")
+        sample = SampleSubmission(
+            sample_id=smp_code,
+            account_id=acc.id,
+            contact_id=payload.contactId,
+            lead_id=payload.leadId,
+            sample_description=payload.sampleDescription,
+            sample_type=payload.sampleType,
+            receipt_date=payload.receiptDate or date.today(),
+            condition_on_receipt=payload.conditionOnReceipt or "Good",
+            status="Received",
+            sample_level_charge=Decimal(str(payload.sampleLevelCharge)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+            notes=payload.notes
+        )
+
+        for t_input in payload.tests:
+            tst_code = get_next_sequence_id(self.db, "TEST", "TST")
+            unit_price = Decimal(str(t_input.unitPrice)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            qty = Decimal(str(t_input.quantity)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            sample.tests.append(SampleTestRequest(
+                test_record_id=tst_code,
+                test_name=t_input.testName,
+                test_type=t_input.testType,
+                unit_price=unit_price,
+                quantity=qty,
+                notes=t_input.notes
+            ))
+
+        self.db.add(sample)
+        self.db.commit()
+        self.db.refresh(sample)
+        return sample
+
+    def calculate_testing_charges(
+        self,
+        sample_level_charge: Decimal,
+        test_items: List[Tuple[Decimal, Decimal]],  # [(unit_price, quantity), ...]
+        additional_charges: Decimal = Decimal("0.00"),
+        discounts: Decimal = Decimal("0.00")
+    ) -> Dict[str, Decimal]:
+        """
+        Total testing charges = applicable sample-level charges + sum of individual test charges + approved additional charges - applicable discounts.
+        Strict decimal precision with bankers / standard rounding.
+        """
+        sample_charge = Decimal(str(sample_level_charge)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        tests_sum = Decimal("0.00")
+        for unit_price, qty in test_items:
+            p = Decimal(str(unit_price)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            q = Decimal(str(qty)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            tests_sum += (p * q).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        add = Decimal(str(additional_charges)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        disc = Decimal(str(discounts)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        total = sample_charge + tests_sum + add - disc
+        if total < Decimal("0.00"):
+            total = Decimal("0.00")
+
+        return {
+            "sample_charge": sample_charge,
+            "tests_total": tests_sum,
+            "additional_charges": add,
+            "discounts": disc,
+            "final_total": total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        }
+
+    def record_testing_charge(
+        self,
+        actor: CurrentUser,
+        sample_id: str,
+        additional_charges: Decimal = Decimal("0.00"),
+        discounts: Decimal = Decimal("0.00"),
+        idempotency_key: Optional[str] = None
+    ) -> TestingChargeRecord:
+        if idempotency_key:
+            existing = self.db.query(TestingChargeRecord).filter(TestingChargeRecord.idempotency_key == idempotency_key).first()
+            if existing:
+                return existing
+
+        sample = self.db.query(SampleSubmission).options(joinedload(SampleSubmission.tests)).filter(
+            or_(SampleSubmission.id == sample_id, SampleSubmission.sample_id == sample_id)
+        ).first()
+        if not sample:
+            raise NotFoundError(f"Sample '{sample_id}' not found.")
+
+        test_items = [(t.unit_price, t.quantity) for t in sample.tests]
+        calc = self.calculate_testing_charges(
+            sample_level_charge=sample.sample_level_charge,
+            test_items=test_items,
+            additional_charges=additional_charges,
+            discounts=discounts
+        )
+
+        chg_code = get_next_sequence_id(self.db, "CHARGE", "CHG")
+        charge = TestingChargeRecord(
+            charge_id=chg_code,
+            sample_id=sample.id,
+            lead_id=sample.lead_id,
+            account_id=sample.account_id,
+            sample_charge_applied=calc["sample_charge"],
+            tests_total=calc["tests_total"],
+            approved_additional_charges=calc["additional_charges"],
+            applicable_discounts=calc["discounts"],
+            final_calculated_total=calc["final_total"],
+            currency="INR",
+            billing_status="Pending",
+            idempotency_key=idempotency_key
+        )
+        self.db.add(charge)
+        self.db.commit()
+        self.db.refresh(charge)
+        return charge
+
+    def create_product_transaction(
+        self,
+        actor: CurrentUser,
+        payload: ProductTransactionCreate
+    ) -> ProductTransaction:
+        acc = self.db.query(Account).filter(Account.id == payload.accountId).first()
+        if not acc:
+            raise NotFoundError(f"Account '{payload.accountId}' not found.")
+
+        qty = Decimal(str(payload.quantity)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        rate = Decimal(str(payload.unitRate)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        disc = Decimal(str(payload.discountAmount)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        total = (qty * rate - disc).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if total < Decimal("0.00"):
+            total = Decimal("0.00")
+
+        prd_code = get_next_sequence_id(self.db, "PRODUCT_TX", "PRD")
+        tx = ProductTransaction(
+            transaction_id=prd_code,
+            lead_id=payload.leadId,
+            account_id=acc.id,
+            contact_id=payload.contactId,
+            product_name=payload.productName,
+            sku_code=payload.skuCode,
+            transaction_type=payload.transactionType or "Recommendation",
+            status=payload.status or "Pending",
+            quantity=qty,
+            unit_of_measure=payload.unitOfMeasure or "litres",
+            unit_rate=rate,
+            discount_amount=disc,
+            calculated_amount=total,
+            currency=payload.currency or "INR",
+            notes=payload.notes
+        )
+        self.db.add(tx)
+        self.db.commit()
+        self.db.refresh(tx)
+        return tx
 
 
-# For backward compatibility
-CrmUserHubService = CrmService
+# =============================================================================
+# MODULE-LEVEL CONVENIENCE FUNCTIONS FOR CHARGE-READY OPERATIONS
+# =============================================================================
+
+def create_consulting_engagement(
+    db: Session,
+    actor: Any = None,
+    payload: Any = None,
+    engagement_data: Optional[Dict[str, Any]] = None
+) -> ConsultingEngagement:
+    if engagement_data and not payload:
+        eng_code = get_next_sequence_id(db, "ENGAGEMENT", "ENG")
+        engagement = ConsultingEngagement(
+            engagement_id=eng_code,
+            lead_id=engagement_data.get("lead_id"),
+            account_id=engagement_data.get("account_id"),
+            contact_id=engagement_data.get("contact_id"),
+            title=engagement_data.get("title") or engagement_data.get("duration_description") or "Consulting Engagement",
+            contract_start_date=engagement_data.get("contract_start_date"),
+            contract_end_date=engagement_data.get("contract_end_date"),
+            duration_description=engagement_data.get("duration_description"),
+            agreed_fee=Decimal(str(engagement_data.get("agreed_fee", 0))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+            billing_arrangement=engagement_data.get("billing_arrangement", "Configurable"),
+            status=engagement_data.get("status", "Active"),
+            notes=engagement_data.get("notes")
+        )
+        db.add(engagement)
+        db.commit()
+        db.refresh(engagement)
+        return engagement
+    srv = CRMService(db)
+    return srv.create_consulting_engagement(actor, payload)
+
+
+def create_sample_submission(
+    db: Session,
+    actor: Any = None,
+    payload: Any = None,
+    sample_data: Optional[Dict[str, Any]] = None,
+    tests_data: Optional[List[Dict[str, Any]]] = None
+) -> SampleSubmission:
+    if sample_data and not payload:
+        smp_code = get_next_sequence_id(db, "SAMPLE", "SMP")
+        sample = SampleSubmission(
+            sample_id=smp_code,
+            lead_id=sample_data.get("lead_id"),
+            account_id=sample_data.get("account_id"),
+            contact_id=sample_data.get("contact_id"),
+            sample_description=sample_data.get("sample_description"),
+            sample_type=sample_data.get("sample_type"),
+            receipt_date=sample_data.get("receipt_date", date.today()),
+            condition_on_receipt=sample_data.get("sample_condition") or sample_data.get("condition_on_receipt") or "Good",
+            status=sample_data.get("sample_status") or sample_data.get("status") or "Received",
+            sample_level_charge=Decimal(str(sample_data.get("sample_charge") or sample_data.get("sample_level_charge") or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+            failure_reason=sample_data.get("failure_reason"),
+            stage_reached=sample_data.get("stage_reached"),
+            work_performed=sample_data.get("work_performed_notes") or sample_data.get("work_performed"),
+            charge_decision=sample_data.get("charge_decision"),
+            authorized_charge_amount=Decimal(str(sample_data.get("chargeable_amount") or sample_data.get("authorized_charge_amount") or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) if (sample_data.get("chargeable_amount") is not None or sample_data.get("authorized_charge_amount") is not None) else None,
+            replacement_of_sample_id=sample_data.get("replacement_for_sample_id") or sample_data.get("replacement_of_sample_id"),
+            notes=sample_data.get("notes")
+        )
+        if tests_data:
+            for t_item in tests_data:
+                tst_code = get_next_sequence_id(db, "TEST", "TST")
+                sample.requested_tests.append(SampleTestRequest(
+                    test_record_id=tst_code,
+                    test_name=t_item.get("test_name", t_item.get("test_type", "Standard Test")),
+                    test_type=t_item.get("test_type", "Standard"),
+                    unit_price=Decimal(str(t_item.get("test_rate") or t_item.get("unit_price") or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                    quantity=Decimal(str(t_item.get("billable_units") or t_item.get("quantity") or 1)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                    notes=t_item.get("notes")
+                ))
+        db.add(sample)
+        db.commit()
+        db.refresh(sample)
+        return sample
+    srv = CRMService(db)
+    return srv.create_sample_submission(actor, payload)
+
+
+def calculate_testing_charges(
+    db: Session,
+    sample_submission_id: Optional[str] = None,
+    sample_level_charge: Optional[Decimal] = None,
+    test_items: Any = None,
+    additional_charge: Decimal = Decimal("0.00"),
+    additional_charges: Decimal = Decimal("0.00"),
+    discount_amount: Decimal = Decimal("0.00"),
+    discounts: Decimal = Decimal("0.00")
+) -> Dict[str, Decimal]:
+    if sample_submission_id:
+        sub = db.query(SampleSubmission).filter(SampleSubmission.id == sample_submission_id).first()
+        if not sub:
+            raise NotFoundError(f"SampleSubmission '{sample_submission_id}' not found.")
+        s_charge = Decimal(str(sub.sample_charge or 0.0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        test_sum = Decimal("0.00")
+        for t in sub.requested_tests:
+            rate = Decimal(str(t.test_rate or 0.0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            units = Decimal(str(t.billable_units or 1)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            test_sum += (rate * units).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        add = Decimal(str(additional_charge or additional_charges or 0.0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        disc = Decimal(str(discount_amount or discounts or 0.0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        total = s_charge + test_sum + add - disc
+        if total < Decimal("0.00"):
+            total = Decimal("0.00")
+        return {
+            "sample_level_charge": s_charge,
+            "sum_of_test_charges": test_sum,
+            "additional_charges": add,
+            "discounts": disc,
+            "total_charge": total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        }
+    srv = CRMService(db)
+    return srv.calculate_testing_charges(sample_level_charge, test_items, additional_charges, discounts)
+
+
+def record_testing_charge(
+    db: Session,
+    actor: Any = None,
+    sample_submission_id: Optional[str] = None,
+    sample_id: Optional[str] = None,
+    test_request_id: Optional[str] = None,
+    charge_type: str = "TEST_CHARGE",
+    description: Optional[str] = None,
+    charge_amount: Optional[Decimal] = None,
+    agreed_unit_rate: Optional[Decimal] = None,
+    billable_units: int = 1,
+    idempotency_key: Optional[str] = None,
+    applied_by_user_id: Optional[str] = None,
+    additional_charges: Decimal = Decimal("0.00"),
+    discounts: Decimal = Decimal("0.00")
+) -> TestingChargeRecord:
+    sid = sample_submission_id or sample_id
+    sub = db.query(SampleSubmission).filter(SampleSubmission.id == sid).first()
+    if not sub:
+        raise NotFoundError(f"SampleSubmission '{sid}' not found.")
+    if idempotency_key:
+        existing = db.query(TestingChargeRecord).filter(TestingChargeRecord.idempotency_key == idempotency_key).first()
+        if existing:
+            return existing
+    chg_code = get_next_sequence_id(db, "CHARGE", "CHG")
+    charge = TestingChargeRecord(
+        charge_id=chg_code,
+        sample_id=sub.id,
+        lead_id=sub.lead_id,
+        account_id=sub.account_id,
+        sample_charge_applied=sub.sample_charge or Decimal("0.00"),
+        tests_total=charge_amount or Decimal("0.00"),
+        approved_additional_charges=additional_charges,
+        applicable_discounts=discounts,
+        final_calculated_total=charge_amount or Decimal("0.00"),
+        agreed_unit_rate=agreed_unit_rate or Decimal("0.00"),
+        charge_amount=charge_amount or Decimal("0.00"),
+        currency="INR",
+        billing_status="PENDING",
+        idempotency_key=idempotency_key,
+        notes=f"Applied by user: {applied_by_user_id}" if applied_by_user_id else None
+    )
+    db.add(charge)
+    db.commit()
+    db.refresh(charge)
+    return charge
+
+
+def create_product_transaction(
+    db: Session,
+    actor: Any = None,
+    payload: Any = None,
+    product_data: Optional[Dict[str, Any]] = None
+) -> ProductTransaction:
+    if product_data and not payload:
+        acc = db.query(Account).filter(Account.id == product_data["account_id"]).first()
+        if not acc:
+            raise NotFoundError(f"Account '{product_data['account_id']}' not found.")
+        qty = Decimal(str(product_data.get("quantity", 0))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        rate = Decimal(str(product_data.get("unit_rate", 0))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        disc = Decimal(str(product_data.get("discount_amount", 0))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        total = (qty * rate - disc).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if total < Decimal("0.00"):
+            total = Decimal("0.00")
+        prd_code = get_next_sequence_id(db, "PRODUCT_TX", "PRD")
+        tx = ProductTransaction(
+            transaction_id=prd_code,
+            lead_id=product_data.get("lead_id"),
+            account_id=acc.id,
+            contact_id=product_data.get("contact_id"),
+            product_reference=product_data.get("product_reference"),
+            status=product_data.get("status", "RECOMMENDED"),
+            quantity=qty,
+            unit_of_measure=product_data.get("unit_of_measure", "litres"),
+            unit_rate=rate,
+            discount_amount=disc,
+            calculated_amount=total,
+            currency=product_data.get("currency", "INR"),
+            notes=product_data.get("notes")
+        )
+        db.add(tx)
+        db.commit()
+        db.refresh(tx)
+        return tx
+    srv = CRMService(db)
+    return srv.create_product_transaction(actor, payload)

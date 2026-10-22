@@ -6,6 +6,7 @@ from app.core.database import get_db
 from app.core.dependencies import (
     require_module_access,
     require_permission,
+    require_any_permission,
     CurrentUser
 )
 from app.crm.service import CrmService
@@ -15,9 +16,11 @@ from app.crm.schema import (
     CrmUserRoleRequest,
     CrmRoleListResponse,
     AccountCreate,
+    AccountUpdate,
     AccountListResponse,
     AccountDetailResponse,
     ContactCreate,
+    ContactUpdate,
     ContactListResponse,
     ContactDetailResponse,
     LeadCreate,
@@ -193,6 +196,22 @@ def create_account(
     return {"success": True, "message": "Account created successfully.", "account": account}
 
 
+@router.put("/accounts/{account_id}")
+def update_account(
+    account_id: str,
+    payload: AccountUpdate,
+    request: Request,
+    current_user: CurrentUser = Depends(require_any_permission(["crm.account.edit", "crm.account.create"])),
+    db: Session = Depends(get_db)
+):
+    """
+    Update an existing CRM Account.
+    """
+    service = CrmService(db)
+    account = service.update_account(actor=current_user, account_id=account_id, payload=payload, request=request)
+    return {"success": True, "message": "Account updated successfully.", "account": account}
+
+
 # =========================================================================
 # 3. CONTACT ENDPOINTS
 # =========================================================================
@@ -248,6 +267,22 @@ def create_contact(
     service = CrmService(db)
     contact = service.create_contact(actor=current_user, payload=payload, request=request)
     return {"success": True, "message": "Contact created successfully.", "contact": contact}
+
+
+@router.put("/contacts/{contact_id}")
+def update_contact(
+    contact_id: str,
+    payload: ContactUpdate,
+    request: Request,
+    current_user: CurrentUser = Depends(require_any_permission(["crm.contact.edit", "crm.contact.create"])),
+    db: Session = Depends(get_db)
+):
+    """
+    Update an existing CRM Contact.
+    """
+    service = CrmService(db)
+    contact = service.update_contact(actor=current_user, contact_id=contact_id, payload=payload, request=request)
+    return {"success": True, "message": "Contact updated successfully.", "contact": contact}
 
 
 # =========================================================================

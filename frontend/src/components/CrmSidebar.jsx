@@ -10,6 +10,8 @@ import {
   LayoutGrid,
   Menu,
   Building,
+  Building2,
+  Contact,
   ShieldCheck
 } from 'lucide-react';
 
@@ -42,6 +44,8 @@ const CrmSidebar = ({
 
   const isDashboardActive = location.pathname === '/crm' || location.pathname === '/crm/dashboard';
   const isLeadsActive = location.pathname.startsWith('/crm/leads');
+  const isAccountsActive = location.pathname.startsWith('/crm/accounts');
+  const isContactsActive = location.pathname.startsWith('/crm/contacts');
   const isUserHubActive = location.pathname === '/crm/user-hub' || location.pathname === '/crm/users';
 
   const navContent = (
@@ -155,6 +159,28 @@ const CrmSidebar = ({
         >
           <Layers size={18} />
           {(!isCollapsed || isMobileOpen) && <span>Leads</span>}
+        </NavLink>
+
+        {/* 3. Accounts */}
+        <NavLink
+          to="/crm/accounts"
+          onClick={handleLinkClick}
+          className={`nav-item ${isAccountsActive ? 'active' : ''}`}
+          title="Accounts"
+        >
+          <Building2 size={18} />
+          {(!isCollapsed || isMobileOpen) && <span>Accounts</span>}
+        </NavLink>
+
+        {/* 4. Contacts */}
+        <NavLink
+          to="/crm/contacts"
+          onClick={handleLinkClick}
+          className={`nav-item ${isContactsActive ? 'active' : ''}`}
+          title="Contacts"
+        >
+          <Contact size={18} />
+          {(!isCollapsed || isMobileOpen) && <span>Contacts</span>}
         </NavLink>
 
         {/* Separate Section: CRM Administration (strictly CRM Admin and Global Admins) */}

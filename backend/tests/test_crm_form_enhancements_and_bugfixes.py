@@ -53,14 +53,15 @@ def test_optional_product_spec_and_mandatory_title(setup_crm_stage4_environment)
     assert res_reload.status_code == 200
     assert res_reload.json()["lead"]["requestedProductService"] is None
 
-    # 2. Lead Title / Name remains mandatory (reject if empty or whitespace)
+    # 2. Phase 1 Update: Lead Title / Name is optional (empty/whitespace accepted, falls back to leadId)
     res_empty_title = client.post("/api/v1/crm/leads", json={
         "leadName": "   ",
         "businessArea": "Biogas",
         "requirementType": "Undetermined",
         "contactId": con_id
     }, headers=headers)
-    assert res_empty_title.status_code in [400, 422]
+    assert res_empty_title.status_code == 201
+    assert res_empty_title.json()["lead"]["displayName"] == res_empty_title.json()["lead"]["leadId"]
 
 
 def test_lead_sources_including_email_campaign(setup_crm_stage4_environment):
@@ -218,16 +219,17 @@ def test_duplicate_validation_with_and_without_product_spec(setup_crm_stage4_env
     }, headers=headers)
     assert res_spec1.status_code == 201, res_spec1.text
 
-    # 4. Attempt duplicate open lead with same spec -> MUST BE REJECTED (HTTP 409)
+    # 4. Phase 1 Update: Duplicate open leads with same requirement/spec are now ALLOWED (HTTP 201)
     res_spec2 = client.post("/api/v1/crm/leads", json={
         "leadName": f"Specified Lead 2 {ts}",
         "businessArea": "Biogas",
-        "requirementType": "Direct Product/Service",
-        "requestedProductService": spec.upper(),  # case-insensitive match
+        "requirementType": "Product",
+        "requestedProductService": spec.upper(),
         "accountId": acc_id,
         "contactId": con_id
     }, headers=headers)
-    assert res_spec2.status_code == 409
+    assert res_spec2.status_code == 201
+    assert res_spec2.json()["lead"]["id"] != res_spec1.json()["lead"]["id"]
 
 
 def test_quick_create_account_and_contact_lead_assignment(setup_crm_stage4_environment):

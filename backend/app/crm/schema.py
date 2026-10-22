@@ -1,7 +1,7 @@
 import re
 from typing import Optional, List, Dict, Any
 from datetime import datetime, date as py_date
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # =========================================================================
@@ -112,6 +112,21 @@ class AccountCreate(BaseModel):
         return validate_and_normalize_website(v)
 
 
+class AccountUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    industry: Optional[str] = Field(None, max_length=100)
+    website: Optional[str] = Field(None, max_length=255)
+    phone: Optional[str] = Field(None, max_length=50)
+    email: Optional[str] = Field(None, max_length=255)
+    address: Optional[str] = None
+    isActive: Optional[bool] = None
+
+    @field_validator("website")
+    @classmethod
+    def validate_account_website(cls, v: Optional[str]) -> Optional[str]:
+        return validate_and_normalize_website(v)
+
+
 class AccountItem(BaseModel):
     id: str
     accountId: str
@@ -124,7 +139,10 @@ class AccountItem(BaseModel):
     isActive: bool = True
     contactCount: int = 0
     leadCount: int = 0
+    contacts: Optional[List[Dict[str, Any]]] = None
+    leads: Optional[List[Dict[str, Any]]] = None
     createdAt: Optional[str] = None
+    updatedAt: Optional[str] = None
 
 
 class AccountListResponse(BaseModel):
@@ -152,17 +170,28 @@ class ContactCreate(BaseModel):
     designation: Optional[str] = Field(None, max_length=100)
 
 
+class ContactUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    accountId: Optional[str] = None
+    email: Optional[str] = Field(None, max_length=255)
+    mobileNumber: Optional[str] = Field(None, max_length=50)
+    designation: Optional[str] = Field(None, max_length=100)
+    isActive: Optional[bool] = None
+
+
 class ContactItem(BaseModel):
     id: str
     contactId: str
     accountId: Optional[str] = None
     accountName: Optional[str] = None
+    account: Optional[Dict[str, Any]] = None
     name: str
     email: Optional[str] = None
     mobileNumber: Optional[str] = None
     designation: Optional[str] = None
     isActive: bool = True
     createdAt: Optional[str] = None
+    updatedAt: Optional[str] = None
 
 
 class ContactListResponse(BaseModel):
@@ -174,6 +203,7 @@ class ContactListResponse(BaseModel):
 class ContactDetailResponse(BaseModel):
     success: bool = True
     contact: ContactItem
+    leads: List[Dict[str, Any]] = []
 
 
 # =========================================================================
@@ -181,7 +211,7 @@ class ContactDetailResponse(BaseModel):
 # =========================================================================
 
 ALLOWED_BUSINESS_AREAS = {"Biogas", "WWT"}
-ALLOWED_REQUIREMENT_TYPES = {"Direct Product/Service", "Sample Testing", "Undetermined"}
+ALLOWED_REQUIREMENT_TYPES = {"Consulting", "Sample Testing", "Product"}
 ALLOWED_LEAD_SOURCES = {
     "Website", "Email Campaign", "Referral", "Partner", "Trade Show / Expo",
     "Cold Outreach", "Inbound Call", "Investor", "In-Person Meeting",
@@ -194,10 +224,50 @@ ALLOWED_CHANNELS = {
 }
 
 
+def normalize_and_validate_req_types(
+    req_types: Optional[List[str]] = None,
+    legacy_single: Optional[str] = None
+) -> List[str]:
+    selected = []
+    if req_types is not None:
+        if not isinstance(req_types, list):
+            req_types = [req_types]
+        for t in req_types:
+            if not t:
+                continue
+            clean = str(t).strip()
+            # Map legacy values
+            if clean == "Direct Product/Service":
+                clean = "Product"
+            elif clean == "Undetermined":
+                clean = "Consulting"
+
+            if clean not in ALLOWED_REQUIREMENT_TYPES:
+                raise ValueError(f"Invalid requirement type '{t}'. Must be one of: {sorted(ALLOWED_REQUIREMENT_TYPES)}")
+            if clean not in selected:
+                selected.append(clean)
+
+    if not selected and legacy_single:
+        clean = str(legacy_single).strip()
+        if clean == "Direct Product/Service":
+            clean = "Product"
+        elif clean == "Undetermined":
+            clean = "Consulting"
+
+        if clean not in ALLOWED_REQUIREMENT_TYPES:
+            raise ValueError(f"Invalid requirement type '{legacy_single}'. Must be one of: {sorted(ALLOWED_REQUIREMENT_TYPES)}")
+        selected.append(clean)
+
+    if not selected:
+        raise ValueError("At least one requirement type must be selected (Consulting, Sample Testing, Product).")
+    return selected
+
+
 class LeadCreate(BaseModel):
-    leadName: str = Field(..., min_length=1, max_length=255)
+    leadName: Optional[str] = None
     businessArea: str = Field(...)
-    requirementType: str = Field(...)
+    requirementTypes: Optional[List[str]] = None
+    requirementType: Optional[str] = None
     requirementSummary: Optional[str] = None
     requestedProductService: Optional[str] = Field(None, max_length=255)
     leadSource: Optional[str] = "Website"
@@ -212,13 +282,22 @@ class LeadCreate(BaseModel):
     nextFollowUpDate: Optional[py_date] = None
     nextFollowUpAction: Optional[str] = None
 
-    @field_validator("leadName")
+    @model_validator(mode="before")
     @classmethod
-    def validate_lead_name(cls, v: str) -> str:
-        clean = (v or "").strip()
-        if not clean:
-            raise ValueError("Lead Title / Name is mandatory and cannot be empty.")
-        return clean
+    def process_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            # Lead title optional: empty string becomes None
+            if "leadName" in data and data["leadName"] is not None:
+                cleaned = str(data["leadName"]).strip()
+                data["leadName"] = cleaned if cleaned else None
+
+            # Multi-select requirement types validation
+            types = data.get("requirementTypes")
+            single = data.get("requirementType")
+            normalized = normalize_and_validate_req_types(types, single)
+            data["requirementTypes"] = normalized
+            data["requirementType"] = normalized[0]
+        return data
 
     @field_validator("businessArea")
     @classmethod
@@ -226,14 +305,6 @@ class LeadCreate(BaseModel):
         clean = (v or "").strip()
         if clean not in ALLOWED_BUSINESS_AREAS:
             raise ValueError(f"Invalid businessArea '{v}'. Must be one of: {sorted(ALLOWED_BUSINESS_AREAS)}")
-        return clean
-
-    @field_validator("requirementType")
-    @classmethod
-    def validate_req_type(cls, v: str) -> str:
-        clean = (v or "").strip()
-        if clean not in ALLOWED_REQUIREMENT_TYPES:
-            raise ValueError(f"Invalid requirementType '{v}'. Must be one of: {sorted(ALLOWED_REQUIREMENT_TYPES)}")
         return clean
 
     @field_validator("leadSource")
@@ -266,6 +337,7 @@ class LeadCreate(BaseModel):
 class LeadUpdate(BaseModel):
     leadName: Optional[str] = None
     businessArea: Optional[str] = None
+    requirementTypes: Optional[List[str]] = None
     requirementType: Optional[str] = None
     requirementSummary: Optional[str] = None
     requestedProductService: Optional[str] = None
@@ -282,15 +354,21 @@ class LeadUpdate(BaseModel):
     nextFollowUpAction: Optional[str] = None
     lifecycleStatus: Optional[str] = None
 
-    @field_validator("leadName")
+    @model_validator(mode="before")
     @classmethod
-    def validate_lead_name(cls, v: Optional[str]) -> Optional[str]:
-        if v is not None:
-            clean = v.strip()
-            if not clean:
-                raise ValueError("Lead Title / Name cannot be empty.")
-            return clean
-        return None
+    def process_update_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "leadName" in data and data["leadName"] is not None:
+                cleaned = str(data["leadName"]).strip()
+                data["leadName"] = cleaned if cleaned else None
+
+            types = data.get("requirementTypes")
+            single = data.get("requirementType")
+            if types is not None or single is not None:
+                normalized = normalize_and_validate_req_types(types, single)
+                data["requirementTypes"] = normalized
+                data["requirementType"] = normalized[0]
+        return data
 
     @field_validator("businessArea")
     @classmethod
@@ -300,16 +378,6 @@ class LeadUpdate(BaseModel):
         clean = v.strip()
         if clean not in ALLOWED_BUSINESS_AREAS:
             raise ValueError(f"Invalid businessArea '{v}'. Must be one of: {sorted(ALLOWED_BUSINESS_AREAS)}")
-        return clean
-
-    @field_validator("requirementType")
-    @classmethod
-    def validate_req_type(cls, v: Optional[str]) -> Optional[str]:
-        if v is None:
-            return None
-        clean = v.strip()
-        if clean not in ALLOWED_REQUIREMENT_TYPES:
-            raise ValueError(f"Invalid requirementType '{v}'. Must be one of: {sorted(ALLOWED_REQUIREMENT_TYPES)}")
         return clean
 
     @field_validator("leadSource")
@@ -394,9 +462,11 @@ class LeadUserSummary(BaseModel):
 class LeadItem(BaseModel):
     id: str
     leadId: str
-    leadName: str
+    leadName: Optional[str] = None
+    displayName: str
     businessArea: str
-    requirementType: str
+    requirementType: Optional[str] = None
+    requirementTypes: List[str] = []
     requirementSummary: Optional[str] = None
     requestedProductService: Optional[str] = None
     leadSource: str
@@ -426,7 +496,6 @@ class LeadItem(BaseModel):
     contact: Optional[LeadContactSummary] = None
     assignedTo: Optional[LeadUserSummary] = None
     createdBy: Optional[LeadUserSummary] = None
-
 
 
 class LeadListResponse(BaseModel):
@@ -498,3 +567,58 @@ class DashboardMetricsResponse(BaseModel):
     myLeads: int
     followUpsDue: int
     overdueFollowUps: int
+
+
+# =========================================================================
+# 7. CHARGE-READY BUSINESS SCHEMAS (CONSULTING, SAMPLES, PRODUCTS)
+# =========================================================================
+
+class ConsultingEngagementCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+    accountId: str
+    contactId: Optional[str] = None
+    leadId: Optional[str] = None
+    scopeDescription: Optional[str] = None
+    contractStartDate: Optional[py_date] = None
+    contractEndDate: Optional[py_date] = None
+    durationMonths: Optional[int] = None
+    agreedFee: float = 0.0
+    billingArrangement: Optional[str] = "Monthly"
+    status: Optional[str] = "Draft"
+
+
+class SampleTestInput(BaseModel):
+    testName: str = Field(..., min_length=1, max_length=255)
+    testType: Optional[str] = None
+    unitPrice: float = 0.0
+    quantity: float = 1.0
+    notes: Optional[str] = None
+
+
+class SampleSubmissionCreate(BaseModel):
+    sampleDescription: str = Field(..., min_length=1, max_length=255)
+    accountId: str
+    contactId: Optional[str] = None
+    leadId: Optional[str] = None
+    sampleType: Optional[str] = None
+    receiptDate: Optional[py_date] = None
+    conditionOnReceipt: Optional[str] = "Good"
+    sampleLevelCharge: float = 0.0
+    tests: List[SampleTestInput] = []
+    notes: Optional[str] = None
+
+
+class ProductTransactionCreate(BaseModel):
+    productName: str = Field(..., min_length=1, max_length=255)
+    accountId: str
+    contactId: Optional[str] = None
+    leadId: Optional[str] = None
+    skuCode: Optional[str] = None
+    transactionType: Optional[str] = "Recommendation"
+    status: Optional[str] = "Pending"
+    quantity: float = 1.0
+    unitOfMeasure: Optional[str] = "litres"
+    unitRate: float = 0.0
+    discountAmount: float = 0.0
+    currency: Optional[str] = "INR"
+    notes: Optional[str] = None

@@ -295,9 +295,9 @@ export default function CrmLeadsPage() {
               onChange={e => { setRequirementType(e.target.value); setPage(1); }}
             >
               <option value="ALL">All Types</option>
-              <option value="Direct Product/Service">Direct Product/Service</option>
+              <option value="Consulting">Consulting</option>
               <option value="Sample Testing">Sample Testing</option>
-              <option value="Undetermined">Undetermined</option>
+              <option value="Product">Product</option>
             </select>
           </div>
 
@@ -473,7 +473,7 @@ export default function CrmLeadsPage() {
                             title="View Lead Details"
                           >
                             <span style={{ fontSize: '0.92rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                              {lead.leadName}
+                              {lead.leadName || lead.displayName || lead.leadId}
                             </span>
                           </button>
                           <div className="crm-cell-secondary">
@@ -504,9 +504,11 @@ export default function CrmLeadsPage() {
                             <span className={`crm-badge ${lead.businessArea === 'Biogas' ? 'crm-badge-area-biogas' : 'crm-badge-area-wwt'}`}>
                               {lead.businessArea}
                             </span>
-                            <span className="crm-badge crm-badge-type">
-                              {lead.requirementType}
-                            </span>
+                            {(lead.requirementTypes && lead.requirementTypes.length > 0 ? lead.requirementTypes : [lead.requirementType || 'Consulting']).map((type, idx) => (
+                              <span key={idx} className="crm-badge crm-badge-type">
+                                {type}
+                              </span>
+                            ))}
                           </div>
                         </td>
 
@@ -605,7 +607,7 @@ export default function CrmLeadsPage() {
                           title="View Lead Details"
                         >
                           <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                            {lead.leadName}
+                            {lead.leadName || lead.displayName || lead.leadId}
                           </span>
                         </button>
                         <div className="crm-cell-secondary">
@@ -636,9 +638,11 @@ export default function CrmLeadsPage() {
                           <span className={`crm-badge ${lead.businessArea === 'Biogas' ? 'crm-badge-area-biogas' : 'crm-badge-area-wwt'}`}>
                             {lead.businessArea}
                           </span>
-                          <span className="crm-badge crm-badge-type">
-                            {lead.requirementType}
-                          </span>
+                          {(lead.requirementTypes && lead.requirementTypes.length > 0 ? lead.requirementTypes : [lead.requirementType || 'Consulting']).map((type, idx) => (
+                            <span key={idx} className="crm-badge crm-badge-type">
+                              {type}
+                            </span>
+                          ))}
                         </div>
                       </td>
 

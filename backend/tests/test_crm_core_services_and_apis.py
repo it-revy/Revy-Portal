@@ -215,7 +215,7 @@ def test_lead_creation_and_field_validations(setup_crm_stage4_environment):
     lead_data = res_lead.json()["lead"]
     assert lead_data["leadId"].startswith("LEAD-")
     assert lead_data["businessArea"] == "Biogas"
-    assert lead_data["requirementType"] == "Direct Product/Service"
+    assert lead_data["requirementType"] in ["Product", "Direct Product/Service"]
     assert lead_data["leadSource"] == "Investor"
     assert lead_data["lifecycleStatus"] == "Open"
 
@@ -268,17 +268,18 @@ def test_duplicate_open_lead_rules(setup_crm_stage4_environment):
     assert res_lead1.status_code == 201
     lead1_id = res_lead1.json()["lead"]["id"]
 
-    # 2. Attempt duplicate lead with different casing/whitespace while first lead is Open -> MUST BE REJECTED (HTTP 409)
+    # 2. Phase 1 Update: Multiple leads for the same Account & Contact with identical requirement selections are ALLOWED (HTTP 201)
     res_dupe = client.post("/api/v1/crm/leads", json={
         "leadName": f"Second Duplicate Lead {ts}",
         "businessArea": "Biogas",
-        "requirementType": "Direct Product/Service",
-        "requestedProductService": f"  {product_req.upper()}   ",  # normalized duplicate
+        "requirementType": "Product",
+        "requestedProductService": f"  {product_req.upper()}   ",  # same requirement
         "contactId": con_id,
         "accountId": acc_id
     }, headers=headers)
-    assert res_dupe.status_code == 409
-    assert res_dupe.json()["error_code"] == "CONFLICT"
+    assert res_dupe.status_code == 201
+    lead2_id = res_dupe.json()["lead"]["id"]
+    assert lead2_id != lead1_id
 
     # 3. Create lead for SAME client but with a DIFFERENT product requirement -> MUST BE ALLOWED
     res_diff_req = client.post("/api/v1/crm/leads", json={
@@ -340,11 +341,11 @@ def test_concurrent_duplicate_lead_creation_safety(setup_crm_stage4_environment)
 
     statuses = [r.status_code for r in responses]
     success_count = statuses.count(201)
-    conflict_count = statuses.count(409)
 
-    # Exactly 1 request must succeed, and all others must be rejected with 409 Conflict
-    assert success_count == 1, f"Expected exactly 1 success, got statuses: {statuses}"
-    assert conflict_count == 3, f"Expected 3 conflicts, got statuses: {statuses}"
+    # Phase 1 Update: All requests succeed with unique generated Lead IDs
+    assert success_count == 4, f"Expected 4 successful creations, got statuses: {statuses}"
+    created_ids = {r.json()["lead"]["leadId"] for r in responses}
+    assert len(created_ids) == 4, "Each created lead must have a distinct unique leadId"
 
 
 # =========================================================================

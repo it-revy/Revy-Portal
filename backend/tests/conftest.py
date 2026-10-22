@@ -8,12 +8,32 @@ os.environ["TESTING"] = "1"
 # Add backend directory to sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from app.core.database import Base, SessionLocal, engine, get_db
+from app.core.database import Base, SessionLocal, engine, get_db, init_db
 from app.main import app
 from seed.seed_development import seed_database
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_database():
+    with engine.connect() as conn:
+        try:
+            res = conn.exec_driver_sql("PRAGMA table_info(leads)").fetchall()
+            lead_name_col = next((c for c in res if c[1] == 'lead_name'), None)
+            if lead_name_col and lead_name_col[3] == 1:
+                conn.exec_driver_sql("DROP TABLE IF EXISTS lead_requirement_types")
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_testing_charges")
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_sample_test_requests")
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_sample_submissions")
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_product_transactions")
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_consulting_engagements")
+                conn.exec_driver_sql("DROP TABLE IF EXISTS lead_communication_history")
+                conn.exec_driver_sql("DROP TABLE IF EXISTS leads")
+            chg_cols = conn.exec_driver_sql("PRAGMA table_info(crm_testing_charges)").fetchall()
+            if chg_cols and not any(c[1] == 'agreed_unit_rate' for c in chg_cols):
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_testing_charges")
+                conn.commit()
+        except Exception:
+            pass
+    init_db()
     if os.getenv("RUN_SEED") == "1":
         seed_database()
         from app.core.init_roles import ensure_roles_and_permissions

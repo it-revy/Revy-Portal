@@ -26,8 +26,14 @@ from app.crm.model import (
     Account,
     Contact,
     Lead,
+    LeadRequirementType,
     LeadCommunicationHistory,
-    CrmSequence
+    CrmSequence,
+    ConsultingEngagement,
+    SampleSubmission,
+    SampleTestRequest,
+    TestingChargeRecord,
+    ProductTransaction
 )
 
 __all__ = [
@@ -60,6 +66,12 @@ __all__ = [
     "Account",
     "Contact",
     "Lead",
+    "LeadRequirementType",
     "LeadCommunicationHistory",
-    "CrmSequence"
+    "CrmSequence",
+    "ConsultingEngagement",
+    "SampleSubmission",
+    "SampleTestRequest",
+    "TestingChargeRecord",
+    "ProductTransaction"
 ]

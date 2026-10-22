@@ -13,6 +13,8 @@ import CrmLayout from './layouts/CrmLayout';
 import CrmDashboardPage from './pages/CrmDashboardPage';
 import CrmLeadsPage from './pages/CrmLeadsPage';
 import CrmLeadDetailPage from './pages/CrmLeadDetailPage';
+import CrmAccountsPage from './pages/CrmAccountsPage';
+import CrmContactsPage from './pages/CrmContactsPage';
 import CrmUserHubPage from './pages/CrmUserHubPage';
 
 function AppRoutes() {
@@ -148,6 +150,22 @@ function AppRoutes() {
         element={
           <CrmLayout>
             <CrmLeadDetailPage />
+          </CrmLayout>
+        }
+      />
+      <Route
+        path="/crm/accounts"
+        element={
+          <CrmLayout>
+            <CrmAccountsPage />
+          </CrmLayout>
+        }
+      />
+      <Route
+        path="/crm/contacts"
+        element={
+          <CrmLayout>
+            <CrmContactsPage />
           </CrmLayout>
         }
       />
