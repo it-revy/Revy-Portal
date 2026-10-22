@@ -18,7 +18,22 @@ import QuickContactModal from './QuickContactModal';
 
 const DOMAIN_REGEX = /^(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}(?::\d+)?(?:\/[^\s]*)?$/i;
 
-export const ACTIVE_LEAD_SOURCES = ['Email Received'];
+export const CANONICAL_LEAD_SOURCES = [
+  'Website',
+  'Email Received',
+  'Email Campaign',
+  'Cold Outreach',
+  'Inbound Call',
+  'In-Person Meeting',
+  'Investor',
+  'Partner',
+  'Referral',
+  'Social Media',
+  'Trade Show / Expo',
+  'Other'
+];
+
+export const ACTIVE_LEAD_SOURCES = CANONICAL_LEAD_SOURCES;
 
 export const REQUIREMENT_TYPE_OPTIONS = ['Consulting', 'Sample Testing', 'Product'];
 
@@ -51,7 +66,7 @@ export default function LeadModal({
     requirementType: 'Sample Testing',
     requestedProductService: '',
     requirementSummary: '',
-    leadSource: 'Email Received',
+    leadSource: 'Website',
     connectedDate: '',
     communicationChannel: 'Email',
     accountId: '',
@@ -104,7 +119,7 @@ export default function LeadModal({
           requirementType: initialReqs[0] || 'Sample Testing',
           requestedProductService: leadToEdit.requestedProductService || '',
           requirementSummary: leadToEdit.requirementSummary || '',
-          leadSource: leadToEdit.leadSource || 'Email Received',
+          leadSource: leadToEdit.leadSource || 'Website',
           connectedDate: leadToEdit.connectedDate ? leadToEdit.connectedDate.slice(0, 10) : '',
           communicationChannel: leadToEdit.communicationChannel || 'Email',
           accountId: leadToEdit.accountId || leadToEdit.account?.id || '',
@@ -126,7 +141,7 @@ export default function LeadModal({
           requirementType: 'Sample Testing',
           requestedProductService: '',
           requirementSummary: '',
-          leadSource: 'Email Received',
+          leadSource: 'Website',
           connectedDate: '',
           communicationChannel: 'Email',
           accountId: '',
@@ -342,7 +357,7 @@ export default function LeadModal({
       requirementType: formData.requirementTypes[0] || 'Sample Testing',
       requestedProductService: formData.requestedProductService.trim() || undefined,
       requirementSummary: formData.requirementSummary.trim() || undefined,
-      leadSource: formData.leadSource || 'Email Received',
+      leadSource: formData.leadSource || 'Website',
       communicationChannel: formData.communicationChannel || 'Email',
       contactId: formData.contactId,
       additionalContactIds: formData.additionalContactIds || [],
@@ -797,10 +812,10 @@ export default function LeadModal({
                     onChange={handleChange}
                     required
                   >
-                    {formData.leadSource && !ACTIVE_LEAD_SOURCES.includes(formData.leadSource) && (
+                    {formData.leadSource && !CANONICAL_LEAD_SOURCES.includes(formData.leadSource) && (
                       <option value={formData.leadSource}>{formData.leadSource} (Historical)</option>
                     )}
-                    {ACTIVE_LEAD_SOURCES.map(source => (
+                    {CANONICAL_LEAD_SOURCES.map(source => (
                       <option key={source} value={source}>{source}</option>
                     ))}
                   </select>

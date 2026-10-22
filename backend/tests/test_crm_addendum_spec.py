@@ -396,6 +396,59 @@ def test_lead_source_restriction_and_historical_compatibility(setup_addendum_env
     assert res_hist.json()["lead"]["leadSource"] == "Referral"
 
 
+def test_all_12_canonical_lead_sources(setup_addendum_environment):
+    env = setup_addendum_environment
+    headers = get_token_headers("addendum_crm_admin", "CRM_ADMIN")
+
+    canonical_sources = [
+        "Website",
+        "Email Received",
+        "Email Campaign",
+        "Cold Outreach",
+        "Inbound Call",
+        "In-Person Meeting",
+        "Investor",
+        "Partner",
+        "Referral",
+        "Social Media",
+        "Trade Show / Expo",
+        "Other"
+    ]
+
+    for source in canonical_sources:
+        payload = {
+            "leadName": f"Lead with source {source}",
+            "businessArea": "Biogas",
+            "requirementTypes": ["Sample Testing"],
+            "leadSource": source,
+            "contactId": env["con_a1"].id
+        }
+        res = client.post("/api/v1/crm/leads", json=payload, headers=headers)
+        assert res.status_code in (200, 201), f"Failed creating lead with canonical source '{source}': {res.text}"
+        lead_id = res.json()["lead"]["id"]
+        assert res.json()["lead"]["leadSource"] == source
+
+        # Retrieve lead and verify leadSource matches
+        res_get = client.get(f"/api/v1/crm/leads/{lead_id}", headers=headers)
+        assert res_get.status_code == 200
+        assert res_get.json()["lead"]["leadSource"] == source
+
+        # Update lead to another canonical source
+        res_up = client.put(f"/api/v1/crm/leads/{lead_id}", json={"leadSource": "Other"}, headers=headers)
+        assert res_up.status_code == 200
+        assert res_up.json()["lead"]["leadSource"] == "Other"
+
+    # Unsupported sources rejected
+    res_bad = client.post("/api/v1/crm/leads", json={
+        "leadName": "Unsupported Source Lead",
+        "businessArea": "Biogas",
+        "requirementTypes": ["Sample Testing"],
+        "leadSource": "Unsupported Billboard Ad",
+        "contactId": env["con_a1"].id
+    }, headers=headers)
+    assert res_bad.status_code in (400, 422)
+
+
 # =========================================================================
 # 4. REMOVE WEBSITE / DOCUMENT LINK FROM FORM (SECTION 5)
 # =========================================================================

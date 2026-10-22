@@ -1235,7 +1235,7 @@ class CrmService:
                 requirement_summary=payload.requirementSummary.strip() if payload.requirementSummary else None,
                 requested_product_service=clean_req,
                 normalized_requirement=norm_req,
-                lead_source=payload.leadSource or "Email Received",
+                lead_source=payload.leadSource or "Website",
                 connected_date=payload.connectedDate,
                 account_id=acc_id,
                 contact_id=contact.id,

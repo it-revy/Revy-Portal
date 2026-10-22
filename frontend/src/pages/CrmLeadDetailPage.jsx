@@ -918,7 +918,7 @@ export default function CrmLeadDetailPage() {
 
               <div>
                 <span style={{ color: 'var(--text-muted)' }}>Lead Source: </span>
-                <span style={{ fontWeight: 600 }}>{lead.leadSource || 'Email Received'}</span>
+                <span style={{ fontWeight: 600 }}>{lead.leadSource || 'Website'}</span>
               </div>
 
               <div>

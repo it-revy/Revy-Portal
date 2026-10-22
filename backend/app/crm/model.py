@@ -99,7 +99,7 @@ class Lead(Base):
     requirement_summary = Column(Text, nullable=True)
     requested_product_service = Column(String(255), nullable=True, index=True)
     normalized_requirement = Column(String(255), nullable=True)
-    lead_source = Column(String(50), nullable=False, default="Email Received")  # Primary active source: Email Received
+    lead_source = Column(String(50), nullable=False, default="Website")  # Canonical source: Website, Email Received, etc.
     
     account_id = Column(String(36), ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True, index=True)
     contact_id = Column(String(36), ForeignKey("contacts.id", ondelete="RESTRICT"), nullable=False, index=True)  # Primary Contact

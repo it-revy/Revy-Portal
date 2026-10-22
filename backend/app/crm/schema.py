@@ -238,13 +238,24 @@ class ContactDetailResponse(BaseModel):
 
 ALLOWED_BUSINESS_AREAS = {"Biogas", "WWT"}
 ALLOWED_REQUIREMENT_TYPES = {"Consulting", "Sample Testing", "Product"}
-ACTIVE_LEAD_SOURCES = {"Email Received"}
-HISTORICAL_LEAD_SOURCES = {
-    "Website", "Email Campaign", "Referral", "Partner", "Trade Show / Expo",
-    "Cold Outreach", "Inbound Call", "Investor", "In-Person Meeting",
-    "Social Media", "Other"
-}
-ALLOWED_LEAD_SOURCES = ACTIVE_LEAD_SOURCES | HISTORICAL_LEAD_SOURCES
+CANONICAL_LEAD_SOURCES = [
+    "Website",
+    "Email Received",
+    "Email Campaign",
+    "Cold Outreach",
+    "Inbound Call",
+    "In-Person Meeting",
+    "Investor",
+    "Partner",
+    "Referral",
+    "Social Media",
+    "Trade Show / Expo",
+    "Other",
+]
+ALLOWED_LEAD_SOURCES = set(CANONICAL_LEAD_SOURCES)
+ACTIVE_LEAD_SOURCES = ALLOWED_LEAD_SOURCES
+HISTORICAL_LEAD_SOURCES = set()
+
 ALLOWED_LIFECYCLE_STATUSES = {"Open", "Qualified", "Disqualified"}
 ALLOWED_CHANNELS = {
     "Email", "Phone / Call", "Mobile/Call", "WhatsApp",
@@ -298,7 +309,7 @@ class LeadCreate(BaseModel):
     requirementType: Optional[str] = None
     requirementSummary: Optional[str] = None
     requestedProductService: Optional[str] = Field(None, max_length=255)
-    leadSource: Optional[str] = "Email Received"
+    leadSource: Optional[str] = "Website"
     contactId: str = Field(...)
     accountId: Optional[str] = None
     assignedToUserId: Optional[str] = None
@@ -341,7 +352,7 @@ class LeadCreate(BaseModel):
     @classmethod
     def validate_lead_source(cls, v: Optional[str]) -> str:
         if not v:
-            return "Email Received"
+            return "Website"
         clean = v.strip()
         mapping = {
             "Cold Call": "Cold Outreach",
@@ -350,7 +361,7 @@ class LeadCreate(BaseModel):
         }
         mapped = mapping.get(clean, clean)
         if mapped not in ALLOWED_LEAD_SOURCES:
-            raise ValueError(f"Invalid leadSource '{v}'. Allowed lead source is 'Email Received' (or historical: {sorted(HISTORICAL_LEAD_SOURCES)})")
+            raise ValueError(f"Invalid leadSource '{v}'. Must be one of: {CANONICAL_LEAD_SOURCES}")
         return mapped
 
     @field_validator("connectedDate", mode="before")
@@ -430,7 +441,7 @@ class LeadUpdate(BaseModel):
         }
         mapped = mapping.get(clean, clean)
         if mapped not in ALLOWED_LEAD_SOURCES:
-            raise ValueError(f"Invalid leadSource '{v}'. Must be one of: {sorted(ALLOWED_LEAD_SOURCES)}")
+            raise ValueError(f"Invalid leadSource '{v}'. Must be one of: {CANONICAL_LEAD_SOURCES}")
         return mapped
 
     @field_validator("websiteLink")
