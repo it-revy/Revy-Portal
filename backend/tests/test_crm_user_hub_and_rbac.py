@@ -142,7 +142,14 @@ def test_crm_admin_can_list_crm_users(setup_crm_test_environment):
     assert data["count"] > 0
     usernames = [u["username"] for u in data["users"]]
     assert "test_crm_admin_user" in usernames
-    assert "test_crm_target_candidate" in usernames
+    # Per Section 7: users without CRM membership must not appear in the CRM user list
+    assert "test_crm_target_candidate" not in usernames
+
+    # Verify unassigned central user appears in available-users
+    res_avail = client.get("/api/v1/crm/available-users", headers=headers)
+    assert res_avail.status_code == 200
+    avail_usernames = [u["username"] for u in res_avail.json()["users"]]
+    assert "test_crm_target_candidate" in avail_usernames
 
 
 def test_crm_sales_manager_cannot_access_user_hub(setup_crm_test_environment):

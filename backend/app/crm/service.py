@@ -130,7 +130,23 @@ class CrmService:
     ) -> List[Dict[str, Any]]:
         crm_mod = self._get_crm_module()
 
-        query = self.db.query(User).filter(User.is_hard_deleted == False)
+        # Hybrid User Management: Only list users who have explicit CRM module membership
+        query = (
+            self.db.query(UserModuleMembership)
+            .join(User, UserModuleMembership.user_id == User.id)
+            .options(
+                joinedload(UserModuleMembership.user).joinedload(User.employee),
+                joinedload(UserModuleMembership.role)
+            )
+            .filter(
+                UserModuleMembership.module_id == crm_mod.id,
+                User.is_hard_deleted == False
+            )
+        )
+
+        if crm_access is not None:
+            query = query.filter(UserModuleMembership.is_active == crm_access)
+
         if search:
             s = f"%{search.strip().lower()}%"
             query = query.filter(
@@ -139,12 +155,7 @@ class CrmService:
                 (func.lower(User.email).like(s))
             )
 
-        users = query.order_by(User.name.asc(), User.username.asc()).all()
-
-        memberships = self.db.query(UserModuleMembership).filter(
-            UserModuleMembership.module_id == crm_mod.id
-        ).all()
-        mem_map = {m.user_id: m for m in memberships}
+        memberships = query.all()
 
         lead_counts_query = self.db.query(
             Lead.assigned_to_user_id,
@@ -157,14 +168,13 @@ class CrmService:
         lead_counts = {u_id: count for u_id, count in lead_counts_query if u_id}
 
         result = []
-        for u in users:
-            mem = mem_map.get(u.id)
-            has_crm = bool(mem and mem.is_active)
-            r_code = mem.role.code if (mem and mem.role and mem.is_active) else None
-            r_name = mem.role.name if (mem and mem.role and mem.is_active) else None
-
-            if crm_access is not None and has_crm != crm_access:
+        for mem in memberships:
+            u = mem.user
+            if not u:
                 continue
+            r_code = mem.role.code if (mem.role and mem.is_active) else None
+            r_name = mem.role.name if (mem.role and mem.is_active) else None
+
             if role_code and (not r_code or r_code.upper() != role_code.strip().upper()):
                 continue
 
@@ -173,15 +183,219 @@ class CrmService:
                 "username": u.username,
                 "name": u.name or u.username,
                 "email": u.email,
+                "phone": u.phone or "",
+                "designation": u.employee.designation if getattr(u, "employee", None) else "",
+                "department": u.employee.department if getattr(u, "employee", None) else "",
                 "status": u.status,
-                "crmAccess": has_crm,
+                "crmAccess": bool(mem.is_active),
                 "crmRoleCode": r_code,
                 "crmRoleName": r_name,
                 "assignedLeadCount": lead_counts.get(u.id, 0),
                 "createdAt": u.created_at.isoformat() if u.created_at else None
             })
 
-        return result
+        return sorted(result, key=lambda x: x["name"])
+
+    def list_available_central_users(self, search: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Returns active Central Users who do not currently have an active CRM membership.
+        """
+        crm_mod = self._get_crm_module()
+        active_crm_mems = self.db.query(UserModuleMembership.user_id).filter(
+            UserModuleMembership.module_id == crm_mod.id,
+            UserModuleMembership.is_active == True
+        ).all()
+        crm_user_ids = {m[0] for m in active_crm_mems}
+
+        query = self.db.query(User).options(joinedload(User.employee)).filter(
+            User.is_hard_deleted == False,
+            User.status == "active"
+        )
+        if crm_user_ids:
+            query = query.filter(User.id.notin_(crm_user_ids))
+
+        if search:
+            s = f"%{search.strip().lower()}%"
+            query = query.filter(
+                (func.lower(User.name).like(s)) |
+                (func.lower(User.username).like(s)) |
+                (func.lower(User.email).like(s)) |
+                (func.lower(User.phone).like(s))
+            )
+
+        users = query.order_by(User.name.asc(), User.username.asc()).all()
+        return [
+            {
+                "id": u.id,
+                "username": u.username,
+                "name": u.name or u.username,
+                "email": u.email,
+                "phone": u.phone or "",
+                "status": u.status,
+                "designation": u.employee.designation if getattr(u, "employee", None) else "",
+                "department": u.employee.department if getattr(u, "employee", None) else ""
+            }
+            for u in users
+        ]
+
+    def assign_user_to_crm(
+        self,
+        actor: CurrentUser,
+        user_id: str,
+        role_code: str,
+        is_active: bool = True,
+        request: Optional[Request] = None
+    ) -> Dict[str, Any]:
+        """
+        Assigns an existing Central User to CRM with an authorized CRM role.
+        Central identity is reused without duplication.
+        """
+        crm_mod = self._get_crm_module()
+        user = self.db.query(User).filter(User.id == user_id, User.is_hard_deleted == False).first()
+        if not user:
+            raise NotFoundError("The specified Central User does not exist.")
+        if user.status != "active":
+            raise ValidationError("Cannot assign an inactive Central User to CRM. Activate user in Central User Management first.")
+
+        target_role_code = role_code.strip().upper()
+        RoleAssignmentService.validate_role_assignment(
+            actor=actor,
+            target_module_code="CRM",
+            target_role_code=target_role_code,
+            target_user_id=user.id,
+            db=self.db
+        )
+
+        role = self.db.query(ModuleRole).filter(
+            ModuleRole.module_id == crm_mod.id,
+            ModuleRole.code == target_role_code,
+            ModuleRole.is_active == True
+        ).first()
+        if not role:
+            raise ValidationError(f"Role '{target_role_code}' does not exist or is inactive in CRM.")
+
+        mem = self.db.query(UserModuleMembership).filter(
+            UserModuleMembership.user_id == user.id,
+            UserModuleMembership.module_id == crm_mod.id
+        ).first()
+
+        if mem:
+            mem.is_active = is_active
+            mem.role_id = role.id
+        else:
+            mem = UserModuleMembership(
+                user_id=user.id,
+                module_id=crm_mod.id,
+                role_id=role.id,
+                is_active=is_active
+            )
+            self.db.add(mem)
+
+        self.db.commit()
+        self.db.refresh(mem)
+
+        self.audit_service.log(
+            action="CRM_USER_ASSIGNED_TO_MODULE",
+            request=request,
+            performed_by_employee_id=str(actor.id) if actor.id else None,
+            performed_by_name=actor.name or actor.username,
+            role_used=actor.active_role,
+            target_info={
+                "userId": user.id,
+                "username": user.username,
+                "roleCode": role.code,
+                "isActive": is_active,
+                "details": f"Assigned Central User '{user.username}' to CRM with role '{role.name}' (Active: {is_active})."
+            }
+        )
+
+        return self.get_crm_user_details(user.id)
+
+    def remove_crm_membership(
+        self,
+        actor: CurrentUser,
+        user_id: str,
+        request: Optional[Request] = None
+    ) -> Dict[str, Any]:
+        """
+        Removes CRM module membership for a user without deleting their central identity.
+        """
+        crm_mod = self._get_crm_module()
+        user = self.db.query(User).filter(User.id == user_id, User.is_hard_deleted == False).first()
+        if not user:
+            raise NotFoundError(f"User with ID '{user_id}' not found.")
+
+        is_global = actor.is_global_admin or "*" in (actor.permissions or []) or any(r in (actor.roles or []) for r in ["IT_ADMIN", "DIRECTOR"])
+        if str(actor.id) == str(user.id) and not is_global:
+            raise PermissionDeniedError("Users cannot remove their own CRM access.")
+
+        mem = self.db.query(UserModuleMembership).filter(
+            UserModuleMembership.user_id == user.id,
+            UserModuleMembership.module_id == crm_mod.id
+        ).first()
+
+        if mem:
+            self.db.delete(mem)
+            self.db.commit()
+
+        self.audit_service.log(
+            action="CRM_USER_MEMBERSHIP_REMOVED",
+            request=request,
+            performed_by_employee_id=str(actor.id) if actor.id else None,
+            performed_by_name=actor.name or actor.username,
+            role_used=actor.active_role,
+            target_info={
+                "userId": user.id,
+                "username": user.username,
+                "details": f"Removed CRM module membership for user '{user.username}'."
+            }
+        )
+
+        return {
+            "success": True,
+            "userId": user.id,
+            "username": user.username,
+            "message": f"User '{user.username}' removed from CRM module."
+        }
+
+    def get_crm_user_details(self, user_id: str) -> Dict[str, Any]:
+        """
+        Returns read-only central profile info and CRM-specific role and membership status.
+        """
+        crm_mod = self._get_crm_module()
+        user = (
+            self.db.query(User)
+            .options(joinedload(User.employee))
+            .filter(User.id == user_id, User.is_hard_deleted == False)
+            .first()
+        )
+        if not user:
+            raise NotFoundError(f"User with ID '{user_id}' not found.")
+
+        mem = self.db.query(UserModuleMembership).options(joinedload(UserModuleMembership.role)).filter(
+            UserModuleMembership.user_id == user.id,
+            UserModuleMembership.module_id == crm_mod.id
+        ).first()
+
+        lead_count = self.db.query(func.count(Lead.id)).filter(
+            Lead.assigned_to_user_id == user.id
+        ).scalar() or 0
+
+        return {
+            "userId": user.id,
+            "username": user.username,
+            "name": user.name or user.username,
+            "email": user.email,
+            "phone": user.phone or "",
+            "designation": user.employee.designation if getattr(user, "employee", None) else "",
+            "department": user.employee.department if getattr(user, "employee", None) else "",
+            "status": user.status,
+            "crmAccess": bool(mem and mem.is_active),
+            "crmRoleCode": mem.role.code if (mem and mem.role and mem.is_active) else None,
+            "crmRoleName": mem.role.name if (mem and mem.role and mem.is_active) else None,
+            "assignedLeadCount": lead_count,
+            "createdAt": user.created_at.isoformat() if user.created_at else None
+        }
 
     def set_crm_access(
         self,
@@ -1021,7 +1235,8 @@ class CrmService:
                 requirement_summary=payload.requirementSummary.strip() if payload.requirementSummary else None,
                 requested_product_service=clean_req,
                 normalized_requirement=norm_req,
-                lead_source=payload.leadSource or "Website",
+                lead_source=payload.leadSource or "Email Received",
+                connected_date=payload.connectedDate,
                 account_id=acc_id,
                 contact_id=contact.id,
                 assigned_to_user_id=assignee.id if assignee else None,
@@ -1039,6 +1254,24 @@ class CrmService:
             # Add normalized requirement type relationship records
             for rt in req_types:
                 lead.requirement_types.append(LeadRequirementType(requirement_type=rt))
+
+            # Add additional contacts if provided
+            if payload.additionalContactIds:
+                for cid in payload.additionalContactIds:
+                    if not cid or cid == payload.contactId or cid == contact.id or (contact.contact_id and cid == contact.contact_id):
+                        continue
+                    add_con = self.db.query(Contact).filter(
+                        or_(Contact.id == cid, Contact.contact_id == cid),
+                        Contact.is_active == True
+                    ).first()
+                    if not add_con:
+                        raise NotFoundError(f"Additional Contact '{cid}' not found or is inactive.")
+                    if account and add_con.account_id and add_con.account_id != account.id:
+                        raise ValidationError(f"Additional Contact '{add_con.name}' belongs to a different Account.")
+                    elif account and not add_con.account_id:
+                        add_con.account_id = account.id
+                    if add_con not in lead.additional_contacts:
+                        lead.additional_contacts.append(add_con)
 
             try:
                 self.db.add(lead)
@@ -1181,6 +1414,36 @@ class CrmService:
             self.db.query(LeadRequirementType).filter(LeadRequirementType.lead_id == lead.id).delete()
             for rt in req_types:
                 self.db.add(LeadRequirementType(lead_id=lead.id, requirement_type=rt))
+
+        if "connectedDate" in payload.model_fields_set:
+            lead.connected_date = payload.connectedDate
+
+        # Additional Contacts update
+        if payload.additionalContactIds is not None:
+            new_additional = []
+            for cid in payload.additionalContactIds:
+                if not cid or cid == lead.contact_id or (contact and (cid == contact.id or cid == contact.contact_id)):
+                    continue
+                add_con = self.db.query(Contact).filter(
+                    or_(Contact.id == cid, Contact.contact_id == cid),
+                    Contact.is_active == True
+                ).first()
+                if not add_con:
+                    raise NotFoundError(f"Additional Contact '{cid}' not found or is inactive.")
+                if account and add_con.account_id and add_con.account_id != account.id:
+                    raise ValidationError(f"Additional Contact '{add_con.name}' belongs to a different Account.")
+                elif account and not add_con.account_id:
+                    add_con.account_id = account.id
+                if add_con not in new_additional:
+                    new_additional.append(add_con)
+            lead.additional_contacts = new_additional
+        elif "accountId" in payload.model_fields_set and lead.additional_contacts:
+            # Revalidate existing additional contacts if account changed and no new additional contacts provided
+            for con in lead.additional_contacts:
+                if account and con.account_id and con.account_id != account.id:
+                    raise ValidationError(f"Associated Additional Contact '{con.name}' belongs to a different Account.")
+                elif account and not con.account_id:
+                    con.account_id = account.id
 
         if payload.requirementSummary is not None:
             lead.requirement_summary = payload.requirementSummary.strip() if payload.requirementSummary else None
@@ -1497,6 +1760,27 @@ class CrmService:
                 "email": lead.created_by.email,
             }
 
+        additional_contacts_list = []
+        additional_contact_ids = []
+        if lead.additional_contacts:
+            for c in lead.additional_contacts:
+                additional_contact_ids.append(c.id)
+                c_acc_name = None
+                if c.account:
+                    c_acc_name = c.account.name
+                elif lead.account:
+                    c_acc_name = lead.account.name
+                additional_contacts_list.append({
+                    "id": c.id,
+                    "contactId": c.contact_id,
+                    "name": c.name,
+                    "designation": c.designation,
+                    "email": c.email,
+                    "mobileNumber": c.mobile_number,
+                    "accountId": c.account_id or (lead.account_id if lead.account else None),
+                    "accountName": c_acc_name,
+                })
+
         return {
             "id": lead.id,
             "leadId": lead.lead_id,
@@ -1513,6 +1797,7 @@ class CrmService:
             "remarks": lead.remarks,
             "nextFollowUpDate": lead.next_follow_up_date.isoformat() if lead.next_follow_up_date else None,
             "nextFollowUpAction": lead.next_follow_up_action,
+            "connectedDate": lead.connected_date.isoformat() if lead.connected_date else None,
             "lastConnectedDate": lead.last_connected_date.isoformat() if lead.last_connected_date else None,
             "websiteLink": lead.website_link,
             "location": lead.location,
@@ -1525,6 +1810,8 @@ class CrmService:
             "contactName": lead.contact.name if lead.contact else None,
             "contactEmail": lead.contact.email if lead.contact else None,
             "contactPhone": lead.contact.mobile_number if lead.contact else None,
+            "additionalContacts": additional_contacts_list,
+            "additionalContactIds": additional_contact_ids,
             "assignedToUserId": lead.assigned_to_user_id,
             "assignedToName": lead.assigned_to.name if lead.assigned_to else None,
             "assignedToEmail": lead.assigned_to.email if lead.assigned_to else None,

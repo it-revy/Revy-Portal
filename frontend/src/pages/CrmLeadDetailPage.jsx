@@ -42,6 +42,7 @@ export default function CrmLeadDetailPage() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [isCommModalOpen, setIsCommModalOpen] = useState(false);
+  const [viewContactModal, setViewContactModal] = useState(null);
 
   const canEdit = hasPermission('crm.lead.edit');
   const canUpdateStatus = hasPermission('crm.lead.status.update');
@@ -695,9 +696,30 @@ export default function CrmLeadDetailPage() {
                 {contactData ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
                     <div>
-                      <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#0f172a', lineHeight: 1.3 }}>
-                        {contactData.name}
-                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setViewContactModal(contactData)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          padding: 0,
+                          fontSize: '1.1rem',
+                          fontWeight: 700,
+                          color: '#0f172a',
+                          lineHeight: 1.3,
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.35rem'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.color = '#2563eb'}
+                        onMouseLeave={(e) => e.currentTarget.style.color = '#0f172a'}
+                        title="Click to view Contact details"
+                      >
+                        <span>{contactData.name}</span>
+                        <ExternalLink size={13} style={{ opacity: 0.6 }} />
+                      </button>
                       {contactData.designation && (
                         <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 500, marginTop: '0.15rem' }}>
                           {contactData.designation}
@@ -785,6 +807,101 @@ export default function CrmLeadDetailPage() {
             );
           })()}
 
+          {/* Additional / Related Contacts Card */}
+          <div className="glass-panel" style={{ padding: '1.25rem' }}>
+            <h4 style={{
+              margin: '0 0 0.85rem 0',
+              fontSize: '0.95rem',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              color: 'var(--text-primary)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <User size={16} color="#0284c7" />
+                <span>Additional Contacts ({lead.additionalContacts ? lead.additionalContacts.length : 0})</span>
+              </div>
+            </h4>
+
+            {lead.additionalContacts && lead.additionalContacts.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                {lead.additionalContacts.map((c, idx) => (
+                  <div
+                    key={c.id || idx}
+                    style={{
+                      padding: '0.75rem',
+                      background: '#f8fafc',
+                      borderRadius: '8px',
+                      border: '1px solid #e2e8f0',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.35rem'
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <button
+                        type="button"
+                        onClick={() => setViewContactModal(c)}
+                        style={{
+                          background: 'none',
+                          border: 'none',
+                          padding: 0,
+                          color: '#2563eb',
+                          fontWeight: 600,
+                          fontSize: '0.92rem',
+                          cursor: 'pointer',
+                          textAlign: 'left',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '0.3rem'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.textDecoration = 'underline'}
+                        onMouseLeave={(e) => e.currentTarget.style.textDecoration = 'none'}
+                        title="Click to view Contact details"
+                      >
+                        <span>{c.name}</span>
+                        <ExternalLink size={12} />
+                      </button>
+                      {c.contactId && (
+                        <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                          {c.contactId}
+                        </span>
+                      )}
+                    </div>
+                    {c.designation && (
+                      <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                        {c.designation}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '0.15rem' }}>
+                      {c.email && (
+                        <a
+                          href={`mailto:${c.email}`}
+                          style={{ color: 'var(--text-secondary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
+                        >
+                          <Mail size={11} /> {c.email}
+                        </a>
+                      )}
+                      {c.mobileNumber && (
+                        <a
+                          href={`tel:${c.mobileNumber}`}
+                          style={{ color: 'var(--text-secondary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}
+                        >
+                          <Phone size={11} /> {c.mobileNumber}
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', fontStyle: 'italic' }}>
+                No additional contacts attached to this lead.
+              </div>
+            )}
+          </div>
+
           {/* Ownership & Metadata Card */}
           <div className="glass-panel" style={{ padding: '1.25rem' }}>
             <h4 style={{ margin: '0 0 0.85rem 0', fontSize: '0.95rem', fontWeight: 600 }}>
@@ -801,7 +918,7 @@ export default function CrmLeadDetailPage() {
 
               <div>
                 <span style={{ color: 'var(--text-muted)' }}>Lead Source: </span>
-                <span style={{ fontWeight: 600 }}>{lead.leadSource || 'Website'}</span>
+                <span style={{ fontWeight: 600 }}>{lead.leadSource || 'Email Received'}</span>
               </div>
 
               <div>
@@ -810,6 +927,13 @@ export default function CrmLeadDetailPage() {
               </div>
 
               <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '0.6rem' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Connected Date: </span>
+                <div style={{ fontWeight: 600, color: lead.connectedDate ? '#0f172a' : 'var(--text-muted)', marginTop: '2px' }}>
+                  {lead.connectedDate ? formatDateOnly(lead.connectedDate) : 'Not specified'}
+                </div>
+              </div>
+
+              <div>
                 <span style={{ color: 'var(--text-muted)' }}>Last Connected Date: </span>
                 <div style={{ fontWeight: 600, color: lead.lastConnectedDate ? '#0f172a' : 'var(--text-muted)', marginTop: '2px' }}>
                   {formatDateTime(lead.lastConnectedDate)}
@@ -859,6 +983,103 @@ export default function CrmLeadDetailPage() {
           leadName={lead.leadName}
           onCommunicationLogged={() => fetchLeadDetails()}
         />
+      )}
+
+      {/* Contact Details View Modal / Panel */}
+      {viewContactModal && (
+        <div className="modal-backdrop" style={{ zIndex: 1200 }} onClick={() => setViewContactModal(null)}>
+          <div
+            className="modal-content"
+            style={{ maxWidth: '480px', width: '92%', borderRadius: '12px', padding: '1.5rem', background: '#ffffff', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <div style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '10px',
+                  background: '#e0f2fe',
+                  color: '#0284c7',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <User size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: '#0f172a' }}>
+                    {viewContactModal.name}
+                  </h3>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    {viewContactModal.contactId ? `Contact ID: ${viewContactModal.contactId}` : 'Contact Details'}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewContactModal(null)}
+                style={{ background: 'none', border: 'none', fontSize: '1.3rem', color: '#94a3b8', cursor: 'pointer', lineHeight: 1 }}
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem', fontSize: '0.875rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: '0.5rem', alignItems: 'baseline' }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Designation</span>
+                <span style={{ fontWeight: 500, color: '#1e293b' }}>
+                  {viewContactModal.designation || 'Not specified'}
+                </span>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: '0.5rem', alignItems: 'baseline' }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Email</span>
+                <div>
+                  {viewContactModal.email ? (
+                    <a href={`mailto:${viewContactModal.email}`} style={{ color: 'var(--accent-primary)', textDecoration: 'none', fontWeight: 500 }}>
+                      {viewContactModal.email}
+                    </a>
+                  ) : (
+                    <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Not provided</span>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: '0.5rem', alignItems: 'baseline' }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Mobile</span>
+                <div>
+                  {viewContactModal.mobileNumber ? (
+                    <a href={`tel:${viewContactModal.mobileNumber}`} style={{ color: 'var(--accent-primary)', textDecoration: 'none', fontWeight: 500 }}>
+                      {viewContactModal.mobileNumber}
+                    </a>
+                  ) : (
+                    <span style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>Not provided</span>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: '0.5rem', alignItems: 'baseline' }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Account</span>
+                <span style={{ fontWeight: 500, color: '#1e293b' }}>
+                  {viewContactModal.accountName || lead.accountName || lead.account?.name || 'Direct Contact / No Account'}
+                </span>
+              </div>
+            </div>
+
+            <div style={{ marginTop: '1.5rem', paddingTop: '0.75rem', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setViewContactModal(null)}
+                style={{ padding: '0.45rem 1.1rem', fontSize: '0.85rem' }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

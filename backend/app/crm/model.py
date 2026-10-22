@@ -12,6 +12,7 @@ from sqlalchemy import (
     Numeric,
     UniqueConstraint,
     Index,
+    Table,
     text
 )
 from sqlalchemy.orm import relationship
@@ -74,6 +75,16 @@ class LeadRequirementType(Base):
     lead = relationship("Lead", back_populates="requirement_types")
 
 
+# Normalized Association Table for Multiple Contacts on a Lead
+lead_additional_contacts = Table(
+    "lead_additional_contacts",
+    Base.metadata,
+    Column("lead_id", String(36), ForeignKey("leads.id", ondelete="CASCADE"), primary_key=True),
+    Column("contact_id", String(36), ForeignKey("contacts.id", ondelete="CASCADE"), primary_key=True),
+    Column("created_at", DateTime, default=lambda: datetime.now(timezone.utc)),
+)
+
+
 class Lead(Base):
     __tablename__ = "leads"
 
@@ -88,16 +99,17 @@ class Lead(Base):
     requirement_summary = Column(Text, nullable=True)
     requested_product_service = Column(String(255), nullable=True, index=True)
     normalized_requirement = Column(String(255), nullable=True)
-    lead_source = Column(String(50), nullable=False, default="Website")  # Website, Email, Phone, WhatsApp, Referral, etc.
+    lead_source = Column(String(50), nullable=False, default="Email Received")  # Primary active source: Email Received
     
     account_id = Column(String(36), ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True, index=True)
-    contact_id = Column(String(36), ForeignKey("contacts.id", ondelete="RESTRICT"), nullable=False, index=True)
+    contact_id = Column(String(36), ForeignKey("contacts.id", ondelete="RESTRICT"), nullable=False, index=True)  # Primary Contact
     assigned_to_user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     
     lifecycle_status = Column(String(50), nullable=False, default="Open", index=True)  # Open, Qualified, Disqualified
     communication_channel = Column(String(50), nullable=True, default="Email")
     remarks = Column(Text, nullable=True)
     
+    connected_date = Column(Date, nullable=True, index=True)  # Client connection date
     next_follow_up_date = Column(Date, nullable=True, index=True)
     next_follow_up_action = Column(Text, nullable=True)
     last_connected_date = Column(DateTime, nullable=True)
@@ -116,7 +128,13 @@ class Lead(Base):
     )
 
     account = relationship("Account", back_populates="leads")
-    contact = relationship("Contact", back_populates="leads")
+    contact = relationship("Contact", back_populates="leads")  # Primary Contact
+    additional_contacts = relationship(
+        "Contact",
+        secondary=lead_additional_contacts,
+        backref="additional_leads",
+        lazy="selectin"
+    )
     assigned_to = relationship("User", foreign_keys=[assigned_to_user_id])
     created_by = relationship("User", foreign_keys=[created_by_id])
     updated_by = relationship("User", foreign_keys=[updated_by_id])

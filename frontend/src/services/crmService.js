@@ -127,6 +127,24 @@ export const crmService = {
 
   setUserCrmRole: async (userId, data) => {
     return API.put(`/crm/users/${userId}/role`, data);
+  },
+
+  getAvailableCentralUsers: async (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.search) query.append('search', params.search);
+    return API.get(`/crm/available-users?${query.toString()}`);
+  },
+
+  assignUserToCrm: async (data) => {
+    return API.post('/crm/users/assign', data);
+  },
+
+  getCrmUserDetails: async (userId) => {
+    return API.get(`/crm/users/${userId}`);
+  },
+
+  removeCrmMembership: async (userId) => {
+    return API.delete(`/crm/users/${userId}/membership`);
   }
 };
 

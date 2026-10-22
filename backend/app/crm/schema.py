@@ -56,6 +56,9 @@ class CrmUserItem(BaseModel):
     username: str
     name: str
     email: str
+    phone: Optional[str] = None
+    designation: Optional[str] = None
+    department: Optional[str] = None
     status: str
     crmAccess: bool
     crmRoleCode: Optional[str] = None
@@ -78,6 +81,29 @@ class CrmUserAccessRequest(BaseModel):
 
 class CrmUserRoleRequest(BaseModel):
     roleCode: str
+
+
+class CrmUserAssignRequest(BaseModel):
+    userId: str
+    roleCode: str
+    isActive: bool = True
+
+
+class AvailableUserItem(BaseModel):
+    id: str
+    username: str
+    name: str
+    email: str
+    phone: Optional[str] = None
+    status: str = "active"
+    designation: Optional[str] = None
+    department: Optional[str] = None
+
+
+class AvailableUserListResponse(BaseModel):
+    success: bool = True
+    count: int
+    users: List[AvailableUserItem]
 
 
 class CrmRoleItem(BaseModel):
@@ -212,11 +238,13 @@ class ContactDetailResponse(BaseModel):
 
 ALLOWED_BUSINESS_AREAS = {"Biogas", "WWT"}
 ALLOWED_REQUIREMENT_TYPES = {"Consulting", "Sample Testing", "Product"}
-ALLOWED_LEAD_SOURCES = {
+ACTIVE_LEAD_SOURCES = {"Email Received"}
+HISTORICAL_LEAD_SOURCES = {
     "Website", "Email Campaign", "Referral", "Partner", "Trade Show / Expo",
     "Cold Outreach", "Inbound Call", "Investor", "In-Person Meeting",
     "Social Media", "Other"
 }
+ALLOWED_LEAD_SOURCES = ACTIVE_LEAD_SOURCES | HISTORICAL_LEAD_SOURCES
 ALLOWED_LIFECYCLE_STATUSES = {"Open", "Qualified", "Disqualified"}
 ALLOWED_CHANNELS = {
     "Email", "Phone / Call", "Mobile/Call", "WhatsApp",
@@ -270,10 +298,12 @@ class LeadCreate(BaseModel):
     requirementType: Optional[str] = None
     requirementSummary: Optional[str] = None
     requestedProductService: Optional[str] = Field(None, max_length=255)
-    leadSource: Optional[str] = "Website"
+    leadSource: Optional[str] = "Email Received"
     contactId: str = Field(...)
     accountId: Optional[str] = None
     assignedToUserId: Optional[str] = None
+    connectedDate: Optional[py_date] = None
+    additionalContactIds: Optional[List[str]] = Field(default_factory=list)
     websiteLink: Optional[str] = None
     location: Optional[str] = None
     siteName: Optional[str] = None
@@ -311,7 +341,7 @@ class LeadCreate(BaseModel):
     @classmethod
     def validate_lead_source(cls, v: Optional[str]) -> str:
         if not v:
-            return "Website"
+            return "Email Received"
         clean = v.strip()
         mapping = {
             "Cold Call": "Cold Outreach",
@@ -320,8 +350,13 @@ class LeadCreate(BaseModel):
         }
         mapped = mapping.get(clean, clean)
         if mapped not in ALLOWED_LEAD_SOURCES:
-            raise ValueError(f"Invalid leadSource '{v}'. Must be one of: {sorted(ALLOWED_LEAD_SOURCES)}")
+            raise ValueError(f"Invalid leadSource '{v}'. Allowed lead source is 'Email Received' (or historical: {sorted(HISTORICAL_LEAD_SOURCES)})")
         return mapped
+
+    @field_validator("connectedDate", mode="before")
+    @classmethod
+    def validate_lead_connected_date(cls, v: Any) -> Optional[py_date]:
+        return parse_date_only_value(v)
 
     @field_validator("websiteLink")
     @classmethod
@@ -345,6 +380,8 @@ class LeadUpdate(BaseModel):
     contactId: Optional[str] = None
     accountId: Optional[str] = None
     assignedToUserId: Optional[str] = None
+    connectedDate: Optional[py_date] = None
+    additionalContactIds: Optional[List[str]] = None
     websiteLink: Optional[str] = None
     location: Optional[str] = None
     siteName: Optional[str] = None
@@ -416,6 +453,11 @@ class LeadUpdate(BaseModel):
     def validate_next_follow_up_date(cls, v: Any) -> Optional[py_date]:
         return parse_date_only_value(v)
 
+    @field_validator("connectedDate", mode="before")
+    @classmethod
+    def validate_update_connected_date(cls, v: Any) -> Optional[py_date]:
+        return parse_date_only_value(v)
+
 
 class LeadStatusTransitionRequest(BaseModel):
     status: str = Field(...)
@@ -473,6 +515,7 @@ class LeadItem(BaseModel):
     lifecycleStatus: str
     communicationChannel: Optional[str] = None
     remarks: Optional[str] = None
+    connectedDate: Optional[str] = None
     nextFollowUpDate: Optional[str] = None
     nextFollowUpAction: Optional[str] = None
     lastConnectedDate: Optional[str] = None
@@ -487,6 +530,8 @@ class LeadItem(BaseModel):
     contactName: Optional[str] = None
     contactEmail: Optional[str] = None
     contactPhone: Optional[str] = None
+    additionalContacts: List[Dict[str, Any]] = []
+    additionalContactIds: List[str] = []
     assignedToUserId: Optional[str] = None
     assignedToName: Optional[str] = None
     assignedToEmail: Optional[str] = None

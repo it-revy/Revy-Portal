@@ -15,6 +15,8 @@ from app.crm.schema import (
     CrmUserAccessRequest,
     CrmUserRoleRequest,
     CrmRoleListResponse,
+    CrmUserAssignRequest,
+    AvailableUserListResponse,
     AccountCreate,
     AccountUpdate,
     AccountListResponse,
@@ -139,6 +141,82 @@ def set_crm_user_role(
         "success": True,
         "message": f"CRM role for user {updated['username']} updated to {updated['crmRoleName'] or updated['crmRoleCode']}.",
         "user": updated
+    }
+
+
+@router.get("/available-users", response_model=AvailableUserListResponse)
+def list_available_central_users(
+    search: Optional[str] = Query(None, description="Search central users by name, username, email, phone, or designation"),
+    current_user: CurrentUser = Depends(require_permission("crm.user.manage")),
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieves eligible Central Users who are not currently assigned to the CRM module.
+    Strictly restricted to CRM Admin and Global Administrators.
+    """
+    service = CrmService(db)
+    users = service.list_available_central_users(search=search)
+    return {"success": True, "count": len(users), "users": users}
+
+
+@router.post("/users/assign")
+def assign_user_to_crm(
+    payload: CrmUserAssignRequest,
+    request: Request,
+    current_user: CurrentUser = Depends(require_permission("crm.user.manage")),
+    db: Session = Depends(get_db)
+):
+    """
+    Assigns an existing Central User to the CRM module with an appropriate CRM role and status.
+    Strictly restricted to CRM Admin and Global Administrators.
+    """
+    service = CrmService(db)
+    result = service.assign_user_to_crm(
+        actor=current_user,
+        user_id=payload.userId,
+        role_code=payload.roleCode,
+        is_active=payload.isActive,
+        request=request
+    )
+    return {
+        "success": True,
+        "message": f"User {result['username']} successfully assigned to CRM module.",
+        "user": result
+    }
+
+
+@router.get("/users/{user_id}")
+def get_crm_user_details(
+    user_id: str,
+    current_user: CurrentUser = Depends(require_permission("crm.user.manage")),
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieves central user identity details (read-only) along with CRM membership and role.
+    Strictly restricted to CRM Admin and Global Administrators.
+    """
+    service = CrmService(db)
+    user_data = service.get_crm_user_details(user_id)
+    return {"success": True, "user": user_data}
+
+
+@router.delete("/users/{user_id}/membership")
+def remove_crm_membership(
+    user_id: str,
+    request: Request,
+    current_user: CurrentUser = Depends(require_permission("crm.user.manage")),
+    db: Session = Depends(get_db)
+):
+    """
+    Removes user membership from the CRM module without deleting the Central User record.
+    Strictly restricted to CRM Admin and Global Administrators.
+    """
+    service = CrmService(db)
+    result = service.remove_crm_membership(actor=current_user, user_id=user_id, request=request)
+    return {
+        "success": True,
+        "message": result.get("message") or f"User {result.get('username', '')} removed from CRM module successfully.",
+        "user": result
     }
 
 

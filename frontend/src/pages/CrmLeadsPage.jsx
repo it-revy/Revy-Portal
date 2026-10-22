@@ -496,6 +496,12 @@ export default function CrmLeadsPage() {
                               </span>
                             </div>
                           )}
+                          {lead.connectedDate && (
+                            <div className="crm-cell-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#0369a1', fontSize: '0.75rem', marginTop: '2px' }}>
+                              <Calendar size={11} color="#0284c7" />
+                              <span>Connected: {formatDateOnly(lead.connectedDate)}</span>
+                            </div>
+                          )}
                         </td>
 
                         {/* 3. Area & Type */}
@@ -628,6 +634,12 @@ export default function CrmLeadsPage() {
                               {lead.contactName || lead.contact?.name}
                               {lead.contact?.designation ? ` (${lead.contact.designation})` : ''}
                             </span>
+                          </div>
+                        )}
+                        {lead.connectedDate && (
+                          <div className="crm-cell-secondary" style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#0369a1', fontSize: '0.75rem', marginTop: '2px' }}>
+                            <Calendar size={11} color="#0284c7" />
+                            <span>Connected: {formatDateOnly(lead.connectedDate)}</span>
                           </div>
                         )}
                       </td>

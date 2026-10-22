@@ -18,19 +18,7 @@ import QuickContactModal from './QuickContactModal';
 
 const DOMAIN_REGEX = /^(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}(?::\d+)?(?:\/[^\s]*)?$/i;
 
-const CANONICAL_LEAD_SOURCES = [
-  'Website',
-  'Email Campaign',
-  'Cold Outreach',
-  'Inbound Call',
-  'In-Person Meeting',
-  'Investor',
-  'Partner',
-  'Referral',
-  'Social Media',
-  'Trade Show / Expo',
-  'Other'
-];
+export const ACTIVE_LEAD_SOURCES = ['Email Received'];
 
 export const REQUIREMENT_TYPE_OPTIONS = ['Consulting', 'Sample Testing', 'Product'];
 
@@ -63,15 +51,16 @@ export default function LeadModal({
     requirementType: 'Sample Testing',
     requestedProductService: '',
     requirementSummary: '',
-    leadSource: 'Website',
+    leadSource: 'Email Received',
+    connectedDate: '',
     communicationChannel: 'Email',
     accountId: '',
     contactId: '',
+    additionalContactIds: [],
     assignedToUserId: '',
     remarks: '',
     nextFollowUpDate: '',
     nextFollowUpAction: '',
-    websiteLink: '',
     location: '',
     siteName: ''
   });
@@ -107,6 +96,7 @@ export default function LeadModal({
 
       if (leadToEdit) {
         const initialReqs = parseRequirementTypes(leadToEdit);
+        const additionalIds = leadToEdit.additionalContactIds || (Array.isArray(leadToEdit.additionalContacts) ? leadToEdit.additionalContacts.map(c => c.id) : []);
         setFormData({
           leadName: leadToEdit.leadName || '',
           businessArea: leadToEdit.businessArea || 'Biogas',
@@ -114,16 +104,17 @@ export default function LeadModal({
           requirementType: initialReqs[0] || 'Sample Testing',
           requestedProductService: leadToEdit.requestedProductService || '',
           requirementSummary: leadToEdit.requirementSummary || '',
-          leadSource: leadToEdit.leadSource || 'Website',
+          leadSource: leadToEdit.leadSource || 'Email Received',
+          connectedDate: leadToEdit.connectedDate ? leadToEdit.connectedDate.slice(0, 10) : '',
           communicationChannel: leadToEdit.communicationChannel || 'Email',
           accountId: leadToEdit.accountId || leadToEdit.account?.id || '',
           contactId: leadToEdit.contactId || leadToEdit.contact?.id || '',
+          additionalContactIds: additionalIds,
           assignedToUserId: leadToEdit.assignedToUserId || leadToEdit.assignedTo?.id || '',
           remarks: leadToEdit.remarks || '',
           // Pure date-only string YYYY-MM-DD
           nextFollowUpDate: leadToEdit.nextFollowUpDate ? leadToEdit.nextFollowUpDate.slice(0, 10) : '',
           nextFollowUpAction: leadToEdit.nextFollowUpAction || '',
-          websiteLink: leadToEdit.websiteLink || '',
           location: leadToEdit.location || '',
           siteName: leadToEdit.siteName || ''
         });
@@ -135,15 +126,16 @@ export default function LeadModal({
           requirementType: 'Sample Testing',
           requestedProductService: '',
           requirementSummary: '',
-          leadSource: 'Website',
+          leadSource: 'Email Received',
+          connectedDate: '',
           communicationChannel: 'Email',
           accountId: '',
           contactId: '',
+          additionalContactIds: [],
           assignedToUserId: '',
           remarks: '',
           nextFollowUpDate: '',
           nextFollowUpAction: '',
-          websiteLink: '',
           location: '',
           siteName: ''
         });
@@ -213,10 +205,15 @@ export default function LeadModal({
       // If currently selected contact belongs to a different non-empty account, clear contactId
       const currentContact = contacts.find(c => c.id === prev.contactId);
       const shouldKeepContact = currentContact && (!currentContact.accountId || currentContact.accountId === accId);
+      const keptAdditional = (prev.additionalContactIds || []).filter(id => {
+        const con = contacts.find(c => c.id === id);
+        return con && (!con.accountId || con.accountId === accId);
+      });
       return {
         ...prev,
         accountId: accId,
-        contactId: shouldKeepContact ? prev.contactId : ''
+        contactId: shouldKeepContact ? prev.contactId : '',
+        additionalContactIds: keptAdditional
       };
     });
     await fetchContacts(accId);
@@ -227,7 +224,11 @@ export default function LeadModal({
     const selectedContact = contacts.find(c => c.id === selectedContactId);
 
     setFormData(prev => {
-      const nextState = { ...prev, contactId: selectedContactId };
+      const nextState = {
+        ...prev,
+        contactId: selectedContactId,
+        additionalContactIds: (prev.additionalContactIds || []).filter(id => id !== selectedContactId)
+      };
       // If contact belongs to an account and account is not set, auto-populate accountId
       if (selectedContact?.accountId && !prev.accountId) {
         nextState.accountId = selectedContact.accountId;
@@ -243,6 +244,18 @@ export default function LeadModal({
       });
     }
     if (error) setError(null);
+  };
+
+  const handleAdditionalContactToggle = (contactId) => {
+    setFormData(prev => {
+      const current = prev.additionalContactIds || [];
+      const exists = current.includes(contactId);
+      const updated = exists ? current.filter(id => id !== contactId) : [...current, contactId];
+      return {
+        ...prev,
+        additionalContactIds: updated
+      };
+    });
   };
 
   const handleChange = (e) => {
@@ -310,16 +323,6 @@ export default function LeadModal({
       errors.contactId = 'Primary Contact is mandatory. Please select or quick-create a contact.';
     }
 
-    if (formData.websiteLink.trim()) {
-      const site = formData.websiteLink.trim();
-      const lower = site.toLowerCase();
-      if (lower.startsWith('javascript:') || lower.startsWith('data:') || lower.startsWith('vbscript:')) {
-        errors.websiteLink = 'Unsafe web protocols are not allowed.';
-      } else if (!DOMAIN_REGEX.test(site)) {
-        errors.websiteLink = 'Enter a valid domain or URL (e.g. renergydynamics.com).';
-      }
-    }
-
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -339,16 +342,17 @@ export default function LeadModal({
       requirementType: formData.requirementTypes[0] || 'Sample Testing',
       requestedProductService: formData.requestedProductService.trim() || undefined,
       requirementSummary: formData.requirementSummary.trim() || undefined,
-      leadSource: formData.leadSource || 'Website',
+      leadSource: formData.leadSource || 'Email Received',
       communicationChannel: formData.communicationChannel || 'Email',
       contactId: formData.contactId,
+      additionalContactIds: formData.additionalContactIds || [],
       accountId: formData.accountId ? formData.accountId : (isEdit ? null : undefined),
       assignedToUserId: formData.assignedToUserId ? formData.assignedToUserId : (isEdit ? null : undefined),
       remarks: formData.remarks.trim() || undefined,
+      connectedDate: formData.connectedDate || undefined,
       // Date only: YYYY-MM-DD (pure calendar date)
       nextFollowUpDate: formData.nextFollowUpDate || undefined,
       nextFollowUpAction: formData.nextFollowUpAction.trim() || undefined,
-      websiteLink: formData.websiteLink.trim() || undefined,
       location: formData.location.trim() || undefined,
       siteName: formData.siteName.trim() || undefined
     };
@@ -401,6 +405,10 @@ export default function LeadModal({
   if (!isOpen) return null;
 
   const selectedAccount = accounts.find(a => a.id === formData.accountId);
+  const eligibleAdditionalContacts = contacts.filter(c =>
+    c.id !== formData.contactId &&
+    (!formData.accountId || !c.accountId || c.accountId === formData.accountId)
+  );
 
   return (
     <>
@@ -600,6 +608,57 @@ export default function LeadModal({
                     )}
                   </div>
                 </div>
+
+                {/* Additional Contacts (Optional Multi-Select) */}
+                <div style={{ marginTop: '0.25rem', paddingTop: '0.75rem', borderTop: '1px dashed #cbd5e1' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.35rem' }}>
+                    <label className="form-label" style={{ margin: 0, fontWeight: 600 }}>
+                      Additional Contacts / Related Contacts <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem', fontWeight: 400 }}>(Optional)</span>
+                    </label>
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 400 }}>
+                      Select other contacts from this account
+                    </span>
+                  </div>
+                  {eligibleAdditionalContacts.length === 0 ? (
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic', padding: '0.35rem 0' }}>
+                      {formData.accountId ? 'No other contacts found for this account.' : 'Select an Account or create more contacts to attach additional stakeholders.'}
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', maxHeight: '130px', overflowY: 'auto', padding: '0.25rem 0' }}>
+                      {eligibleAdditionalContacts.map(c => {
+                        const isChecked = (formData.additionalContactIds || []).includes(c.id);
+                        return (
+                          <label
+                            key={c.id}
+                            style={{
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.45rem',
+                              padding: '0.35rem 0.65rem',
+                              borderRadius: '6px',
+                              background: isChecked ? '#e0f2fe' : '#ffffff',
+                              border: isChecked ? '1.5px solid #0284c7' : '1px solid #cbd5e1',
+                              fontSize: '0.8rem',
+                              cursor: 'pointer',
+                              userSelect: 'none',
+                              transition: 'all 0.15s ease'
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => handleAdditionalContactToggle(c.id)}
+                              style={{ cursor: 'pointer' }}
+                            />
+                            <span style={{ fontWeight: isChecked ? 600 : 400, color: isChecked ? '#0369a1' : '#334155' }}>
+                              {c.name} {c.designation ? `(${c.designation})` : ''}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Section 2: Enquiry Details & Categorization */}
@@ -725,8 +784,8 @@ export default function LeadModal({
                 />
               </div>
 
-              {/* Section 4: Source, Channel & Assignment */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1rem' }}>
+              {/* Section 4: Source, Channel, Connected Date & Assignment */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem' }}>
                 <div className="form-group">
                   <label className="form-label" style={{ fontWeight: 600 }}>
                     Lead Source <span style={{ color: 'var(--danger)' }}>*</span>
@@ -738,10 +797,28 @@ export default function LeadModal({
                     onChange={handleChange}
                     required
                   >
-                    {CANONICAL_LEAD_SOURCES.map(source => (
+                    {formData.leadSource && !ACTIVE_LEAD_SOURCES.includes(formData.leadSource) && (
+                      <option value={formData.leadSource}>{formData.leadSource} (Historical)</option>
+                    )}
+                    {ACTIVE_LEAD_SOURCES.map(source => (
                       <option key={source} value={source}>{source}</option>
                     ))}
                   </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                    <Calendar size={14} color="var(--text-muted)" />
+                    <span>Connected Date</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem', fontWeight: 400 }}>(Date only)</span>
+                  </label>
+                  <input
+                    type="date"
+                    name="connectedDate"
+                    className="form-control"
+                    value={formData.connectedDate}
+                    onChange={handleChange}
+                  />
                 </div>
 
                 <div className="form-group">
@@ -852,27 +929,6 @@ export default function LeadModal({
                     value={formData.location}
                     onChange={handleChange}
                   />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                    <Globe size={14} color="var(--text-muted)" />
-                    <span>Website / Document Link</span>
-                    <span style={{ color: 'var(--text-muted)', fontSize: '0.78rem' }}>(Optional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="websiteLink"
-                    className={`form-control ${fieldErrors.websiteLink ? 'is-invalid' : ''}`}
-                    placeholder="renergydynamics.com"
-                    value={formData.websiteLink}
-                    onChange={handleChange}
-                  />
-                  {fieldErrors.websiteLink && (
-                    <div style={{ color: '#dc2626', fontSize: '0.75rem', marginTop: '0.25rem' }}>
-                      {fieldErrors.websiteLink}
-                    </div>
-                  )}
                 </div>
               </div>
             </div>

@@ -17,8 +17,15 @@ def setup_test_database():
     with engine.connect() as conn:
         try:
             res = conn.exec_driver_sql("PRAGMA table_info(leads)").fetchall()
+            needs_lead_recreate = False
             lead_name_col = next((c for c in res if c[1] == 'lead_name'), None)
             if lead_name_col and lead_name_col[3] == 1:
+                needs_lead_recreate = True
+            if res and not any(c[1] == 'connected_date' for c in res):
+                needs_lead_recreate = True
+
+            if needs_lead_recreate:
+                conn.exec_driver_sql("DROP TABLE IF EXISTS lead_additional_contacts")
                 conn.exec_driver_sql("DROP TABLE IF EXISTS lead_requirement_types")
                 conn.exec_driver_sql("DROP TABLE IF EXISTS crm_testing_charges")
                 conn.exec_driver_sql("DROP TABLE IF EXISTS crm_sample_test_requests")
@@ -27,6 +34,8 @@ def setup_test_database():
                 conn.exec_driver_sql("DROP TABLE IF EXISTS crm_consulting_engagements")
                 conn.exec_driver_sql("DROP TABLE IF EXISTS lead_communication_history")
                 conn.exec_driver_sql("DROP TABLE IF EXISTS leads")
+                conn.commit()
+
             chg_cols = conn.exec_driver_sql("PRAGMA table_info(crm_testing_charges)").fetchall()
             if chg_cols and not any(c[1] == 'agreed_unit_rate' for c in chg_cols):
                 conn.exec_driver_sql("DROP TABLE IF EXISTS crm_testing_charges")
