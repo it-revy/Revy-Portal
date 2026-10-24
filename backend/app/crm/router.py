@@ -21,10 +21,12 @@ from app.crm.schema import (
     AccountUpdate,
     AccountListResponse,
     AccountDetailResponse,
+    AccountMatchResponse,
     ContactCreate,
     ContactUpdate,
     ContactListResponse,
     ContactDetailResponse,
+    ContactMatchResponse,
     LeadCreate,
     LeadUpdate,
     LeadStatusTransitionRequest,
@@ -245,6 +247,32 @@ def list_accounts(
     return {"success": True, "count": len(accounts), "accounts": accounts}
 
 
+@router.get("/accounts/matches", response_model=AccountMatchResponse)
+def get_account_matches(
+    name: Optional[str] = Query(None, description="Company name to check for potential matches"),
+    website: Optional[str] = Query(None, description="Website or domain to check"),
+    email: Optional[str] = Query(None, description="Email to check"),
+    phone: Optional[str] = Query(None, description="Phone number to check"),
+    excludeId: Optional[str] = Query(None, description="Exclude specific account ID if editing"),
+    limit: int = Query(10, ge=1, le=50),
+    current_user: CurrentUser = Depends(require_permission("crm.account.view")),
+    db: Session = Depends(get_db)
+):
+    """
+    Search potential duplicate or matching Accounts using normalized name, domain, email, and phone heuristics.
+    """
+    service = CrmService(db)
+    matches = service.search_account_matches(
+        name=name,
+        website=website,
+        email=email,
+        phone=phone,
+        exclude_id=excludeId,
+        limit=limit
+    )
+    return {"success": True, "count": len(matches), "matches": matches}
+
+
 @router.get("/accounts/{account_id}", response_model=AccountDetailResponse)
 def get_account(
     account_id: str,
@@ -321,6 +349,32 @@ def list_contacts(
         offset=offset
     )
     return {"success": True, "count": len(contacts), "contacts": contacts}
+
+
+@router.get("/contacts/matches", response_model=ContactMatchResponse)
+def get_contact_matches(
+    name: Optional[str] = Query(None, description="Contact person name to check"),
+    email: Optional[str] = Query(None, description="Email address to check"),
+    mobileNumber: Optional[str] = Query(None, description="Mobile/phone number to check"),
+    accountId: Optional[str] = Query(None, description="Account ID context"),
+    excludeId: Optional[str] = Query(None, description="Exclude specific contact ID if editing"),
+    limit: int = Query(10, ge=1, le=50),
+    current_user: CurrentUser = Depends(require_permission("crm.contact.view")),
+    db: Session = Depends(get_db)
+):
+    """
+    Search potential duplicate or matching Contacts using normalized email, mobile number, and name heuristics.
+    """
+    service = CrmService(db)
+    matches = service.search_contact_matches(
+        name=name,
+        email=email,
+        mobile_number=mobileNumber,
+        account_id=accountId,
+        exclude_id=excludeId,
+        limit=limit
+    )
+    return {"success": True, "count": len(matches), "matches": matches}
 
 
 @router.get("/contacts/{contact_id}", response_model=ContactDetailResponse)

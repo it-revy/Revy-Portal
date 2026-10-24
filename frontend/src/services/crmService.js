@@ -127,6 +127,28 @@ export const crmService = {
     return API.put(`/crm/contacts/${id}`, data);
   },
 
+  getAccountMatches: async (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.name) query.append('name', params.name);
+    if (params.website) query.append('website', params.website);
+    if (params.email) query.append('email', params.email);
+    if (params.phone) query.append('phone', params.phone);
+    if (params.excludeId) query.append('excludeId', params.excludeId);
+    if (params.limit) query.append('limit', params.limit);
+    return API.get(`/crm/accounts/matches?${query.toString()}`);
+  },
+
+  getContactMatches: async (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.name) query.append('name', params.name);
+    if (params.email) query.append('email', params.email);
+    if (params.mobileNumber) query.append('mobileNumber', params.mobileNumber);
+    if (params.accountId) query.append('accountId', params.accountId);
+    if (params.excludeId) query.append('excludeId', params.excludeId);
+    if (params.limit) query.append('limit', params.limit);
+    return API.get(`/crm/contacts/matches?${query.toString()}`);
+  },
+
   getEligibleAssignees: async () => {
     return API.get('/crm/assignees');
   },

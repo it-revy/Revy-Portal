@@ -124,6 +124,7 @@ class CrmRoleListResponse(BaseModel):
 # 2. ACCOUNT SCHEMAS
 # =========================================================================
 
+
 class AccountCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     industry: Optional[str] = Field(None, max_length=100)
@@ -131,11 +132,31 @@ class AccountCreate(BaseModel):
     phone: Optional[str] = Field(None, max_length=50)
     email: Optional[str] = Field(None, max_length=255)
     address: Optional[str] = None
+    location: Optional[str] = Field(None, max_length=255)
+    confirmDuplicate: bool = False
+
+    @field_validator("name")
+    @classmethod
+    def validate_account_name(cls, v: str) -> str:
+        clean = v.strip()
+        if not clean:
+            raise ValueError("Account name cannot be empty.")
+        return clean
 
     @field_validator("website")
     @classmethod
     def validate_account_website(cls, v: Optional[str]) -> Optional[str]:
         return validate_and_normalize_website(v)
+
+    @field_validator("email")
+    @classmethod
+    def validate_account_email(cls, v: Optional[str]) -> Optional[str]:
+        if not v or not v.strip():
+            return None
+        clean = v.strip().lower()
+        if "@" not in clean or "." not in clean.split("@")[-1]:
+            raise ValueError("Enter a valid company email address.")
+        return clean
 
 
 class AccountUpdate(BaseModel):
@@ -145,12 +166,34 @@ class AccountUpdate(BaseModel):
     phone: Optional[str] = Field(None, max_length=50)
     email: Optional[str] = Field(None, max_length=255)
     address: Optional[str] = None
+    location: Optional[str] = Field(None, max_length=255)
     isActive: Optional[bool] = None
+    confirmDuplicate: bool = False
+
+    @field_validator("name")
+    @classmethod
+    def validate_account_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        clean = v.strip()
+        if not clean:
+            raise ValueError("Account name cannot be empty.")
+        return clean
 
     @field_validator("website")
     @classmethod
     def validate_account_website(cls, v: Optional[str]) -> Optional[str]:
         return validate_and_normalize_website(v)
+
+    @field_validator("email")
+    @classmethod
+    def validate_account_email(cls, v: Optional[str]) -> Optional[str]:
+        if not v or not v.strip():
+            return None
+        clean = v.strip().lower()
+        if "@" not in clean or "." not in clean.split("@")[-1]:
+            raise ValueError("Enter a valid company email address.")
+        return clean
 
 
 class AccountItem(BaseModel):
@@ -162,11 +205,14 @@ class AccountItem(BaseModel):
     phone: Optional[str] = None
     email: Optional[str] = None
     address: Optional[str] = None
+    location: Optional[str] = None
     isActive: bool = True
     contactCount: int = 0
     leadCount: int = 0
+    opportunityCount: int = 0
     contacts: Optional[List[Dict[str, Any]]] = None
     leads: Optional[List[Dict[str, Any]]] = None
+    opportunities: Optional[List[Dict[str, Any]]] = None
     createdAt: Optional[str] = None
     updatedAt: Optional[str] = None
 
@@ -182,6 +228,28 @@ class AccountDetailResponse(BaseModel):
     account: AccountItem
     contacts: List[Dict[str, Any]] = []
     leads: List[Dict[str, Any]] = []
+    opportunities: List[Dict[str, Any]] = []
+
+
+class AccountMatchItem(BaseModel):
+    id: str
+    accountId: str
+    name: str
+    industry: Optional[str] = None
+    website: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[str] = None
+    address: Optional[str] = None
+    matchReasons: List[str] = []
+    contactCount: int = 0
+    leadCount: int = 0
+    opportunityCount: int = 0
+
+
+class AccountMatchResponse(BaseModel):
+    success: bool = True
+    count: int
+    matches: List[AccountMatchItem]
 
 
 # =========================================================================
@@ -194,6 +262,32 @@ class ContactCreate(BaseModel):
     email: Optional[str] = Field(None, max_length=255)
     mobileNumber: Optional[str] = Field(None, max_length=50)
     designation: Optional[str] = Field(None, max_length=100)
+    confirmDuplicate: bool = False
+
+    @field_validator("name")
+    @classmethod
+    def validate_contact_name(cls, v: str) -> str:
+        clean = v.strip()
+        if not clean:
+            raise ValueError("Contact name cannot be empty.")
+        return clean
+
+    @field_validator("email")
+    @classmethod
+    def validate_contact_email(cls, v: Optional[str]) -> Optional[str]:
+        if not v or not v.strip():
+            return None
+        clean = v.strip().lower()
+        if "@" not in clean or "." not in clean.split("@")[-1]:
+            raise ValueError("Enter a valid contact email address.")
+        return clean
+
+    @field_validator("mobileNumber")
+    @classmethod
+    def validate_contact_phone(cls, v: Optional[str]) -> Optional[str]:
+        if not v or not v.strip():
+            return None
+        return v.strip()
 
 
 class ContactUpdate(BaseModel):
@@ -203,6 +297,34 @@ class ContactUpdate(BaseModel):
     mobileNumber: Optional[str] = Field(None, max_length=50)
     designation: Optional[str] = Field(None, max_length=100)
     isActive: Optional[bool] = None
+    confirmDuplicate: bool = False
+
+    @field_validator("name")
+    @classmethod
+    def validate_contact_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        clean = v.strip()
+        if not clean:
+            raise ValueError("Contact name cannot be empty.")
+        return clean
+
+    @field_validator("email")
+    @classmethod
+    def validate_contact_email(cls, v: Optional[str]) -> Optional[str]:
+        if not v or not v.strip():
+            return None
+        clean = v.strip().lower()
+        if "@" not in clean or "." not in clean.split("@")[-1]:
+            raise ValueError("Enter a valid contact email address.")
+        return clean
+
+    @field_validator("mobileNumber")
+    @classmethod
+    def validate_contact_phone(cls, v: Optional[str]) -> Optional[str]:
+        if not v or not v.strip():
+            return None
+        return v.strip()
 
 
 class ContactItem(BaseModel):
@@ -216,6 +338,8 @@ class ContactItem(BaseModel):
     mobileNumber: Optional[str] = None
     designation: Optional[str] = None
     isActive: bool = True
+    opportunityCount: int = 0
+    opportunities: Optional[List[Dict[str, Any]]] = None
     createdAt: Optional[str] = None
     updatedAt: Optional[str] = None
 
@@ -230,6 +354,25 @@ class ContactDetailResponse(BaseModel):
     success: bool = True
     contact: ContactItem
     leads: List[Dict[str, Any]] = []
+    opportunities: List[Dict[str, Any]] = []
+
+
+class ContactMatchItem(BaseModel):
+    id: str
+    contactId: str
+    accountId: Optional[str] = None
+    accountName: Optional[str] = None
+    name: str
+    email: Optional[str] = None
+    mobileNumber: Optional[str] = None
+    designation: Optional[str] = None
+    matchReasons: List[str] = []
+
+
+class ContactMatchResponse(BaseModel):
+    success: bool = True
+    count: int
+    matches: List[ContactMatchItem]
 
 
 # =========================================================================

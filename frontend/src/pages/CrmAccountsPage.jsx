@@ -15,6 +15,7 @@ import {
   X,
   Users,
   Layers,
+  Briefcase,
   AlertCircle,
   CheckCircle2,
   Calendar,
@@ -53,11 +54,16 @@ export default function CrmAccountsPage() {
     email: '',
     address: '',
     location: '',
-    isActive: true
+    isActive: true,
+    confirmDuplicate: false
   });
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
+
+  // Matching state
+  const [matchingAccounts, setMatchingAccounts] = useState([]);
+  const [isSearchingMatches, setIsSearchingMatches] = useState(false);
 
   const canCreate = hasPermission('crm.account.create');
   const canEdit = hasPermission('crm.account.edit') || hasPermission('crm.account.create');
@@ -88,6 +94,41 @@ export default function CrmAccountsPage() {
     fetchAccounts();
   }, [fetchAccounts]);
 
+  // Debounced search for matching accounts as user types
+  useEffect(() => {
+    if (!isCreateModalOpen) {
+      setMatchingAccounts([]);
+      return;
+    }
+    const cleanName = modalFormData.name.trim();
+    const cleanWeb = modalFormData.website.trim();
+    if (cleanName.length < 2 && cleanWeb.length < 3) {
+      setMatchingAccounts([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearchingMatches(true);
+      try {
+        const res = await crmService.getAccountMatches({
+          name: cleanName || undefined,
+          website: cleanWeb || undefined,
+          email: modalFormData.email.trim() || undefined,
+          excludeId: accountToEdit?.id
+        });
+        if (res.data?.success) {
+          setMatchingAccounts(res.data.matches || []);
+        }
+      } catch {
+        // non-blocking
+      } finally {
+        setIsSearchingMatches(false);
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [modalFormData.name, modalFormData.website, modalFormData.email, isCreateModalOpen, accountToEdit]);
+
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     setPage(1);
@@ -109,10 +150,12 @@ export default function CrmAccountsPage() {
       email: '',
       address: '',
       location: '',
-      isActive: true
+      isActive: true,
+      confirmDuplicate: false
     });
     setFormError(null);
     setFieldErrors({});
+    setMatchingAccounts([]);
     setIsCreateModalOpen(true);
   };
 
@@ -126,10 +169,12 @@ export default function CrmAccountsPage() {
       email: acc.email || '',
       address: acc.address || '',
       location: acc.location || '',
-      isActive: acc.isActive !== false
+      isActive: acc.isActive !== false,
+      confirmDuplicate: false
     });
     setFormError(null);
     setFieldErrors({});
+    setMatchingAccounts([]);
     setIsCreateModalOpen(true);
   };
 
@@ -187,7 +232,8 @@ export default function CrmAccountsPage() {
       email: modalFormData.email.trim() || undefined,
       address: modalFormData.address.trim() || undefined,
       location: modalFormData.location.trim() || undefined,
-      isActive: modalFormData.isActive
+      isActive: modalFormData.isActive,
+      confirmDuplicate: Boolean(modalFormData.confirmDuplicate)
     };
 
     try {
@@ -203,7 +249,14 @@ export default function CrmAccountsPage() {
       }
     } catch (err) {
       if (err.response?.status === 409) {
-        setFormError(err.response.data?.message || 'An account with this name already exists.');
+        const backendMatches = err.response.data?.details?.matches || [];
+        if (backendMatches.length > 0) {
+          setMatchingAccounts(backendMatches);
+        }
+        setFormError(
+          err.response.data?.message ||
+          'An account with this name already exists. If this is a legitimate distinct account, check the confirmation below to proceed.'
+        );
       } else {
         setFormError(err.response?.data?.message || 'Failed to save account. Please check inputs.');
       }
@@ -558,6 +611,86 @@ export default function CrmAccountsPage() {
                   )}
                 </div>
 
+                {/* Potential Duplicate / Matching Accounts Panel */}
+                {matchingAccounts.length > 0 && (
+                  <div style={{
+                    padding: '0.85rem 1rem',
+                    background: '#fffbeb',
+                    border: '1px solid #fde68a',
+                    borderRadius: '10px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.65rem'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#92400e', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <AlertCircle size={15} />
+                        Potential Matching Accounts Found ({matchingAccounts.length})
+                      </span>
+                      {isSearchingMatches && (
+                        <span style={{ fontSize: '0.75rem', color: '#b45309' }}>Searching...</span>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '160px', overflowY: 'auto' }}>
+                      {matchingAccounts.map(m => (
+                        <div key={m.id} style={{
+                          padding: '0.6rem 0.8rem',
+                          background: '#ffffff',
+                          border: '1px solid #fef3c7',
+                          borderRadius: '8px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '0.5rem'
+                        }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                              <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#1e293b' }}>{m.name}</span>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--accent-primary)', background: '#eff6ff', padding: '1px 5px', borderRadius: '4px' }}>
+                                {m.accountId}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '2px' }}>
+                              {m.matchReasons?.map((r, idx) => (
+                                <span key={idx} style={{ fontSize: '0.7rem', background: '#fef3c7', color: '#92400e', padding: '1px 6px', borderRadius: '4px', fontWeight: 500 }}>
+                                  {r}
+                                </span>
+                              ))}
+                              {m.website && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{m.website}</span>}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsCreateModalOpen(false);
+                              openDetailDrawer(m);
+                            }}
+                            className="crm-btn crm-btn-secondary crm-btn-sm"
+                            style={{ flexShrink: 0, fontSize: '0.75rem' }}
+                          >
+                            Select Existing
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', paddingTop: '0.25rem', borderTop: '1px dashed #fde68a' }}>
+                      <input
+                        type="checkbox"
+                        id="confirmDuplicateAccount"
+                        checked={modalFormData.confirmDuplicate}
+                        onChange={e => setModalFormData({ ...modalFormData, confirmDuplicate: e.target.checked })}
+                        style={{ width: '15px', height: '15px', cursor: 'pointer' }}
+                      />
+                      <label htmlFor="confirmDuplicateAccount" style={{ margin: 0, fontSize: '0.8rem', fontWeight: 600, color: '#78350f', cursor: 'pointer' }}>
+                        This is a legitimate distinct account with a similar name
+                      </label>
+                    </div>
+                  </div>
+                )}
+
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                   <div className="form-group">
                     <label className="form-label" style={{ fontWeight: 600 }}>Industry</label>
@@ -883,6 +1016,60 @@ export default function CrmAccountsPage() {
                         >
                           View Lead <ExternalLink size={12} />
                         </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Related Opportunities Section */}
+              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                  <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#1e293b' }}>
+                    <Briefcase size={16} color="var(--accent-primary)" />
+                    <span>Associated Opportunities ({selectedAccountDetail.opportunities?.length || 0})</span>
+                  </h4>
+                </div>
+
+                {!selectedAccountDetail.opportunities || selectedAccountDetail.opportunities.length === 0 ? (
+                  <div style={{ padding: '1rem', background: '#f8fafc', borderRadius: '8px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                    No opportunities associated with this account.
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem' }}>
+                    {selectedAccountDetail.opportunities.map(opp => (
+                      <div key={opp.id} style={{
+                        padding: '0.75rem 1rem',
+                        background: '#ffffff',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '4px'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent-primary)', background: '#eff6ff', padding: '1px 6px', borderRadius: '4px' }}>
+                            {opp.opportunityId}
+                          </span>
+                          <span style={{
+                            fontSize: '0.72rem',
+                            fontWeight: 600,
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            background: opp.status === 'Won' ? '#dcfce7' : opp.status === 'Lost' ? '#fee2e2' : '#e0e7ff',
+                            color: opp.status === 'Won' ? '#15803d' : opp.status === 'Lost' ? '#b91c1c' : '#3730a3'
+                          }}>
+                            {opp.status}
+                          </span>
+                        </div>
+                        <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
+                          {opp.name}
+                        </div>
+                        {opp.estimatedValue != null && (
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                            Value: {opp.currency || 'INR'} {Number(opp.estimatedValue).toLocaleString()}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

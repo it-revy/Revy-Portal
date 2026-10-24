@@ -646,6 +646,12 @@ class CrmService:
             .group_by(Lead.account_id)
             .all()
         )
+        opp_counts = dict(
+            self.db.query(Opportunity.account_id, func.count(Opportunity.id))
+            .filter(Opportunity.account_id.in_(acc_ids))
+            .group_by(Opportunity.account_id)
+            .all()
+        )
 
         return [
             {
@@ -660,6 +666,7 @@ class CrmService:
                 "isActive": a.is_active,
                 "contactCount": contact_counts.get(a.id, 0),
                 "leadCount": lead_counts.get(a.id, 0),
+                "opportunityCount": opp_counts.get(a.id, 0),
                 "createdAt": a.created_at.isoformat() if a.created_at else None,
                 "updatedAt": a.updated_at.isoformat() if a.updated_at else None
             }
@@ -681,6 +688,10 @@ class CrmService:
         leads = self.db.query(Lead).filter(
             Lead.account_id == acc.id
         ).order_by(Lead.created_at.desc()).all()
+
+        opportunities = self.db.query(Opportunity).filter(
+            Opportunity.account_id == acc.id
+        ).order_by(Opportunity.created_at.desc()).all()
 
         contacts_list = [
             {
@@ -704,6 +715,18 @@ class CrmService:
             }
             for l in leads
         ]
+        opportunities_list = [
+            {
+                "id": o.id,
+                "opportunityId": o.opportunity_id,
+                "name": o.name,
+                "status": o.status,
+                "currency": o.currency,
+                "estimatedValue": float(o.estimated_value) if o.estimated_value is not None else None,
+                "createdAt": o.created_at.isoformat() if o.created_at else None
+            }
+            for o in opportunities
+        ]
 
         return {
             "account": {
@@ -718,14 +741,131 @@ class CrmService:
                 "isActive": acc.is_active,
                 "contactCount": len(contacts),
                 "leadCount": len(leads),
+                "opportunityCount": len(opportunities),
                 "contacts": contacts_list,
                 "leads": leads_list,
+                "opportunities": opportunities_list,
                 "createdAt": acc.created_at.isoformat() if acc.created_at else None,
                 "updatedAt": acc.updated_at.isoformat() if acc.updated_at else None
             },
             "contacts": contacts_list,
-            "leads": leads_list
+            "leads": leads_list,
+            "opportunities": opportunities_list
         }
+
+    def search_account_matches(
+        self,
+        name: Optional[str] = None,
+        website: Optional[str] = None,
+        email: Optional[str] = None,
+        phone: Optional[str] = None,
+        exclude_id: Optional[str] = None,
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Sensible, transparent duplicate and similarity matching for Accounts.
+        Matches by normalized name, domain/website, email, and phone.
+        """
+        acc_filters = []
+        norm_name = normalize_text(name) if name else ""
+        if norm_name and len(norm_name) >= 2:
+            acc_filters.append(func.lower(func.trim(Account.name)) == norm_name)
+            if len(norm_name) >= 3:
+                acc_filters.append(func.lower(Account.name).like(f"%{norm_name}%"))
+
+        clean_web = website.strip().lower() if website else ""
+        clean_domain = ""
+        if clean_web:
+            clean_domain = clean_web.replace("http://", "").replace("https://", "").replace("www.", "").split("/")[0].split(":")[0]
+            if clean_domain and len(clean_domain) >= 3:
+                acc_filters.append(func.lower(Account.website).like(f"%{clean_domain}%"))
+
+        clean_email = email.strip().lower() if email else ""
+        if clean_email:
+            acc_filters.append(func.lower(Account.email) == clean_email)
+            if "@" in clean_email:
+                email_domain = clean_email.split("@")[-1]
+                if email_domain not in ("gmail.com", "yahoo.com", "outlook.com", "hotmail.com", "icloud.com") and len(email_domain) >= 4:
+                    acc_filters.append(func.lower(Account.website).like(f"%{email_domain}%"))
+
+        clean_phone = phone.strip() if phone else ""
+        phone_digits = "".join(filter(str.isdigit, clean_phone)) if clean_phone else ""
+        if len(phone_digits) >= 6:
+            acc_filters.append(func.lower(Account.phone).like(f"%{phone_digits[-10:]}%"))
+
+        if not acc_filters:
+            return []
+
+        query = self.db.query(Account).filter(
+            Account.is_active == True,
+            or_(*acc_filters)
+        )
+        if exclude_id:
+            query = query.filter(Account.id != exclude_id, Account.account_id != exclude_id)
+
+        accounts = query.limit(limit).all()
+        if not accounts:
+            return []
+
+        acc_ids = [a.id for a in accounts]
+        contact_counts = dict(
+            self.db.query(Contact.account_id, func.count(Contact.id))
+            .filter(Contact.account_id.in_(acc_ids), Contact.is_active == True)
+            .group_by(Contact.account_id)
+            .all()
+        )
+        lead_counts = dict(
+            self.db.query(Lead.account_id, func.count(Lead.id))
+            .filter(Lead.account_id.in_(acc_ids))
+            .group_by(Lead.account_id)
+            .all()
+        )
+        opp_counts = dict(
+            self.db.query(Opportunity.account_id, func.count(Opportunity.id))
+            .filter(Opportunity.account_id.in_(acc_ids))
+            .group_by(Opportunity.account_id)
+            .all()
+        )
+
+        results = []
+        for a in accounts:
+            reasons = []
+            a_name_norm = normalize_text(a.name)
+            if norm_name and a_name_norm == norm_name:
+                reasons.append("Exact company name match")
+            elif norm_name and (norm_name in a_name_norm or a_name_norm in norm_name):
+                reasons.append("Partial company name match")
+
+            if clean_domain and a.website and clean_domain in a.website.lower():
+                reasons.append("Website domain match")
+            elif clean_web and a.website and clean_web == a.website.lower():
+                reasons.append("Exact website match")
+
+            if clean_email and a.email and clean_email == a.email.lower():
+                reasons.append("Exact company email match")
+
+            if phone_digits and a.phone:
+                a_phone_digits = "".join(filter(str.isdigit, a.phone))
+                if phone_digits[-10:] in a_phone_digits or a_phone_digits[-10:] in phone_digits:
+                    reasons.append("Company phone number match")
+
+            results.append({
+                "id": a.id,
+                "accountId": a.account_id,
+                "name": a.name,
+                "industry": a.industry,
+                "website": a.website,
+                "phone": a.phone,
+                "email": a.email,
+                "address": a.address,
+                "matchReasons": reasons or ["Potential duplicate match"],
+                "contactCount": contact_counts.get(a.id, 0),
+                "leadCount": lead_counts.get(a.id, 0),
+                "opportunityCount": opp_counts.get(a.id, 0)
+            })
+
+        results.sort(key=lambda r: (0 if "Exact company name match" in r["matchReasons"] else 1))
+        return results
 
     def create_account(
         self,
@@ -742,21 +882,41 @@ class CrmService:
             func.lower(func.trim(Account.name)) == norm_name,
             Account.is_active == True
         ).first()
-        if existing:
+        if existing and not payload.confirmDuplicate:
+            matches = self.search_account_matches(
+                name=payload.name,
+                website=payload.website,
+                email=payload.email,
+                phone=payload.phone
+            )
             raise ConflictError(
                 message=f"An active account with name '{existing.name}' already exists ({existing.account_id}).",
-                details={"existingAccountId": existing.id, "existingAccountNumber": existing.account_id}
+                details={
+                    "existingAccountId": existing.id,
+                    "existingAccountNumber": existing.account_id,
+                    "matches": matches
+                }
             )
 
         account_code = get_next_sequence_id(self.db, "ACCOUNT", "ACC")
+
+        final_address = payload.address.strip() if payload.address else None
+        if payload.location and payload.location.strip():
+            loc = payload.location.strip()
+            if final_address:
+                if loc.lower() not in final_address.lower():
+                    final_address = f"{final_address}, {loc}"
+            else:
+                final_address = loc
+
         account = Account(
             account_id=account_code,
             name=payload.name.strip(),
             industry=payload.industry.strip() if payload.industry else None,
             website=payload.website.strip() if payload.website else None,
             phone=payload.phone.strip() if payload.phone else None,
-            email=payload.email.strip() if payload.email else None,
-            address=payload.address.strip() if payload.address else None,
+            email=payload.email.strip().lower() if payload.email else None,
+            address=final_address,
             is_active=True
         )
 
@@ -767,26 +927,29 @@ class CrmService:
         except IntegrityError:
             self.db.rollback()
             collision = self.db.query(Account).filter(func.lower(func.trim(Account.name)) == norm_name).first()
-            if collision:
+            if collision and not payload.confirmDuplicate:
                 raise ConflictError(
                     message=f"An active account with name '{collision.name}' already exists ({collision.account_id}).",
                     details={"existingAccountId": collision.id, "existingAccountNumber": collision.account_id}
                 )
             raise ValidationError("Could not save account due to a database integrity constraint.")
 
-        self.audit_service.log(
-            action="CRM_ACCOUNT_CREATED",
-            request=request,
-            performed_by_employee_id=str(actor.id) if actor.id else None,
-            performed_by_name=actor.name or actor.username,
-            role_used=actor.active_role,
-            target_info={
-                "recordId": account.id,
-                "accountCode": account.account_id,
-                "accountName": account.name,
-                "details": f"Created CRM Account '{account.name}' ({account.account_id})."
-            }
-        )
+        try:
+            self.audit_service.log(
+                action="CRM_ACCOUNT_CREATED",
+                request=request,
+                performed_by_employee_id=str(actor.id) if actor.id else None,
+                performed_by_name=actor.name or actor.username,
+                role_used=actor.active_role,
+                target_info={
+                    "recordId": account.id,
+                    "accountCode": account.account_id,
+                    "accountName": account.name,
+                    "details": f"Created CRM Account '{account.name}' ({account.account_id})."
+                }
+            )
+        except Exception as audit_err:
+            logger.warning(f"Audit log failed for account {account.account_id}: {audit_err}")
 
         return {
             "id": account.id,
@@ -800,6 +963,7 @@ class CrmService:
             "isActive": account.is_active,
             "contactCount": 0,
             "leadCount": 0,
+            "opportunityCount": 0,
             "createdAt": account.created_at.isoformat() if account.created_at else None,
             "updatedAt": account.updated_at.isoformat() if account.updated_at else None
         }
@@ -837,8 +1001,12 @@ class CrmService:
                 Account.id != acc.id,
                 Account.is_active == True
             ).first()
-            if conflict:
-                raise ConflictError(f"Another active account with name '{conflict.name}' already exists ({conflict.account_id}).")
+            if conflict and not payload.confirmDuplicate:
+                matches = self.search_account_matches(name=clean_name, exclude_id=acc.id)
+                raise ConflictError(
+                    message=f"Another active account with name '{conflict.name}' already exists ({conflict.account_id}).",
+                    details={"existingAccountId": conflict.id, "existingAccountNumber": conflict.account_id, "matches": matches}
+                )
             acc.name = clean_name
 
         if payload.industry is not None:
@@ -848,9 +1016,16 @@ class CrmService:
         if payload.phone is not None:
             acc.phone = payload.phone.strip() if payload.phone else None
         if payload.email is not None:
-            acc.email = payload.email.strip() if payload.email else None
+            acc.email = payload.email.strip().lower() if payload.email else None
         if payload.address is not None:
             acc.address = payload.address.strip() if payload.address else None
+        if payload.location is not None and payload.location.strip():
+            loc = payload.location.strip()
+            if acc.address:
+                if loc.lower() not in acc.address.lower():
+                    acc.address = f"{acc.address}, {loc}"
+            else:
+                acc.address = loc
         if payload.isActive is not None:
             acc.is_active = payload.isActive
 
@@ -867,21 +1042,24 @@ class CrmService:
             "isActive": acc.is_active
         }
 
-        self.audit_service.log(
-            action="CRM_ACCOUNT_UPDATED",
-            request=request,
-            performed_by_employee_id=str(actor.id) if actor.id else None,
-            performed_by_name=actor.name or actor.username,
-            role_used=actor.active_role,
-            target_info={
-                "recordId": acc.id,
-                "accountCode": acc.account_id,
-                "accountName": acc.name,
-                "details": f"Updated CRM Account '{acc.name}' ({acc.account_id})."
-            },
-            before_state=before_state,
-            after_state=after_state
-        )
+        try:
+            self.audit_service.log(
+                action="CRM_ACCOUNT_UPDATED",
+                request=request,
+                performed_by_employee_id=str(actor.id) if actor.id else None,
+                performed_by_name=actor.name or actor.username,
+                role_used=actor.active_role,
+                target_info={
+                    "recordId": acc.id,
+                    "accountCode": acc.account_id,
+                    "accountName": acc.name,
+                    "details": f"Updated CRM Account '{acc.name}' ({acc.account_id})."
+                },
+                before_state=before_state,
+                after_state=after_state
+            )
+        except Exception as audit_err:
+            logger.warning(f"Audit log failed for account update {acc.account_id}: {audit_err}")
 
         return self.get_account(acc.id)["account"]
 
@@ -917,6 +1095,14 @@ class CrmService:
 
         contacts = query.order_by(Contact.name.asc()).offset(offset).limit(limit).all()
 
+        con_ids = [c.id for c in contacts]
+        opp_counts = dict(
+            self.db.query(Opportunity.contact_id, func.count(Opportunity.id))
+            .filter(Opportunity.contact_id.in_(con_ids))
+            .group_by(Opportunity.contact_id)
+            .all()
+        )
+
         return [
             {
                 "id": c.id,
@@ -928,6 +1114,7 @@ class CrmService:
                 "mobileNumber": c.mobile_number,
                 "designation": c.designation,
                 "isActive": c.is_active,
+                "opportunityCount": opp_counts.get(c.id, 0),
                 "createdAt": c.created_at.isoformat() if c.created_at else None,
                 "updatedAt": c.updated_at.isoformat() if c.updated_at else None
             }
@@ -945,6 +1132,23 @@ class CrmService:
             Lead.contact_id == c.id
         ).order_by(Lead.created_at.desc()).all()
 
+        opportunities = self.db.query(Opportunity).filter(
+            Opportunity.contact_id == c.id
+        ).order_by(Opportunity.created_at.desc()).all()
+
+        opportunities_list = [
+            {
+                "id": o.id,
+                "opportunityId": o.opportunity_id,
+                "name": o.name,
+                "status": o.status,
+                "currency": o.currency,
+                "estimatedValue": float(o.estimated_value) if o.estimated_value is not None else None,
+                "createdAt": o.created_at.isoformat() if o.created_at else None
+            }
+            for o in opportunities
+        ]
+
         return {
             "id": c.id,
             "contactId": c.contact_id,
@@ -960,6 +1164,8 @@ class CrmService:
             "mobileNumber": c.mobile_number,
             "designation": c.designation,
             "isActive": c.is_active,
+            "opportunityCount": len(opportunities),
+            "opportunities": opportunities_list,
             "createdAt": c.created_at.isoformat() if c.created_at else None,
             "updatedAt": c.updated_at.isoformat() if c.updated_at else None,
             "leads": [
@@ -974,6 +1180,88 @@ class CrmService:
                 for l in leads
             ]
         }
+
+    def search_contact_matches(
+        self,
+        name: Optional[str] = None,
+        email: Optional[str] = None,
+        mobile_number: Optional[str] = None,
+        account_id: Optional[str] = None,
+        exclude_id: Optional[str] = None,
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Sensible, transparent duplicate and similarity matching for Contacts.
+        Matches by normalized email, mobile number, and person name.
+        """
+        con_filters = []
+        clean_email = email.strip().lower() if email else ""
+        if clean_email:
+            con_filters.append(func.lower(Contact.email) == clean_email)
+
+        clean_phone = mobile_number.strip() if mobile_number else ""
+        phone_digits = "".join(filter(str.isdigit, clean_phone)) if clean_phone else ""
+        if len(phone_digits) >= 6:
+            con_filters.append(func.lower(Contact.mobile_number).like(f"%{phone_digits[-10:]}%"))
+
+        clean_name = name.strip() if name else ""
+        if clean_name and len(clean_name) >= 3:
+            con_filters.append(func.lower(Contact.name).like(f"%{clean_name.lower()}%"))
+
+        if not con_filters:
+            return []
+
+        query = self.db.query(Contact).options(joinedload(Contact.account)).filter(
+            Contact.is_active == True,
+            or_(*con_filters)
+        )
+        if exclude_id:
+            query = query.filter(Contact.id != exclude_id, Contact.contact_id != exclude_id)
+        if account_id:
+            query = query.filter(or_(Contact.account_id == account_id, Contact.account_id.is_(None)))
+
+        contacts = query.limit(limit).all()
+        if not contacts:
+            return []
+
+        results = []
+        for c in contacts:
+            reasons = []
+            if clean_email and c.email and clean_email == c.email.lower():
+                reasons.append("Exact email match")
+            if phone_digits and c.mobile_number:
+                c_digits = "".join(filter(str.isdigit, c.mobile_number))
+                if phone_digits[-10:] in c_digits or c_digits[-10:] in phone_digits:
+                    reasons.append("Phone number match")
+            if clean_name and clean_name.lower() in c.name.lower():
+                if clean_name.lower() == c.name.lower():
+                    reasons.append("Exact contact name match")
+                else:
+                    reasons.append("Similar contact name match")
+
+            results.append({
+                "id": c.id,
+                "contactId": c.contact_id,
+                "accountId": c.account_id,
+                "accountName": c.account.name if c.account else None,
+                "name": c.name,
+                "email": c.email,
+                "mobileNumber": c.mobile_number,
+                "designation": c.designation,
+                "matchReasons": reasons or ["Potential duplicate contact"]
+            })
+
+        def match_priority(r):
+            if "Exact email match" in r["matchReasons"]:
+                return 0
+            if "Phone number match" in r["matchReasons"]:
+                return 1
+            if "Exact contact name match" in r["matchReasons"]:
+                return 2
+            return 3
+
+        results.sort(key=match_priority)
+        return results
 
     def create_contact(
         self,
@@ -998,30 +1286,40 @@ class CrmService:
         clean_phone = payload.mobileNumber.strip() if payload.mobileNumber else None
 
         # Duplicate check on email or phone
-        if clean_email:
+        if clean_email and not payload.confirmDuplicate:
             existing_email = self.db.query(Contact).filter(
                 func.lower(Contact.email) == clean_email,
                 Contact.is_active == True
             ).first()
             if existing_email:
+                matches = self.search_contact_matches(email=clean_email, mobile_number=clean_phone, name=clean_name)
                 raise ConflictError(
                     message=f"A contact with email '{clean_email}' already exists ({existing_email.contact_id}).",
-                    details={"existingContactId": existing_email.id, "existingContactNumber": existing_email.contact_id}
+                    details={
+                        "existingContactId": existing_email.id,
+                        "existingContactNumber": existing_email.contact_id,
+                        "matches": matches
+                    }
                 )
 
-        if clean_phone:
-            # normalize phone digits for comparison
+        if clean_phone and not payload.confirmDuplicate:
             phone_digits = "".join(filter(str.isdigit, clean_phone))
-            if phone_digits:
+            if phone_digits and len(phone_digits) >= 6:
                 existing_contacts = self.db.query(Contact).filter(
                     Contact.mobile_number.isnot(None),
                     Contact.is_active == True
                 ).all()
                 for ec in existing_contacts:
-                    if ec.mobile_number and "".join(filter(str.isdigit, ec.mobile_number)) == phone_digits:
+                    ec_digits = "".join(filter(str.isdigit, ec.mobile_number or ""))
+                    if ec_digits and ec_digits[-10:] == phone_digits[-10:]:
+                        matches = self.search_contact_matches(email=clean_email, mobile_number=clean_phone, name=clean_name)
                         raise ConflictError(
                             message=f"A contact with mobile number '{clean_phone}' already exists ({ec.contact_id}).",
-                            details={"existingContactId": ec.id, "existingContactNumber": ec.contact_id}
+                            details={
+                                "existingContactId": ec.id,
+                                "existingContactNumber": ec.contact_id,
+                                "matches": matches
+                            }
                         )
 
         contact_code = get_next_sequence_id(self.db, "CONTACT", "CON")
@@ -1043,20 +1341,23 @@ class CrmService:
             self.db.rollback()
             raise ValidationError("Could not save contact due to a database constraint.")
 
-        self.audit_service.log(
-            action="CRM_CONTACT_CREATED",
-            request=request,
-            performed_by_employee_id=str(actor.id) if actor.id else None,
-            performed_by_name=actor.name or actor.username,
-            role_used=actor.active_role,
-            target_info={
-                "recordId": contact.id,
-                "contactCode": contact.contact_id,
-                "contactName": contact.name,
-                "accountName": account.name if account else None,
-                "details": f"Created CRM Contact '{contact.name}' ({contact.contact_id})."
-            }
-        )
+        try:
+            self.audit_service.log(
+                action="CRM_CONTACT_CREATED",
+                request=request,
+                performed_by_employee_id=str(actor.id) if actor.id else None,
+                performed_by_name=actor.name or actor.username,
+                role_used=actor.active_role,
+                target_info={
+                    "recordId": contact.id,
+                    "contactCode": contact.contact_id,
+                    "contactName": contact.name,
+                    "accountName": account.name if account else None,
+                    "details": f"Created CRM Contact '{contact.name}' ({contact.contact_id})."
+                }
+            )
+        except Exception as audit_err:
+            logger.warning(f"Audit log failed for contact {contact.contact_id}: {audit_err}")
 
         return {
             "id": contact.id,
@@ -1068,6 +1369,8 @@ class CrmService:
             "mobileNumber": contact.mobile_number,
             "designation": contact.designation,
             "isActive": contact.is_active,
+            "opportunityCount": 0,
+            "opportunities": [],
             "createdAt": contact.created_at.isoformat() if contact.created_at else None,
             "updatedAt": contact.updated_at.isoformat() if contact.updated_at else None,
             "leads": []
@@ -1102,7 +1405,7 @@ class CrmService:
             c.name = clean_name
 
         if payload.accountId is not None:
-            if payload.accountId == "":
+            if payload.accountId == "" or payload.accountId is None:
                 c.account_id = None
             else:
                 account = self.db.query(Account).filter(
@@ -1114,9 +1417,41 @@ class CrmService:
                 c.account_id = account.id
 
         if payload.email is not None:
-            c.email = payload.email.strip().lower() if payload.email else None
+            clean_email = payload.email.strip().lower() if payload.email else None
+            if clean_email and not payload.confirmDuplicate:
+                existing_email = self.db.query(Contact).filter(
+                    func.lower(Contact.email) == clean_email,
+                    Contact.id != c.id,
+                    Contact.is_active == True
+                ).first()
+                if existing_email:
+                    matches = self.search_contact_matches(email=clean_email, exclude_id=c.id)
+                    raise ConflictError(
+                        message=f"Another contact with email '{clean_email}' already exists ({existing_email.contact_id}).",
+                        details={"existingContactId": existing_email.id, "existingContactNumber": existing_email.contact_id, "matches": matches}
+                    )
+            c.email = clean_email
+
         if payload.mobileNumber is not None:
-            c.mobile_number = payload.mobileNumber.strip() if payload.mobileNumber else None
+            clean_phone = payload.mobileNumber.strip() if payload.mobileNumber else None
+            if clean_phone and not payload.confirmDuplicate:
+                phone_digits = "".join(filter(str.isdigit, clean_phone))
+                if phone_digits and len(phone_digits) >= 6:
+                    existing_contacts = self.db.query(Contact).filter(
+                        Contact.mobile_number.isnot(None),
+                        Contact.id != c.id,
+                        Contact.is_active == True
+                    ).all()
+                    for ec in existing_contacts:
+                        ec_digits = "".join(filter(str.isdigit, ec.mobile_number or ""))
+                        if ec_digits and ec_digits[-10:] == phone_digits[-10:]:
+                            matches = self.search_contact_matches(mobile_number=clean_phone, exclude_id=c.id)
+                            raise ConflictError(
+                                message=f"Another contact with mobile number '{clean_phone}' already exists ({ec.contact_id}).",
+                                details={"existingContactId": ec.id, "existingContactNumber": ec.contact_id, "matches": matches}
+                            )
+            c.mobile_number = clean_phone
+
         if payload.designation is not None:
             c.designation = payload.designation.strip() if payload.designation else None
         if payload.isActive is not None:
@@ -1134,21 +1469,24 @@ class CrmService:
             "isActive": c.is_active
         }
 
-        self.audit_service.log(
-            action="CRM_CONTACT_UPDATED",
-            request=request,
-            performed_by_employee_id=str(actor.id) if actor.id else None,
-            performed_by_name=actor.name or actor.username,
-            role_used=actor.active_role,
-            target_info={
-                "recordId": c.id,
-                "contactCode": c.contact_id,
-                "contactName": c.name,
-                "details": f"Updated CRM Contact '{c.name}' ({c.contact_id})."
-            },
-            before_state=before_state,
-            after_state=after_state
-        )
+        try:
+            self.audit_service.log(
+                action="CRM_CONTACT_UPDATED",
+                request=request,
+                performed_by_employee_id=str(actor.id) if actor.id else None,
+                performed_by_name=actor.name or actor.username,
+                role_used=actor.active_role,
+                target_info={
+                    "recordId": c.id,
+                    "contactCode": c.contact_id,
+                    "contactName": c.name,
+                    "details": f"Updated CRM Contact '{c.name}' ({c.contact_id})."
+                },
+                before_state=before_state,
+                after_state=after_state
+            )
+        except Exception as audit_err:
+            logger.warning(f"Audit log failed for contact update {c.contact_id}: {audit_err}")
 
         return self.get_contact(c.id)
 

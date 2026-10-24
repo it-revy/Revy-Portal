@@ -48,11 +48,16 @@ export default function CrmContactsPage() {
     email: '',
     mobileNumber: '',
     accountId: '',
-    isActive: true
+    isActive: true,
+    confirmDuplicate: false
   });
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
   const [fieldErrors, setFieldErrors] = useState({});
+
+  // Matching state
+  const [matchingContacts, setMatchingContacts] = useState([]);
+  const [isSearchingMatches, setIsSearchingMatches] = useState(false);
 
   const canCreate = hasPermission('crm.contact.create');
   const canEdit = hasPermission('crm.contact.edit') || hasPermission('crm.contact.create');
@@ -100,6 +105,44 @@ export default function CrmContactsPage() {
     fetchContacts();
   }, [fetchContacts]);
 
+  // Debounced search for matching contacts
+  useEffect(() => {
+    if (!isModalOpen) {
+      setMatchingContacts([]);
+      return;
+    }
+    const cleanEmail = modalFormData.email.trim();
+    const cleanPhone = modalFormData.mobileNumber.trim();
+    const cleanName = modalFormData.name.trim();
+
+    if (!cleanEmail && cleanPhone.length < 6 && cleanName.length < 3) {
+      setMatchingContacts([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearchingMatches(true);
+      try {
+        const res = await crmService.getContactMatches({
+          name: cleanName || undefined,
+          email: cleanEmail || undefined,
+          mobileNumber: cleanPhone || undefined,
+          accountId: modalFormData.accountId || undefined,
+          excludeId: contactToEdit?.id
+        });
+        if (res.data?.success) {
+          setMatchingContacts(res.data.matches || []);
+        }
+      } catch {
+        // non-blocking
+      } finally {
+        setIsSearchingMatches(false);
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [modalFormData.email, modalFormData.mobileNumber, modalFormData.name, modalFormData.accountId, isModalOpen, contactToEdit]);
+
   const handleSearchSubmit = (e) => {
     e.preventDefault();
     setPage(1);
@@ -119,10 +162,12 @@ export default function CrmContactsPage() {
       email: '',
       mobileNumber: '',
       accountId: filterAccountId || '',
-      isActive: true
+      isActive: true,
+      confirmDuplicate: false
     });
     setFormError(null);
     setFieldErrors({});
+    setMatchingContacts([]);
     setIsModalOpen(true);
   };
 
@@ -134,10 +179,12 @@ export default function CrmContactsPage() {
       email: c.email || '',
       mobileNumber: c.mobileNumber || '',
       accountId: c.accountId || c.account?.id || '',
-      isActive: c.isActive !== false
+      isActive: c.isActive !== false,
+      confirmDuplicate: false
     });
     setFormError(null);
     setFieldErrors({});
+    setMatchingContacts([]);
     setIsModalOpen(true);
   };
 
@@ -184,7 +231,8 @@ export default function CrmContactsPage() {
       email: modalFormData.email.trim() || undefined,
       mobileNumber: modalFormData.mobileNumber.trim() || undefined,
       accountId: modalFormData.accountId || (contactToEdit ? null : undefined),
-      isActive: modalFormData.isActive
+      isActive: modalFormData.isActive,
+      confirmDuplicate: Boolean(modalFormData.confirmDuplicate)
     };
 
     try {
@@ -200,7 +248,14 @@ export default function CrmContactsPage() {
       }
     } catch (err) {
       if (err.response?.status === 409) {
-        setFormError(err.response.data?.message || 'A contact with this email or mobile number already exists.');
+        const backendMatches = err.response.data?.details?.matches || [];
+        if (backendMatches.length > 0) {
+          setMatchingContacts(backendMatches);
+        }
+        setFormError(
+          err.response.data?.message ||
+          'A contact with this email or mobile number already exists. If this is a legitimate distinct contact, check the confirmation below to proceed.'
+        );
       } else {
         setFormError(err.response?.data?.message || 'Failed to save contact. Please check inputs.');
       }
@@ -612,6 +667,90 @@ export default function CrmContactsPage() {
                   </div>
                 </div>
 
+                {/* Potential Duplicate / Matching Contacts Panel */}
+                {matchingContacts.length > 0 && (
+                  <div style={{
+                    padding: '0.85rem 1rem',
+                    background: '#fffbeb',
+                    border: '1px solid #fde68a',
+                    borderRadius: '10px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.65rem'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#92400e', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <AlertCircle size={15} />
+                        Potential Matching Contacts Found ({matchingContacts.length})
+                      </span>
+                      {isSearchingMatches && (
+                        <span style={{ fontSize: '0.75rem', color: '#b45309' }}>Searching...</span>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', maxHeight: '160px', overflowY: 'auto' }}>
+                      {matchingContacts.map(m => (
+                        <div key={m.id} style={{
+                          padding: '0.6rem 0.8rem',
+                          background: '#ffffff',
+                          border: '1px solid #fef3c7',
+                          borderRadius: '8px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          gap: '0.5rem'
+                        }}>
+                          <div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                              <span style={{ fontWeight: 700, fontSize: '0.85rem', color: '#1e293b' }}>{m.name}</span>
+                              <span style={{ fontSize: '0.75rem', color: '#059669', background: '#ecfdf5', padding: '1px 5px', borderRadius: '4px' }}>
+                                {m.contactId}
+                              </span>
+                              {m.accountName && (
+                                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>({m.accountName})</span>
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginTop: '2px' }}>
+                              {m.matchReasons?.map((r, idx) => (
+                                <span key={idx} style={{ fontSize: '0.7rem', background: '#fef3c7', color: '#92400e', padding: '1px 6px', borderRadius: '4px', fontWeight: 500 }}>
+                                  {r}
+                                </span>
+                              ))}
+                              {m.email && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{m.email}</span>}
+                              {m.mobileNumber && <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{m.mobileNumber}</span>}
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsModalOpen(false);
+                              openDetailDrawer(m);
+                            }}
+                            className="crm-btn crm-btn-secondary crm-btn-sm"
+                            style={{ flexShrink: 0, fontSize: '0.75rem' }}
+                          >
+                            Select Existing
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', paddingTop: '0.25rem', borderTop: '1px dashed #fde68a' }}>
+                      <input
+                        type="checkbox"
+                        id="confirmDuplicateContact"
+                        checked={modalFormData.confirmDuplicate}
+                        onChange={e => setModalFormData({ ...modalFormData, confirmDuplicate: e.target.checked })}
+                        style={{ width: '15px', height: '15px', cursor: 'pointer' }}
+                      />
+                      <label htmlFor="confirmDuplicateContact" style={{ margin: 0, fontSize: '0.8rem', fontWeight: 600, color: '#78350f', cursor: 'pointer' }}>
+                        This is a legitimate distinct contact with the same contact info
+                      </label>
+                    </div>
+                  </div>
+                )}
+
                 {contactToEdit && (
                   <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
                     <input
@@ -808,6 +947,60 @@ export default function CrmContactsPage() {
                         >
                           View Lead <ExternalLink size={12} />
                         </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Associated Opportunities Section */}
+              <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '1.25rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+                  <h4 style={{ margin: 0, fontSize: '0.98rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.4rem', color: '#1e293b' }}>
+                    <Briefcase size={16} color="var(--accent-primary)" />
+                    <span>Associated Opportunities ({selectedContactDetail.opportunities?.length || 0})</span>
+                  </h4>
+                </div>
+
+                {!selectedContactDetail.opportunities || selectedContactDetail.opportunities.length === 0 ? (
+                  <div style={{ padding: '1rem', background: '#f8fafc', borderRadius: '8px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                    No opportunities associated with this contact.
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '0.75rem' }}>
+                    {selectedContactDetail.opportunities.map(opp => (
+                      <div key={opp.id} style={{
+                        padding: '0.75rem 1rem',
+                        background: '#ffffff',
+                        border: '1px solid #e2e8f0',
+                        borderRadius: '8px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '4px'
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent-primary)', background: '#eff6ff', padding: '1px 6px', borderRadius: '4px' }}>
+                            {opp.opportunityId}
+                          </span>
+                          <span style={{
+                            fontSize: '0.72rem',
+                            fontWeight: 600,
+                            padding: '2px 8px',
+                            borderRadius: '12px',
+                            background: opp.status === 'Won' ? '#dcfce7' : opp.status === 'Lost' ? '#fee2e2' : '#e0e7ff',
+                            color: opp.status === 'Won' ? '#15803d' : opp.status === 'Lost' ? '#b91c1c' : '#3730a3'
+                          }}>
+                            {opp.status}
+                          </span>
+                        </div>
+                        <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
+                          {opp.name}
+                        </div>
+                        {opp.estimatedValue != null && (
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                            Value: {opp.currency || 'INR'} {Number(opp.estimatedValue).toLocaleString()}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
