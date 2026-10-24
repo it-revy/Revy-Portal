@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
   Layers,
@@ -19,7 +19,7 @@ import {
   Calendar,
   X,
   AlertTriangle,
-  CheckCircle,
+  CheckCircle2,
   XCircle,
   Briefcase
 } from 'lucide-react';
@@ -38,6 +38,7 @@ const SAVED_VIEWS = [
 export default function CrmLeadsPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, hasPermission } = useAuth();
 
   // URL state
@@ -60,6 +61,8 @@ export default function CrmLeadsPage() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [successNotification, setSuccessNotification] = useState(null);
+  const [warningNotification, setWarningNotification] = useState(null);
 
   // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -70,9 +73,11 @@ export default function CrmLeadsPage() {
   const canEdit = hasPermission('crm.lead.edit');
   const canChangeStatus = hasPermission('crm.lead.status.update');
 
-  const fetchLeads = useCallback(async () => {
+  const fetchLeads = useCallback(async (options = {}) => {
     setLoading(true);
-    setError(null);
+    if (!options.silent) {
+      setError(null);
+    }
     try {
       const params = {
         view: currentView,
@@ -94,13 +99,58 @@ export default function CrmLeadsPage() {
         setLeads(res.data.leads || []);
         setTotalCount(res.data.totalCount || res.data.total || 0);
         setTotalPages(res.data.totalPages || 1);
+        return { success: true };
       }
+      const msg = res.data?.message || 'Failed to fetch leads.';
+      if (!options.silent) setError(msg);
+      return { success: false, error: msg };
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to fetch leads. Please check connection and try again.');
+      const errMsg = err.response?.data?.message || 'Failed to fetch leads. Please check connection and try again.';
+      if (!options.silent) {
+        setError(errMsg);
+      }
+      return { success: false, error: errMsg };
     } finally {
       setLoading(false);
     }
   }, [currentView, page, pageSize, sortBy, sortOrder, search, businessArea, requirementType, lifecycleStatus]);
+
+  useEffect(() => {
+    if (location.state?.successMessage) {
+      setSuccessNotification(location.state.successMessage);
+      const timer = setTimeout(() => setSuccessNotification(null), 5000);
+      window.history.replaceState({}, document.title);
+      return () => clearTimeout(timer);
+    }
+  }, [location.state]);
+
+  const handleLeadSaved = async (savedLead) => {
+    setIsCreateModalOpen(false);
+    setLeadToEdit(null);
+    setError(null);
+    setWarningNotification(null);
+
+    const leadIdentifier = savedLead?.leadId || savedLead?.lead_id || savedLead?.leadName || 'Lead';
+    const isEditAction = Boolean(leadToEdit);
+    const msg = isEditAction
+      ? `Lead ${leadIdentifier} updated successfully.`
+      : `Lead ${leadIdentifier} created successfully.`;
+
+    setSuccessNotification(msg);
+    setTimeout(() => {
+      setSuccessNotification(null);
+    }, 5000);
+
+    const refreshResult = await fetchLeads({ silent: true });
+    if (refreshResult && !refreshResult.success) {
+      // If refreshing the list fails after a successful save, display a non-blocking warning
+      // such as "Lead saved successfully, but the list could not be refreshed." Do not report that the save failed.
+      setWarningNotification('Lead saved successfully, but the list could not be refreshed.');
+      setTimeout(() => {
+        setWarningNotification(null);
+      }, 7000);
+    }
+  };
 
   useEffect(() => {
     fetchLeads();
@@ -211,7 +261,7 @@ export default function CrmLeadsPage() {
 
           {canCreate && (
             <button
-              onClick={() => setIsCreateModalOpen(true)}
+              onClick={() => navigate('/crm/leads/new')}
               className="crm-btn crm-btn-primary"
             >
               <Plus size={16} />
@@ -320,6 +370,64 @@ export default function CrmLeadsPage() {
           )}
         </div>
       </div>
+
+      {/* Success Notification Banner */}
+      {successNotification && (
+        <div style={{
+          padding: '0.85rem 1rem',
+          background: '#ecfdf5',
+          border: '1px solid #a7f3d0',
+          borderRadius: '8px',
+          color: '#065f46',
+          marginBottom: '1rem',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '0.5rem',
+          boxShadow: '0 2px 6px rgba(16, 185, 129, 0.1)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <CheckCircle2 size={18} style={{ color: '#059669', flexShrink: 0 }} />
+            <span style={{ fontWeight: 500, fontSize: '0.9rem' }}>{successNotification}</span>
+          </div>
+          <button
+            onClick={() => setSuccessNotification(null)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#065f46', fontSize: '1.2rem', lineHeight: 1 }}
+            aria-label="Dismiss"
+          >
+            &times;
+          </button>
+        </div>
+      )}
+
+      {/* Non-blocking Warning Notification */}
+      {warningNotification && (
+        <div style={{
+          padding: '0.85rem 1rem',
+          background: '#fffbeb',
+          border: '1px solid #fde68a',
+          borderRadius: '8px',
+          color: '#92400e',
+          marginBottom: '1rem',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '0.5rem',
+          boxShadow: '0 2px 6px rgba(245, 158, 11, 0.1)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <AlertCircle size={18} style={{ color: '#d97706', flexShrink: 0 }} />
+            <span style={{ fontWeight: 500, fontSize: '0.9rem' }}>{warningNotification}</span>
+          </div>
+          <button
+            onClick={() => setWarningNotification(null)}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#92400e', fontSize: '1.2rem', lineHeight: 1 }}
+            aria-label="Dismiss"
+          >
+            &times;
+          </button>
+        </div>
+      )}
 
       {/* Error state */}
       {error && (
@@ -567,7 +675,7 @@ export default function CrmLeadsPage() {
                             </button>
                             {canEdit && (
                               <button
-                                onClick={() => setLeadToEdit(lead)}
+                                onClick={() => navigate(`/crm/leads/${lead.id}/edit`)}
                                 className="crm-btn crm-btn-secondary crm-btn-sm"
                                 title="Edit Lead"
                               >
@@ -731,7 +839,7 @@ export default function CrmLeadsPage() {
                           </button>
                           {canEdit && (
                             <button
-                              onClick={() => setLeadToEdit(lead)}
+                              onClick={() => navigate(`/crm/leads/${lead.id}/edit`)}
                               className="crm-btn crm-btn-secondary crm-btn-sm"
                               title="Edit Lead"
                             >
@@ -810,7 +918,7 @@ export default function CrmLeadsPage() {
       <LeadModal
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
-        onLeadSaved={() => fetchLeads()}
+        onLeadSaved={handleLeadSaved}
       />
 
       {/* Edit Lead Modal */}
@@ -818,10 +926,7 @@ export default function CrmLeadsPage() {
         <LeadModal
           isOpen={Boolean(leadToEdit)}
           onClose={() => setLeadToEdit(null)}
-          onLeadSaved={() => {
-            setLeadToEdit(null);
-            fetchLeads();
-          }}
+          onLeadSaved={handleLeadSaved}
           leadToEdit={leadToEdit}
         />
       )}

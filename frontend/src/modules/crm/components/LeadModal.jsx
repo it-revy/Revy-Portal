@@ -88,7 +88,10 @@ export default function LeadModal({
   const [isQuickContactOpen, setIsQuickContactOpen] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [uncertainOutcome, setUncertainOutcome] = useState(false);
   const [error, setError] = useState(null);
+  const [errorCategory, setErrorCategory] = useState('validation'); // 'validation' | 'server' | 'network' | 'conflict' | 'auth' | 'uncertain'
   const [fieldErrors, setFieldErrors] = useState({});
   const [duplicateConflict, setDuplicateConflict] = useState(null);
 
@@ -105,8 +108,11 @@ export default function LeadModal({
     window.addEventListener('keydown', handleKeyDown);
 
     setError(null);
+    setErrorCategory('validation');
     setFieldErrors({});
     setDuplicateConflict(null);
+    setUncertainOutcome(false);
+    setIsVerifying(false);
     loadInitialData();
 
       if (leadToEdit) {
@@ -342,12 +348,47 @@ export default function LeadModal({
     return Object.keys(errors).length === 0;
   };
 
+  const handleVerifyOutcome = async () => {
+    setIsVerifying(true);
+    setError(null);
+    try {
+      const checkRes = await crmService.getLeads({
+        contactId: formData.contactId,
+        pageSize: 5,
+        sortBy: 'created_at',
+        sortOrder: 'desc'
+      });
+      const recentLeads = checkRes.data?.leads || [];
+      const matched = recentLeads.find(l => 
+        (l.contactId === formData.contactId || l.contact?.id === formData.contactId) &&
+        l.businessArea === formData.businessArea
+      );
+      if (matched) {
+        setUncertainOutcome(false);
+        if (typeof onClose === 'function') onClose();
+        if (typeof onLeadSaved === 'function') onLeadSaved(matched);
+      } else {
+        setUncertainOutcome(false);
+        setErrorCategory('validation');
+        setError('Verification complete: No duplicate lead was found in the database. You may safely submit the form now.');
+      }
+    } catch {
+      setError('Unable to reach the server to verify lead status. Please check your connection or review the Leads list directly.');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
+    // Prevent duplicate submissions while a request is in progress
+    if (submitting || isVerifying) return;
     if (!validate()) return;
 
     setError(null);
+    setErrorCategory('validation');
     setDuplicateConflict(null);
+    setUncertainOutcome(false);
     setSubmitting(true);
 
     const payload = {
@@ -372,43 +413,108 @@ export default function LeadModal({
       siteName: formData.siteName.trim() || undefined
     };
 
+    let res = null;
+    let saveFailed = false;
+
     try {
-      let res;
       if (isEdit) {
         res = await crmService.updateLead(leadToEdit.id, payload);
       } else {
         res = await crmService.createLead(payload);
       }
-
-      if (res.data?.success && res.data?.lead) {
-        onLeadSaved(res.data.lead);
-        onClose();
-      } else {
-        setError('Unexpected server response. Please try again.');
-      }
     } catch (err) {
-      if (err.response?.status === 409) {
-        const conflictDetails = err.response.data?.details || {};
-        setDuplicateConflict({
-          message: err.response.data?.message || 'An active open lead already exists for this client with this requirement specification.',
-          existingLeadId: conflictDetails.existingLeadId,
-          existingLeadNumber: conflictDetails.existingLeadNumber,
-          existingLeadName: conflictDetails.existingLeadName
-        });
-      } else if (err.response?.data?.details && Array.isArray(err.response.data.details)) {
-        // Map backend validation errors to fields
-        const errMap = {};
-        err.response.data.details.forEach(item => {
-          const field = item.loc?.[item.loc.length - 1];
-          if (field) errMap[field] = item.msg;
-        });
-        setFieldErrors(errMap);
-        setError(err.response.data.message || 'Please correct the validation errors in the form.');
+      saveFailed = true;
+      if (err.response) {
+        const status = err.response.status;
+        if (status === 409) {
+          const conflictDetails = err.response.data?.details || {};
+          setErrorCategory('conflict');
+          setDuplicateConflict({
+            message: err.response.data?.message || 'An active open lead already exists for this client with this requirement specification.',
+            existingLeadId: conflictDetails.existingLeadId,
+            existingLeadNumber: conflictDetails.existingLeadNumber,
+            existingLeadName: conflictDetails.existingLeadName
+          });
+        } else if (status === 401 || status === 403) {
+          setErrorCategory('auth');
+          setError(err.response.data?.message || 'You do not have permission to perform this CRM action.');
+        } else if (status === 400 || status === 422) {
+          setErrorCategory('validation');
+          const errMap = {};
+          if (err.response?.data?.details && Array.isArray(err.response.data.details)) {
+            err.response.data.details.forEach(item => {
+              const field = item.loc?.[item.loc.length - 1];
+              if (field) errMap[field] = item.msg;
+            });
+            setFieldErrors(errMap);
+          }
+          let cleanMsg = err.response.data?.message || 'Please check and correct the highlighted fields in the form.';
+          if (cleanMsg.includes('psycopg2') || cleanMsg.includes('Traceback') || cleanMsg.includes('SQL')) {
+            cleanMsg = 'A database validation issue occurred. Please check the entered fields and try again.';
+          }
+          setError(cleanMsg);
+        } else if (status >= 500) {
+          setErrorCategory('server');
+          setError('A server error occurred while processing the lead. The issue has been logged. Please try again shortly or contact your administrator if it continues.');
+        } else {
+          setErrorCategory('validation');
+          setError(err.response.data?.message || 'Failed to save lead. Please check the entered data.');
+        }
+      } else if (err.code === 'ECONNABORTED' || (err.message && err.message.toLowerCase().includes('timeout'))) {
+        // Ambiguous timeout: request timed out waiting for server response
+        setErrorCategory('uncertain');
+        setUncertainOutcome(true);
+        setError('Request timed out while waiting for the server. The lead may have already been saved. Please verify before retrying to prevent duplicate records.');
+      } else if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        // Client is genuinely offline
+        setErrorCategory('network');
+        setError('Connection Error — You appear to be offline. Please check your network connection and try again.');
+      } else if (err.message === 'Network Error' || err.code === 'ERR_NETWORK') {
+        // Genuine network failure to connect to host
+        setErrorCategory('network');
+        setError('Connection Error — Unable to reach the server. Please check your network connection and try again.');
       } else {
-        setError(err.response?.data?.message || 'Failed to save lead. Please check the entered data.');
+        // Client-side / unexpected exception - DO NOT report as a network error
+        setErrorCategory('server');
+        setError(err.message || 'An unexpected error occurred while saving the lead.');
       }
     } finally {
       setSubmitting(false);
+    }
+
+    if (saveFailed) {
+      return;
+    }
+
+    // Process successful server response
+    if (res && res.data?.success && res.data?.lead) {
+      const savedLead = res.data.lead;
+
+      // 1. Close the modal first so the form does not remain open
+      if (typeof onClose === 'function') {
+        try {
+          onClose();
+        } catch (closeErr) {
+          console.error('Error closing LeadModal:', closeErr);
+        }
+      }
+
+      // 2. Notify parent safely outside the save try/catch
+      if (typeof onLeadSaved === 'function') {
+        try {
+          const cbResult = onLeadSaved(savedLead);
+          if (cbResult && typeof cbResult.catch === 'function') {
+            cbResult.catch(cbErr => {
+              console.warn('Background error in onLeadSaved callback:', cbErr);
+            });
+          }
+        } catch (cbErr) {
+          console.warn('Synchronous error in onLeadSaved callback:', cbErr);
+        }
+      }
+    } else {
+      setErrorCategory('server');
+      setError('Unexpected server response. Please verify the Leads list to confirm.');
     }
   };
 
@@ -509,17 +615,54 @@ export default function LeadModal({
               {error && (
                 <div style={{
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.6rem',
+                  alignItems: 'flex-start',
+                  gap: '0.65rem',
                   padding: '0.85rem 1rem',
-                  background: '#fef2f2',
-                  border: '1px solid #fecaca',
+                  background: errorCategory === 'server' ? '#fff1f2' : (errorCategory === 'network' || errorCategory === 'uncertain') ? '#fffbeb' : errorCategory === 'auth' ? '#fef3c7' : '#fef2f2',
+                  border: errorCategory === 'server' ? '1px solid #fecdd3' : (errorCategory === 'network' || errorCategory === 'uncertain') ? '1px solid #fde68a' : errorCategory === 'auth' ? '1px solid #fcd34d' : '1px solid #fecaca',
                   borderRadius: '10px',
-                  color: '#b91c1c',
+                  color: errorCategory === 'server' ? '#9f1239' : (errorCategory === 'network' || errorCategory === 'uncertain') ? '#92400e' : errorCategory === 'auth' ? '#92400e' : '#b91c1c',
                   fontSize: '0.875rem'
                 }}>
-                  <AlertCircle size={18} style={{ flexShrink: 0 }} />
-                  <span>{error}</span>
+                  <AlertCircle size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '100%' }}>
+                    <strong style={{ fontSize: '0.85rem' }}>
+                      {errorCategory === 'server'
+                        ? 'Server Error'
+                        : errorCategory === 'network'
+                          ? 'Connection Error'
+                          : errorCategory === 'uncertain'
+                            ? 'Outcome Uncertain'
+                            : errorCategory === 'auth'
+                              ? 'Permission Error'
+                              : 'Validation Error'}
+                    </strong>
+                    <span>{error}</span>
+                    {uncertainOutcome && (
+                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '6px' }}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          style={{ fontSize: '0.78rem', padding: '4px 10px' }}
+                          onClick={handleVerifyOutcome}
+                          disabled={isVerifying}
+                        >
+                          {isVerifying ? 'Checking database...' : 'Verify if Saved'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          style={{ fontSize: '0.78rem', padding: '4px 10px' }}
+                          onClick={() => {
+                            if (typeof onClose === 'function') onClose();
+                            navigate('/crm/leads');
+                          }}
+                        >
+                          View Leads List
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
 
@@ -950,11 +1093,11 @@ export default function LeadModal({
 
             {/* Modal Footer */}
             <div className="modal-footer" style={{ padding: '1rem 1.5rem', background: '#f8fafc', borderTop: '1px solid #e2e8f0', display: 'flex', justifyContent: 'flex-end', gap: '0.75rem' }}>
-              <button type="button" className="btn btn-secondary" onClick={onClose} disabled={submitting}>
+              <button type="button" className="btn btn-secondary" onClick={onClose} disabled={submitting || isVerifying}>
                 Cancel
               </button>
-              <button type="submit" className="btn btn-primary" disabled={submitting}>
-                {submitting ? (isEdit ? 'Updating Lead...' : 'Creating Lead...') : (isEdit ? 'Save Changes' : 'Create Lead')}
+              <button type="submit" className="btn btn-primary" disabled={submitting || isVerifying}>
+                {submitting ? (isEdit ? 'Updating Lead...' : 'Creating Lead...') : isVerifying ? 'Verifying...' : (isEdit ? 'Save Changes' : 'Create Lead')}
               </button>
             </div>
           </form>

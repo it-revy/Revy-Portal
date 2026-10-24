@@ -91,35 +91,61 @@ export default function QuickContactModal({
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
+    if (loading) return;
     if (!validate()) return;
 
     setLoading(true);
     setError(null);
 
+    let res = null;
+    let createFailed = false;
+
     try {
-      const res = await crmService.createContact({
+      res = await crmService.createContact({
         name: formData.name.trim(),
         designation: formData.designation.trim() || undefined,
         email: formData.email.trim() || undefined,
         mobileNumber: formData.mobileNumber.trim() || undefined,
         accountId: formData.accountId || undefined
       });
-
-      if (res.data.success && res.data.contact) {
-        onContactCreated(res.data.contact);
-        onClose();
-      } else {
-        setError('Unexpected server response. Please try again.');
-      }
     } catch (err) {
+      createFailed = true;
       if (err.response?.status === 409) {
         setError(err.response.data?.message || 'A contact with this email or mobile number already exists.');
+      } else if (err.response?.status === 401 || err.response?.status === 403) {
+        setError(err.response.data?.message || 'Permission denied. You cannot create contacts.');
+      } else if (err.response?.status >= 500) {
+        setError('A server error occurred while creating the contact. Please try again or contact support.');
+      } else if (err.message === 'Network Error' || err.code === 'ERR_NETWORK') {
+        setError('Network error. Unable to reach the server. Please try again.');
       } else {
-        setError(err.response?.data?.message || 'Failed to create contact. Please verify inputs.');
+        setError(err.response?.data?.message || err.message || 'Failed to create contact. Please verify inputs.');
       }
     } finally {
       setLoading(false);
+    }
+
+    if (createFailed) return;
+
+    if (res && res.data?.success && res.data?.contact) {
+      const newContact = res.data.contact;
+      if (typeof onClose === 'function') {
+        try {
+          onClose();
+        } catch (closeErr) {
+          console.error('Error closing QuickContactModal:', closeErr);
+        }
+      }
+      if (typeof onContactCreated === 'function') {
+        try {
+          onContactCreated(newContact);
+        } catch (cbErr) {
+          console.error('Error in onContactCreated callback:', cbErr);
+        }
+      }
+    } else {
+      setError('Unexpected server response. Please try again.');
     }
   };
 

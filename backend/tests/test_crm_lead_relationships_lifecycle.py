@@ -299,14 +299,15 @@ def test_validation_rejects_missing_contact_and_inconsistent_pairs(setup_crm_sta
 
     account_b = create_test_account(headers, "Company Beta")
 
-    # 1. Missing Contact on creation -> 400 or 422
+    # 1. Missing Contact on creation -> 201 Created (contact is now optional)
     res_missing_con = client.post("/api/v1/crm/leads", json={
         "leadName": f"No Contact Lead {uid}",
         "businessArea": "Biogas",
         "requirementType": "Undetermined"
         # contactId missing
     }, headers=headers)
-    assert res_missing_con.status_code in [400, 422]
+    assert res_missing_con.status_code == 201
+    assert res_missing_con.json()["lead"]["contactId"] is None
 
     # 2. Invalid contact ID -> 404
     res_invalid_con = client.post("/api/v1/crm/leads", json={
@@ -328,7 +329,7 @@ def test_validation_rejects_missing_contact_and_inconsistent_pairs(setup_crm_sta
     assert res_inconsistent.status_code == 400
     assert "belongs to a different Account" in res_inconsistent.text
 
-    # 4. Attempt to clear contact on update -> 400
+    # 4. Clearing contact on update -> now supported since contactId is nullable
     lead_res = client.post("/api/v1/crm/leads", json={
         "leadName": f"Valid Lead {uid}",
         "businessArea": "Biogas",
@@ -341,7 +342,8 @@ def test_validation_rejects_missing_contact_and_inconsistent_pairs(setup_crm_sta
     res_clear_con = client.put(f"/api/v1/crm/leads/{valid_lead_id}", json={
         "contactId": ""
     }, headers=headers)
-    assert res_clear_con.status_code in [400, 422]
+    assert res_clear_con.status_code == 200
+    assert res_clear_con.json()["lead"]["contactId"] is None
 
 
 def test_quick_create_account_and_contact_immediate_assignment(setup_crm_stage4_environment):

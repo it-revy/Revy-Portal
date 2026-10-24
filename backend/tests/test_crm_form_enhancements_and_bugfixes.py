@@ -286,10 +286,11 @@ def test_quick_create_account_and_contact_lead_assignment(setup_crm_stage4_envir
     assert lead_detail["contactId"] == new_con["id"]
     assert lead_detail["contactName"] == f"Dr. Priya Sharma {ts}"
 
-    # 5. Verify Contact remains mandatory: creating lead without contactId must fail
+    # 5. Workflow change: creating lead without contactId is now supported (201 Created)
     res_no_con = client.post("/api/v1/crm/leads", json={
         "leadName": "Lead Without Contact",
         "businessArea": "Biogas",
         "requirementType": "Direct Product/Service"
     }, headers=headers)
-    assert res_no_con.status_code in [400, 422]
+    assert res_no_con.status_code == 201
+    assert res_no_con.json()["lead"]["contactId"] is None

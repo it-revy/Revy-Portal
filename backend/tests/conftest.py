@@ -23,8 +23,14 @@ def setup_test_database():
                 needs_lead_recreate = True
             if res and not any(c[1] == 'connected_date' for c in res):
                 needs_lead_recreate = True
+            if res and not any(c[1] == 'company_name' for c in res):
+                needs_lead_recreate = True
+            contact_id_col = next((c for c in res if c[1] == 'contact_id'), None)
+            if contact_id_col and contact_id_col[3] == 1:
+                needs_lead_recreate = True
 
             if needs_lead_recreate:
+                conn.exec_driver_sql("DROP TABLE IF EXISTS lead_contact_methods")
                 conn.exec_driver_sql("DROP TABLE IF EXISTS lead_additional_contacts")
                 conn.exec_driver_sql("DROP TABLE IF EXISTS lead_requirement_types")
                 conn.exec_driver_sql("DROP TABLE IF EXISTS crm_testing_charges")
@@ -32,7 +38,9 @@ def setup_test_database():
                 conn.exec_driver_sql("DROP TABLE IF EXISTS crm_sample_submissions")
                 conn.exec_driver_sql("DROP TABLE IF EXISTS crm_product_transactions")
                 conn.exec_driver_sql("DROP TABLE IF EXISTS crm_consulting_engagements")
+                conn.exec_driver_sql("DROP TABLE IF EXISTS lead_communications")
                 conn.exec_driver_sql("DROP TABLE IF EXISTS lead_communication_history")
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_opportunities")
                 conn.exec_driver_sql("DROP TABLE IF EXISTS leads")
                 conn.commit()
 

@@ -12,7 +12,8 @@ import {
   Building,
   Building2,
   Contact,
-  ShieldCheck
+  ShieldCheck,
+  Briefcase
 } from 'lucide-react';
 
 const CrmSidebar = ({
@@ -44,6 +45,7 @@ const CrmSidebar = ({
 
   const isDashboardActive = location.pathname === '/crm' || location.pathname === '/crm/dashboard';
   const isLeadsActive = location.pathname.startsWith('/crm/leads');
+  const isOpportunitiesActive = location.pathname.startsWith('/crm/opportunities');
   const isAccountsActive = location.pathname.startsWith('/crm/accounts');
   const isContactsActive = location.pathname.startsWith('/crm/contacts');
   const isUserHubActive = location.pathname === '/crm/user-hub' || location.pathname === '/crm/users';
@@ -161,7 +163,18 @@ const CrmSidebar = ({
           {(!isCollapsed || isMobileOpen) && <span>Leads</span>}
         </NavLink>
 
-        {/* 3. Accounts */}
+        {/* 3. Opportunities */}
+        <NavLink
+          to="/crm/opportunities"
+          onClick={handleLinkClick}
+          className={`nav-item ${isOpportunitiesActive ? 'active' : ''}`}
+          title="Opportunities"
+        >
+          <Briefcase size={18} />
+          {(!isCollapsed || isMobileOpen) && <span>Opportunities</span>}
+        </NavLink>
+
+        {/* 4. Accounts */}
         <NavLink
           to="/crm/accounts"
           onClick={handleLinkClick}
@@ -172,7 +185,7 @@ const CrmSidebar = ({
           {(!isCollapsed || isMobileOpen) && <span>Accounts</span>}
         </NavLink>
 
-        {/* 4. Contacts */}
+        {/* 5. Contacts */}
         <NavLink
           to="/crm/contacts"
           onClick={handleLinkClick}

@@ -75,6 +75,21 @@ class LeadRequirementType(Base):
     lead = relationship("Lead", back_populates="requirement_types")
 
 
+class LeadContactMethod(Base):
+    __tablename__ = "lead_contact_methods"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    lead_id = Column(String(36), ForeignKey("leads.id", ondelete="CASCADE"), nullable=False, index=True)
+    contact_method = Column(String(50), nullable=False)  # "Email", "Phone", "WhatsApp", "Meeting"
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (
+        UniqueConstraint("lead_id", "contact_method", name="uq_lead_contact_method"),
+    )
+
+    lead = relationship("Lead", back_populates="contact_methods")
+
+
 # Normalized Association Table for Multiple Contacts on a Lead
 lead_additional_contacts = Table(
     "lead_additional_contacts",
@@ -85,38 +100,102 @@ lead_additional_contacts = Table(
 )
 
 
+class Opportunity(Base):
+    __tablename__ = "crm_opportunities"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    opportunity_id = Column(String(50), unique=True, index=True, nullable=False)  # OPP-00001
+    name = Column(String(255), nullable=False, index=True)
+    account_id = Column(String(36), ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False, index=True)
+    contact_id = Column(String(36), ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True, index=True)
+    originating_lead_id = Column(String(36), ForeignKey("leads.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    status = Column(String(50), nullable=False, default="Open", index=True)  # Open, Won, Lost
+    currency = Column(String(10), nullable=False, default="INR")
+    estimated_value = Column(Numeric(12, 2), nullable=True)
+    description = Column(Text, nullable=True)
+    requirement_summary = Column(Text, nullable=True)
+    requirement_types = Column(Text, nullable=True)
+
+    assigned_to_user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    account = relationship("Account", backref="opportunities")
+    contact = relationship("Contact", backref="opportunities")
+    originating_lead = relationship("Lead", foreign_keys=[originating_lead_id], backref="opportunities")
+    assigned_to = relationship("User", foreign_keys=[assigned_to_user_id])
+    created_by = relationship("User", foreign_keys=[created_by_id])
+    updated_by = relationship("User", foreign_keys=[updated_by_id])
+
+
 class Lead(Base):
     __tablename__ = "leads"
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     lead_id = Column(String(50), unique=True, index=True, nullable=False)
-    lead_name = Column(String(255), nullable=True, index=True)  # Optional per REVY CRM Phase 1
-    website_link = Column(String(255), nullable=True)
-    location = Column(String(255), nullable=True)
+    lead_name = Column(String(255), nullable=True, index=True)  # Topic / Lead Name (Optional)
+
+    # Section 1 - Lead-owned Contact Information
+    first_name = Column(String(100), nullable=True)
+    last_name = Column(String(100), nullable=True)
+    job_title = Column(String(100), nullable=True)
+    business_phone = Column(String(50), nullable=True)
+    mobile_phone = Column(String(50), nullable=True)
+    contact_email = Column(String(255), nullable=True, index=True)
+
+    # Section 2 - Lead-owned Company Information
+    company_name = Column(String(255), nullable=True, index=True)
+    company_email = Column(String(255), nullable=True)
+    website_link = Column(String(255), nullable=True)  # Company website
+    location = Column(String(255), nullable=True)  # Client Location
     site_name = Column(String(255), nullable=True)
-    business_area = Column(String(50), nullable=False)  # "Biogas", "WWT"
+    communication_channel = Column(String(50), nullable=True, default="Email")
+    connected_date = Column(Date, nullable=True, index=True)  # Client connection date
+
+    # Section 3 - Additional Lead Information
+    lead_source = Column(String(50), nullable=False, default="Website")  # Canonical 12 options
+    rating = Column(String(50), nullable=True)  # Hot, Warm, Cold
+    client_status = Column(String(50), nullable=False, default="New")  # New or Existing (client relationship)
+
+    # Section 4 - Description & Business Information
+    description = Column(Text, nullable=True)
+    industry = Column(String(100), nullable=True)
+    number_of_employees = Column(Integer, nullable=True)
+    currency = Column(String(10), nullable=False, default="INR")
+    business_area = Column(String(50), nullable=False, default="Biogas")  # "Biogas", "WWT"
     requirement_type = Column(String(50), nullable=True)  # Preserved for backward-compatibility
     requirement_summary = Column(Text, nullable=True)
     requested_product_service = Column(String(255), nullable=True, index=True)
     normalized_requirement = Column(String(255), nullable=True)
-    lead_source = Column(String(50), nullable=False, default="Website")  # Canonical source: Website, Email Received, etc.
-    
+
+    # Section 5 - Preferred Contact Method
+    preferred_contact_method = Column(String(50), nullable=True)
+
+    # Foreign key relationships (optional at creation time)
     account_id = Column(String(36), ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True, index=True)
-    contact_id = Column(String(36), ForeignKey("contacts.id", ondelete="RESTRICT"), nullable=False, index=True)  # Primary Contact
-    assigned_to_user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
-    
-    lifecycle_status = Column(String(50), nullable=False, default="Open", index=True)  # Open, Qualified, Disqualified
-    communication_channel = Column(String(50), nullable=True, default="Email")
+    contact_id = Column(String(36), ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True, index=True)  # Primary Contact (Optional)
+    assigned_to_user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)  # Lead Owner
+
+    # Lead Lifecycle Status (Open, Qualified, Disqualified)
+    lifecycle_status = Column(String(50), nullable=False, default="Open", index=True)
     remarks = Column(Text, nullable=True)
-    
-    connected_date = Column(Date, nullable=True, index=True)  # Client connection date
+
+    # Lead Qualification Links
+    opportunity_id = Column(String(36), ForeignKey("crm_opportunities.id", ondelete="SET NULL"), nullable=True, index=True)
+    qualified_at = Column(DateTime, nullable=True)
+    qualified_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
     next_follow_up_date = Column(Date, nullable=True, index=True)
     next_follow_up_action = Column(Text, nullable=True)
     last_connected_date = Column(DateTime, nullable=True)
-    
+
     created_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     updated_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    
+
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
@@ -138,11 +217,19 @@ class Lead(Base):
     assigned_to = relationship("User", foreign_keys=[assigned_to_user_id])
     created_by = relationship("User", foreign_keys=[created_by_id])
     updated_by = relationship("User", foreign_keys=[updated_by_id])
+    qualified_by = relationship("User", foreign_keys=[qualified_by_id])
+    opportunity = relationship("Opportunity", foreign_keys=[opportunity_id], backref="originating_lead_ref")
     requirement_types = relationship(
         "LeadRequirementType",
         back_populates="lead",
         cascade="all, delete-orphan",
         order_by="LeadRequirementType.created_at"
+    )
+    contact_methods = relationship(
+        "LeadContactMethod",
+        back_populates="lead",
+        cascade="all, delete-orphan",
+        order_by="LeadContactMethod.created_at"
     )
     communications = relationship(
         "LeadCommunicationHistory",

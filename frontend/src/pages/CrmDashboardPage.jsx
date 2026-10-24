@@ -442,9 +442,14 @@ export default function CrmDashboardPage() {
       <LeadModal
         isOpen={isLeadModalOpen}
         onClose={() => setIsLeadModalOpen(false)}
-        onLeadSaved={() => {
-          fetchMetrics();
-          navigate('/crm/leads');
+        onLeadSaved={(savedLead) => {
+          setIsLeadModalOpen(false);
+          const leadCode = savedLead?.leadId || savedLead?.lead_id || savedLead?.leadName || 'Lead';
+          navigate('/crm/leads', {
+            state: {
+              successMessage: `Lead ${leadCode} created successfully.`
+            }
+          });
         }}
       />
     </div>

@@ -30,6 +30,11 @@ from app.crm.schema import (
     LeadStatusTransitionRequest,
     LeadListResponse,
     LeadDetailResponse,
+    LeadQualificationMatchesResponse,
+    LeadQualifyRequest,
+    LeadQualifyResponse,
+    OpportunityListResponse,
+    OpportunityDetailResponse,
     CommunicationCreate,
     CommunicationListResponse,
     DashboardMetricsResponse
@@ -476,6 +481,39 @@ def transition_lead_status(
     }
 
 
+@router.get("/leads/{lead_id}/qualification-matches", response_model=LeadQualificationMatchesResponse)
+def get_lead_qualification_matches(
+    lead_id: str,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.view")),
+    db: Session = Depends(get_db)
+):
+    """
+    Search for existing matching Accounts and Contacts to suggest reuse before qualification.
+    """
+    service = CrmService(db)
+    return service.search_qualification_matches(actor=current_user, lead_id=lead_id)
+
+
+@router.post("/leads/{lead_id}/qualify", response_model=LeadQualifyResponse)
+def qualify_lead(
+    lead_id: str,
+    payload: LeadQualifyRequest,
+    request: Request,
+    current_user: CurrentUser = Depends(require_any_permission(["crm.lead.edit", "crm.lead.status.update"])),
+    db: Session = Depends(get_db)
+):
+    """
+    Qualify a Lead into an Opportunity, transactionally creating or reusing Account and Contact records.
+    """
+    service = CrmService(db)
+    return service.qualify_lead(
+        actor=current_user,
+        lead_id=lead_id,
+        payload=payload,
+        request=request
+    )
+
+
 # =========================================================================
 # 5. LEAD COMMUNICATION HISTORY ENDPOINTS
 # =========================================================================
@@ -543,4 +581,47 @@ def list_crm_assignees(
     service = CrmService(db)
     assignees = service.list_eligible_assignees()
     return {"success": True, "count": len(assignees), "assignees": assignees}
+
+
+# =========================================================================
+# 7. OPPORTUNITIES ENDPOINTS
+# =========================================================================
+
+@router.get("/opportunities", response_model=OpportunityListResponse)
+def list_opportunities(
+    search: Optional[str] = Query(None, description="Search by name, code, or account"),
+    accountId: Optional[str] = Query(None, description="Filter by account ID"),
+    status: Optional[str] = Query(None, description="Filter by opportunity status"),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_user: CurrentUser = Depends(require_permission("crm.lead.view")),
+    db: Session = Depends(get_db)
+):
+    """
+    List Opportunities resulting from Lead qualification.
+    """
+    service = CrmService(db)
+    opps = service.list_opportunities(
+        actor=current_user,
+        search=search,
+        account_id=accountId,
+        status=status,
+        limit=limit,
+        offset=offset
+    )
+    return {"success": True, "count": len(opps), "opportunities": opps}
+
+
+@router.get("/opportunities/{opportunity_id}", response_model=OpportunityDetailResponse)
+def get_opportunity(
+    opportunity_id: str,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.view")),
+    db: Session = Depends(get_db)
+):
+    """
+    Get detailed information for a single Opportunity.
+    """
+    service = CrmService(db)
+    opp = service.get_opportunity(opportunity_id)
+    return {"success": True, "opportunity": opp}
 

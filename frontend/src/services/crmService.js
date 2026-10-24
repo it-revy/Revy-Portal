@@ -44,6 +44,31 @@ export const crmService = {
     return API.post(`/crm/leads/${id}/status`, data);
   },
 
+  getLeadQualificationMatches: async (leadId) => {
+    return API.get(`/crm/leads/${leadId}/qualification-matches`);
+  },
+
+  qualifyLead: async (leadId, data) => {
+    return API.post(`/crm/leads/${leadId}/qualify`, data);
+  },
+
+  // =========================================================================
+  // OPPORTUNITIES
+  // =========================================================================
+  getOpportunities: async (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.search) query.append('search', params.search);
+    if (params.accountId) query.append('accountId', params.accountId);
+    if (params.status) query.append('status', params.status);
+    if (params.limit) query.append('limit', params.limit);
+    if (params.offset) query.append('offset', params.offset);
+    return API.get(`/crm/opportunities?${query.toString()}`);
+  },
+
+  getOpportunityById: async (id) => {
+    return API.get(`/crm/opportunities/${id}`);
+  },
+
   // =========================================================================
   // 3. COMMUNICATIONS
   // =========================================================================

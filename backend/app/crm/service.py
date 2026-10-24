@@ -22,6 +22,8 @@ from app.crm.model import (
     Contact,
     Lead,
     LeadRequirementType,
+    LeadContactMethod,
+    Opportunity,
     LeadCommunicationHistory,
     CrmSequence,
     ConsultingEngagement,
@@ -38,6 +40,9 @@ from app.crm.schema import (
     LeadCreate,
     LeadUpdate,
     CommunicationCreate,
+    OpportunityCreate,
+    OpportunityUpdate,
+    LeadQualifyRequest,
     ConsultingEngagementCreate,
     SampleSubmissionCreate,
     ProductTransactionCreate,
@@ -1177,15 +1182,17 @@ class CrmService:
         payload: LeadCreate,
         request: Optional[Request] = None
     ) -> Dict[str, Any]:
-        # 1. Validate Contact
-        contact = self.db.query(Contact).filter(
-            or_(Contact.id == payload.contactId, Contact.contact_id == payload.contactId),
-            Contact.is_active == True
-        ).first()
-        if not contact:
-            raise NotFoundError(f"Contact '{payload.contactId}' not found or is inactive.")
+        # 1. Contact (optional at creation time)
+        contact = None
+        if payload.contactId:
+            contact = self.db.query(Contact).filter(
+                or_(Contact.id == payload.contactId, Contact.contact_id == payload.contactId),
+                Contact.is_active == True
+            ).first()
+            if not contact:
+                raise NotFoundError(f"Contact '{payload.contactId}' not found or is inactive.")
 
-        # 2. Validate Account if provided
+        # 2. Account (optional at creation time)
         account = None
         if payload.accountId:
             account = self.db.query(Account).filter(
@@ -1195,12 +1202,12 @@ class CrmService:
             if not account:
                 raise NotFoundError(f"Account '{payload.accountId}' not found or is inactive.")
 
-            # Validate Contact-Account relationship: if contact belongs to another account, reject
-            if contact.account_id and contact.account_id != account.id:
+            # Validate Contact-Account relationship if both provided
+            if contact and contact.account_id and contact.account_id != account.id:
                 raise ValidationError("The selected Contact belongs to a different Account.")
-            elif not contact.account_id:
+            elif contact and not contact.account_id:
                 contact.account_id = account.id
-        elif contact.account_id:
+        elif contact and contact.account_id:
             # Auto-populate lead's account from contact's account
             account = self.db.query(Account).filter(
                 Account.id == contact.account_id,
@@ -1220,6 +1227,7 @@ class CrmService:
         clean_req = payload.requestedProductService.strip() if payload.requestedProductService and payload.requestedProductService.strip() else None
         norm_req = normalize_text(clean_req) if clean_req else None
         acc_id = account.id if account else None
+        con_id = contact.id if contact else None
 
         # Lead Title is optional per Section 4
         clean_title = payload.leadName.strip() if payload.leadName and payload.leadName.strip() else None
@@ -1230,7 +1238,7 @@ class CrmService:
             lead = Lead(
                 lead_id=lead_code,
                 lead_name=clean_title,
-                business_area=payload.businessArea,
+                business_area=payload.businessArea or "Biogas",
                 requirement_type=primary_req_type,
                 requirement_summary=payload.requirementSummary.strip() if payload.requirementSummary else None,
                 requested_product_service=clean_req,
@@ -1238,7 +1246,7 @@ class CrmService:
                 lead_source=payload.leadSource or "Website",
                 connected_date=payload.connectedDate,
                 account_id=acc_id,
-                contact_id=contact.id,
+                contact_id=con_id,
                 assigned_to_user_id=assignee.id if assignee else None,
                 lifecycle_status="Open",
                 communication_channel=payload.communicationChannel or "Email",
@@ -1248,17 +1256,45 @@ class CrmService:
                 website_link=payload.websiteLink.strip() if payload.websiteLink else None,
                 location=payload.location.strip() if payload.location else None,
                 site_name=payload.siteName.strip() if payload.siteName else None,
-                created_by_id=str(actor.id) if actor.id else None
+                created_by_id=str(actor.id) if actor.id else None,
+
+                # Direct Section 1 Contact Fields
+                first_name=payload.firstName.strip() if payload.firstName else None,
+                last_name=payload.lastName.strip() if payload.lastName else None,
+                job_title=payload.jobTitle.strip() if payload.jobTitle else None,
+                business_phone=payload.businessPhone.strip() if payload.businessPhone else None,
+                mobile_phone=payload.mobilePhone.strip() if payload.mobilePhone else None,
+                contact_email=payload.contactEmail.strip().lower() if payload.contactEmail else None,
+
+                # Direct Section 2 Company Fields
+                company_name=payload.companyName.strip() if payload.companyName else None,
+                company_email=payload.companyEmail.strip().lower() if payload.companyEmail else None,
+
+                # Section 3 & 4 Fields
+                rating=payload.rating,
+                client_status=payload.clientStatus or "New",
+                description=payload.description.strip() if payload.description else None,
+                industry=payload.industry.strip() if payload.industry else None,
+                number_of_employees=payload.numberOfEmployees,
+                currency=payload.currency or "INR",
+
+                # Section 5 Contact Method
+                preferred_contact_method=payload.preferredContactMethod
             )
 
             # Add normalized requirement type relationship records
             for rt in req_types:
                 lead.requirement_types.append(LeadRequirementType(requirement_type=rt))
 
+            # Add structured contact methods
+            if payload.contactMethods:
+                for method in payload.contactMethods:
+                    lead.contact_methods.append(LeadContactMethod(contact_method=method))
+
             # Add additional contacts if provided
             if payload.additionalContactIds:
                 for cid in payload.additionalContactIds:
-                    if not cid or cid == payload.contactId or cid == contact.id or (contact.contact_id and cid == contact.contact_id):
+                    if not cid or (con_id and (cid == con_id or cid == payload.contactId)):
                         continue
                     add_con = self.db.query(Contact).filter(
                         or_(Contact.id == cid, Contact.contact_id == cid),
@@ -1315,7 +1351,10 @@ class CrmService:
         payload: LeadUpdate,
         request: Optional[Request] = None
     ) -> Dict[str, Any]:
-        lead = self.db.query(Lead).options(joinedload(Lead.requirement_types)).filter(
+        lead = self.db.query(Lead).options(
+            joinedload(Lead.requirement_types),
+            joinedload(Lead.contact_methods)
+        ).filter(
             or_(Lead.id == lead_id, Lead.lead_id == lead_id)
         ).first()
         if not lead:
@@ -1328,27 +1367,26 @@ class CrmService:
         }
 
         # Validate Contact if changed
+        contact = None
         if "contactId" in payload.model_fields_set:
             if not payload.contactId or not str(payload.contactId).strip():
-                raise ValidationError("Primary Contact is mandatory and cannot be cleared.")
-            contact = self.db.query(Contact).filter(
-                or_(Contact.id == payload.contactId, Contact.contact_id == payload.contactId),
-                Contact.is_active == True
-            ).first()
-            if not contact:
-                raise NotFoundError(f"Contact '{payload.contactId}' not found or is inactive.")
-            lead.contact_id = contact.id
-        else:
+                lead.contact_id = None
+            else:
+                contact = self.db.query(Contact).filter(
+                    or_(Contact.id == payload.contactId, Contact.contact_id == payload.contactId),
+                    Contact.is_active == True
+                ).first()
+                if not contact:
+                    raise NotFoundError(f"Contact '{payload.contactId}' not found or is inactive.")
+                lead.contact_id = contact.id
+        elif lead.contact_id:
             contact = lead.contact or self.db.query(Contact).filter(Contact.id == lead.contact_id).first()
 
-        if not contact:
-            raise ValidationError("A valid Contact is required for the Lead.")
-
         # Validate Account if changed
+        account = None
         if "accountId" in payload.model_fields_set:
             if not payload.accountId:
                 lead.account_id = None
-                account = None
             else:
                 account = self.db.query(Account).filter(
                     or_(Account.id == payload.accountId, Account.account_id == payload.accountId),
@@ -1357,21 +1395,15 @@ class CrmService:
                 if not account:
                     raise NotFoundError(f"Account '{payload.accountId}' not found or is inactive.")
                 lead.account_id = account.id
-        else:
-            account = lead.account if lead.account_id else (self.db.query(Account).filter(Account.id == lead.account_id).first() if lead.account_id else None)
+        elif lead.account_id:
+            account = lead.account or self.db.query(Account).filter(Account.id == lead.account_id).first()
 
-        # Enforce consistency between lead's contact and account
+        # Enforce consistency between lead's contact and account if both are present
         if account and contact:
             if contact.account_id and contact.account_id != account.id:
                 raise ValidationError("The selected Contact belongs to a different Account.")
             elif not contact.account_id:
                 contact.account_id = account.id
-        elif not account and contact and contact.account_id:
-            if "accountId" not in payload.model_fields_set:
-                lead.account_id = contact.account_id
-                account = self.db.query(Account).filter(Account.id == contact.account_id).first()
-            else:
-                raise ValidationError("Cannot clear Account while the selected Contact belongs to an Account. Please select an unassigned Contact first.")
 
         # Validate Assignee if changed
         assignee_changed = False
@@ -1415,6 +1447,48 @@ class CrmService:
             for rt in req_types:
                 self.db.add(LeadRequirementType(lead_id=lead.id, requirement_type=rt))
 
+        # Contact methods update
+        if payload.contactMethods is not None:
+            self.db.query(LeadContactMethod).filter(LeadContactMethod.lead_id == lead.id).delete()
+            for cm in payload.contactMethods:
+                self.db.add(LeadContactMethod(lead_id=lead.id, contact_method=cm))
+
+        # Direct Section 1 Contact Fields
+        if "firstName" in payload.model_fields_set:
+            lead.first_name = payload.firstName.strip() if payload.firstName else None
+        if "lastName" in payload.model_fields_set:
+            lead.last_name = payload.lastName.strip() if payload.lastName else None
+        if "jobTitle" in payload.model_fields_set:
+            lead.job_title = payload.jobTitle.strip() if payload.jobTitle else None
+        if "businessPhone" in payload.model_fields_set:
+            lead.business_phone = payload.businessPhone.strip() if payload.businessPhone else None
+        if "mobilePhone" in payload.model_fields_set:
+            lead.mobile_phone = payload.mobilePhone.strip() if payload.mobilePhone else None
+        if "contactEmail" in payload.model_fields_set:
+            lead.contact_email = payload.contactEmail.strip().lower() if payload.contactEmail else None
+
+        # Direct Section 2 Company Fields
+        if "companyName" in payload.model_fields_set:
+            lead.company_name = payload.companyName.strip() if payload.companyName else None
+        if "companyEmail" in payload.model_fields_set:
+            lead.company_email = payload.companyEmail.strip().lower() if payload.companyEmail else None
+
+        # Section 3 & 4 Fields
+        if "rating" in payload.model_fields_set:
+            lead.rating = payload.rating
+        if "clientStatus" in payload.model_fields_set:
+            lead.client_status = payload.clientStatus or "New"
+        if "description" in payload.model_fields_set:
+            lead.description = payload.description.strip() if payload.description else None
+        if "industry" in payload.model_fields_set:
+            lead.industry = payload.industry.strip() if payload.industry else None
+        if "numberOfEmployees" in payload.model_fields_set:
+            lead.number_of_employees = payload.numberOfEmployees
+        if "currency" in payload.model_fields_set:
+            lead.currency = payload.currency or "INR"
+        if "preferredContactMethod" in payload.model_fields_set:
+            lead.preferred_contact_method = payload.preferredContactMethod
+
         if "connectedDate" in payload.model_fields_set:
             lead.connected_date = payload.connectedDate
 
@@ -1438,7 +1512,6 @@ class CrmService:
                     new_additional.append(add_con)
             lead.additional_contacts = new_additional
         elif "accountId" in payload.model_fields_set and lead.additional_contacts:
-            # Revalidate existing additional contacts if account changed and no new additional contacts provided
             for con in lead.additional_contacts:
                 if account and con.account_id and con.account_id != account.id:
                     raise ValidationError(f"Associated Additional Contact '{con.name}' belongs to a different Account.")
@@ -1584,7 +1657,10 @@ class CrmService:
                 joinedload(Lead.contact).joinedload(Contact.account),
                 joinedload(Lead.assigned_to),
                 joinedload(Lead.created_by),
-                joinedload(Lead.requirement_types)
+                joinedload(Lead.qualified_by),
+                joinedload(Lead.opportunity),
+                joinedload(Lead.requirement_types),
+                joinedload(Lead.contact_methods)
             )
         )
 
@@ -1637,6 +1713,11 @@ class CrmService:
                 or_(
                     func.lower(Lead.lead_id).like(s),
                     func.lower(Lead.lead_name).like(s),
+                    func.lower(Lead.company_name).like(s),
+                    func.lower(Lead.first_name).like(s),
+                    func.lower(Lead.last_name).like(s),
+                    func.lower(Lead.contact_email).like(s),
+                    func.lower(Lead.company_email).like(s),
                     func.lower(Lead.requested_product_service).like(s),
                     func.lower(Lead.location).like(s),
                     func.lower(Lead.site_name).like(s),
@@ -1690,7 +1771,11 @@ class CrmService:
                 joinedload(Lead.contact).joinedload(Contact.account),
                 joinedload(Lead.assigned_to),
                 joinedload(Lead.created_by),
-                joinedload(Lead.requirement_types)
+                joinedload(Lead.qualified_by),
+                joinedload(Lead.opportunity).joinedload(Opportunity.account),
+                joinedload(Lead.opportunity).joinedload(Opportunity.contact),
+                joinedload(Lead.requirement_types),
+                joinedload(Lead.contact_methods)
             )
             .filter(or_(Lead.id == lead_id, Lead.lead_id == lead_id))
             .first()
@@ -1707,6 +1792,8 @@ class CrmService:
             types = [lead.requirement_type]
         if not types:
             types = ["Consulting"]
+
+        contact_methods = [cm.contact_method for cm in lead.contact_methods] if getattr(lead, "contact_methods", None) else []
 
         display_name = lead.lead_name or lead.lead_id
 
@@ -1781,6 +1868,31 @@ class CrmService:
                     "accountName": c_acc_name,
                 })
 
+        # Resolved contact display name & details
+        contact_name = lead.contact.name if lead.contact else None
+        if not contact_name and (lead.first_name or lead.last_name):
+            contact_name = f"{lead.first_name or ''} {lead.last_name or ''}".strip() or None
+
+        # Resolved company display name
+        company_name = lead.company_name or (lead.account.name if lead.account else None)
+
+        opp_obj = None
+        if getattr(lead, "opportunity", None):
+            opp = lead.opportunity
+            opp_obj = {
+                "id": opp.id,
+                "opportunityId": opp.opportunity_id,
+                "name": opp.name,
+                "status": opp.status,
+                "currency": opp.currency,
+                "estimatedValue": float(opp.estimated_value) if opp.estimated_value is not None else None,
+                "description": opp.description,
+                "accountId": opp.account_id,
+                "accountName": opp.account.name if opp.account else None,
+                "contactId": opp.contact_id,
+                "contactName": opp.contact.name if opp.contact else None
+            }
+
         return {
             "id": lead.id,
             "leadId": lead.lead_id,
@@ -1804,12 +1916,38 @@ class CrmService:
             "siteName": lead.site_name,
             "createdAt": lead.created_at.isoformat() if lead.created_at else None,
             "updatedAt": lead.updated_at.isoformat() if lead.updated_at else None,
+
+            # Section 1 Direct Contact Fields
+            "firstName": lead.first_name,
+            "lastName": lead.last_name,
+            "jobTitle": lead.job_title,
+            "businessPhone": lead.business_phone,
+            "mobilePhone": lead.mobile_phone,
+            "contactEmail": lead.contact_email,
+
+            # Section 2 Direct Company Fields
+            "companyName": company_name,
+            "companyEmail": lead.company_email,
+
+            # Section 3 & 4 Fields
+            "rating": lead.rating,
+            "clientStatus": lead.client_status or "New",
+            "description": lead.description,
+            "industry": lead.industry,
+            "numberOfEmployees": lead.number_of_employees,
+            "currency": lead.currency or "INR",
+
+            # Section 5 Contact Methods
+            "contactMethods": contact_methods,
+            "preferredContactMethod": lead.preferred_contact_method,
+
+            # Linkages
             "accountId": lead.account_id,
-            "accountName": lead.account.name if lead.account else None,
+            "accountName": lead.account.name if lead.account else company_name,
             "contactId": lead.contact_id,
-            "contactName": lead.contact.name if lead.contact else None,
-            "contactEmail": lead.contact.email if lead.contact else None,
-            "contactPhone": lead.contact.mobile_number if lead.contact else None,
+            "contactName": contact_name,
+            "contactEmailRel": lead.contact.email if lead.contact else lead.contact_email,
+            "contactPhoneRel": lead.contact.mobile_number if lead.contact else (lead.mobile_phone or lead.business_phone),
             "additionalContacts": additional_contacts_list,
             "additionalContactIds": additional_contact_ids,
             "assignedToUserId": lead.assigned_to_user_id,
@@ -1820,8 +1958,473 @@ class CrmService:
             "account": account_obj,
             "contact": contact_obj,
             "assignedTo": assigned_to_obj,
-            "createdBy": created_by_obj
+            "createdBy": created_by_obj,
+
+            # Qualification details
+            "opportunityId": lead.opportunity_id,
+            "opportunityName": lead.opportunity.name if getattr(lead, "opportunity", None) else None,
+            "opportunity": opp_obj,
+            "qualifiedAt": lead.qualified_at.isoformat() if lead.qualified_at else None,
+            "qualifiedById": lead.qualified_by_id,
+            "qualifiedByName": lead.qualified_by.name if getattr(lead, "qualified_by", None) else None,
         }
+
+    def _format_opportunity(self, opp: Opportunity) -> Dict[str, Any]:
+        req_list = [r.strip() for r in (opp.requirement_types or "").split(",") if r.strip()]
+        return {
+            "id": opp.id,
+            "opportunityId": opp.opportunity_id,
+            "name": opp.name,
+            "accountId": opp.account_id,
+            "accountName": opp.account.name if opp.account else None,
+            "contactId": opp.contact_id,
+            "contactName": opp.contact.name if opp.contact else None,
+            "originatingLeadId": opp.originating_lead_id,
+            "originatingLeadNumber": opp.originating_lead.lead_id if opp.originating_lead else None,
+            "status": opp.status,
+            "currency": opp.currency,
+            "estimatedValue": float(opp.estimated_value) if opp.estimated_value is not None else None,
+            "description": opp.description,
+            "requirementSummary": opp.requirement_summary,
+            "requirementTypes": req_list,
+            "assignedToUserId": opp.assigned_to_user_id,
+            "assignedToName": opp.assigned_to.name if opp.assigned_to else None,
+            "createdById": opp.created_by_id,
+            "createdByName": opp.created_by.name if opp.created_by else None,
+            "createdAt": opp.created_at.isoformat() if opp.created_at else None,
+            "updatedAt": opp.updated_at.isoformat() if opp.updated_at else None
+        }
+
+    def search_qualification_matches(self, actor: CurrentUser, lead_id: str) -> Dict[str, Any]:
+        lead = self.db.query(Lead).options(
+            joinedload(Lead.account),
+            joinedload(Lead.contact),
+            joinedload(Lead.contact_methods),
+            joinedload(Lead.requirement_types)
+        ).filter(
+            or_(Lead.id == lead_id, Lead.lead_id == lead_id)
+        ).first()
+        if not lead:
+            raise NotFoundError(f"Lead '{lead_id}' not found.")
+
+        matching_accounts = []
+        matching_contacts = []
+
+        # 1. Search Accounts
+        comp_name = (lead.company_name or "").strip()
+        comp_email = (lead.company_email or "").strip().lower()
+        comp_web = (lead.website_link or "").strip().lower()
+
+        acc_filters = []
+        if comp_name and len(comp_name) >= 2:
+            acc_filters.append(func.lower(Account.name).like(f"%{comp_name.lower()}%"))
+        if comp_email:
+            acc_filters.append(func.lower(Account.email) == comp_email)
+        if comp_web:
+            clean_domain = comp_web.replace("http://", "").replace("https://", "").replace("www.", "").split("/")[0]
+            if clean_domain and len(clean_domain) >= 3:
+                acc_filters.append(func.lower(Account.website).like(f"%{clean_domain}%"))
+
+        if acc_filters:
+            accounts = self.db.query(Account).filter(
+                Account.is_active == True,
+                or_(*acc_filters)
+            ).limit(10).all()
+
+            for a in accounts:
+                reasons = []
+                if comp_name and a.name.lower() == comp_name.lower():
+                    reasons.append("Exact company name match")
+                elif comp_name and comp_name.lower() in a.name.lower():
+                    reasons.append("Partial company name match")
+                if comp_email and a.email and a.email.lower() == comp_email:
+                    reasons.append("Exact company email match")
+                if comp_web and a.website and comp_web in a.website.lower():
+                    reasons.append("Website match")
+
+                matching_accounts.append({
+                    "id": a.id,
+                    "accountId": a.account_id,
+                    "name": a.name,
+                    "industry": a.industry,
+                    "website": a.website,
+                    "phone": a.phone,
+                    "email": a.email,
+                    "address": a.address,
+                    "matchReasons": reasons
+                })
+
+        # 2. Search Contacts
+        c_email = (lead.contact_email or (lead.contact.email if lead.contact else "") or "").strip().lower()
+        c_phone = (lead.mobile_phone or lead.business_phone or (lead.contact.mobile_number if lead.contact else "") or "").strip()
+        first_name = (lead.first_name or "").strip()
+        last_name = (lead.last_name or "").strip()
+        full_person_name = f"{first_name} {last_name}".strip()
+
+        con_filters = []
+        if c_email:
+            con_filters.append(func.lower(Contact.email) == c_email)
+        if c_phone:
+            phone_digits = "".join(filter(str.isdigit, c_phone))
+            if len(phone_digits) >= 6:
+                con_filters.append(func.lower(Contact.mobile_number).like(f"%{phone_digits[-10:]}%"))
+        if full_person_name and len(full_person_name) >= 3:
+            con_filters.append(func.lower(Contact.name).like(f"%{full_person_name.lower()}%"))
+
+        if con_filters:
+            contacts = self.db.query(Contact).options(joinedload(Contact.account)).filter(
+                Contact.is_active == True,
+                or_(*con_filters)
+            ).limit(10).all()
+
+            for c in contacts:
+                reasons = []
+                if c_email and c.email and c.email.lower() == c_email:
+                    reasons.append("Exact email match")
+                if c_phone and c.mobile_number and "".join(filter(str.isdigit, c_phone)) in "".join(filter(str.isdigit, c.mobile_number)):
+                    reasons.append("Phone match")
+                if full_person_name and c.name.lower() == full_person_name.lower():
+                    reasons.append("Exact name match")
+
+                matching_contacts.append({
+                    "id": c.id,
+                    "contactId": c.contact_id,
+                    "name": c.name,
+                    "email": c.email,
+                    "mobileNumber": c.mobile_number,
+                    "designation": c.designation,
+                    "accountId": c.account_id,
+                    "accountName": c.account.name if c.account else None,
+                    "matchReasons": reasons
+                })
+
+        # Suggest default account and contact
+        suggested_acc = matching_accounts[0] if matching_accounts else None
+        suggested_con = matching_contacts[0] if matching_contacts else None
+
+        return {
+            "success": True,
+            "leadId": lead.id,
+            "matchingAccounts": matching_accounts,
+            "matchingContacts": matching_contacts,
+            "suggestedAccount": suggested_acc,
+            "suggestedContact": suggested_con
+        }
+
+    def qualify_lead(
+        self,
+        actor: CurrentUser,
+        lead_id: str,
+        payload: LeadQualifyRequest,
+        request: Optional[Request] = None
+    ) -> Dict[str, Any]:
+        lead = self.db.query(Lead).options(
+            joinedload(Lead.requirement_types),
+            joinedload(Lead.contact_methods),
+            joinedload(Lead.opportunity),
+            joinedload(Lead.account),
+            joinedload(Lead.contact)
+        ).filter(
+            or_(Lead.id == lead_id, Lead.lead_id == lead_id)
+        ).with_for_update().first()
+
+        if not lead:
+            raise NotFoundError(f"Lead '{lead_id}' not found.")
+
+        # Idempotency / Retry-Safety:
+        # If the lead is already qualified, return existing linked records safely without creating duplicates
+        if lead.lifecycle_status == "Qualified" and lead.opportunity_id:
+            opp = self.db.query(Opportunity).options(
+                joinedload(Opportunity.account),
+                joinedload(Opportunity.contact)
+            ).filter(Opportunity.id == lead.opportunity_id).first()
+            if opp:
+                return {
+                    "success": True,
+                    "message": f"Lead '{lead.lead_id}' is already qualified with Opportunity '{opp.opportunity_id}'.",
+                    "lead": self._format_lead(lead),
+                    "account": {
+                        "id": opp.account.id,
+                        "accountId": opp.account.account_id,
+                        "name": opp.account.name
+                    } if opp.account else {},
+                    "contact": {
+                        "id": opp.contact.id,
+                        "contactId": opp.contact.contact_id,
+                        "name": opp.contact.name
+                    } if opp.contact else None,
+                    "opportunity": self._format_opportunity(opp)
+                }
+
+        # 1. Resolve Account
+        acc_action = (payload.account.action or "create").strip().lower()
+        account = None
+        if acc_action == "reuse":
+            if not payload.account.accountId:
+                raise ValidationError("accountId is required when reusing an existing account.")
+            account = self.db.query(Account).filter(
+                or_(Account.id == payload.account.accountId, Account.account_id == payload.account.accountId),
+                Account.is_active == True
+            ).first()
+            if not account:
+                raise NotFoundError(f"Account '{payload.account.accountId}' does not exist or is inactive.")
+            # Safely enrich existing account fields if empty on account but present in payload/lead
+            if not account.website and (payload.account.website or lead.website_link):
+                account.website = (payload.account.website or lead.website_link).strip()
+            if not account.email and (payload.account.email or lead.company_email):
+                account.email = (payload.account.email or lead.company_email).strip().lower()
+            if not account.industry and (payload.account.industry or lead.industry):
+                account.industry = (payload.account.industry or lead.industry).strip()
+        elif acc_action == "create":
+            acc_name = (payload.account.name or lead.company_name or "").strip()
+            if not acc_name:
+                acc_name = (lead.lead_name or f"Account for Lead {lead.lead_id}").strip()
+
+            # Check if active account with same normalized name already exists
+            norm_name = normalize_text(acc_name)
+            existing_acc = self.db.query(Account).filter(
+                func.lower(func.trim(Account.name)) == norm_name,
+                Account.is_active == True
+            ).first()
+            if existing_acc:
+                account = existing_acc
+            else:
+                account_code = get_next_sequence_id(self.db, "ACCOUNT", "ACC")
+                account = Account(
+                    account_id=account_code,
+                    name=acc_name,
+                    industry=(payload.account.industry or lead.industry or "").strip() or None,
+                    website=(payload.account.website or lead.website_link or "").strip() or None,
+                    phone=(payload.account.phone or lead.business_phone or "").strip() or None,
+                    email=(payload.account.email or lead.company_email or "").strip().lower() or None,
+                    address=(payload.account.address or lead.location or "").strip() or None,
+                    is_active=True
+                )
+                self.db.add(account)
+                self.db.flush()
+        else:
+            raise ValidationError(f"Invalid account action '{payload.account.action}'. Must be 'reuse' or 'create'.")
+
+        # 2. Resolve Contact
+        contact = None
+        if payload.contact:
+            con_action = (payload.contact.action or "create").strip().lower()
+            if con_action == "reuse":
+                if not payload.contact.contactId:
+                    raise ValidationError("contactId is required when reusing an existing contact.")
+                contact = self.db.query(Contact).filter(
+                    or_(Contact.id == payload.contact.contactId, Contact.contact_id == payload.contact.contactId),
+                    Contact.is_active == True
+                ).first()
+                if not contact:
+                    raise NotFoundError(f"Contact '{payload.contact.contactId}' does not exist or is inactive.")
+
+                # Ensure selected contact belongs to the chosen Account or link them if unassigned
+                if contact.account_id and contact.account_id != account.id:
+                    raise ValidationError(
+                        f"Selected Contact '{contact.name}' belongs to a different Account ({contact.account.name if contact.account else contact.account_id})."
+                    )
+                elif not contact.account_id:
+                    contact.account_id = account.id
+            elif con_action == "create":
+                con_name = (payload.contact.name or "").strip()
+                if not con_name and (lead.first_name or lead.last_name):
+                    con_name = f"{lead.first_name or ''} {lead.last_name or ''}".strip()
+                if not con_name:
+                    con_name = (lead.lead_name or "Primary Contact").strip()
+
+                con_email = (payload.contact.email or lead.contact_email or "").strip().lower() or None
+                con_phone = (payload.contact.mobileNumber or lead.mobile_phone or lead.business_phone or "").strip() or None
+                con_desig = (payload.contact.designation or lead.job_title or "").strip() or None
+
+                # Check duplicate email if provided
+                if con_email:
+                    existing_con = self.db.query(Contact).filter(
+                        func.lower(Contact.email) == con_email,
+                        Contact.is_active == True
+                    ).first()
+                    if existing_con:
+                        if existing_con.account_id and existing_con.account_id != account.id:
+                            raise ValidationError(
+                                f"A contact with email '{con_email}' already exists under account '{existing_con.account.name if existing_con.account else existing_con.account_id}'."
+                            )
+                        elif not existing_con.account_id:
+                            existing_con.account_id = account.id
+                        contact = existing_con
+
+                if not contact:
+                    contact_code = get_next_sequence_id(self.db, "CONTACT", "CON")
+                    contact = Contact(
+                        contact_id=contact_code,
+                        account_id=account.id,
+                        name=con_name,
+                        email=con_email,
+                        mobile_number=con_phone,
+                        designation=con_desig,
+                        is_active=True
+                    )
+                    self.db.add(contact)
+                    self.db.flush()
+            else:
+                raise ValidationError(f"Invalid contact action '{payload.contact.action}'. Must be 'reuse' or 'create'.")
+        elif lead.contact_id:
+            contact = self.db.query(Contact).filter(Contact.id == lead.contact_id).first()
+            if contact and not contact.account_id:
+                contact.account_id = account.id
+
+        # 3. Create Opportunity
+        opp_code = get_next_sequence_id(self.db, "OPPORTUNITY", "OPP")
+        opp_name = (payload.opportunityName or lead.lead_name or f"Opportunity - {account.name}").strip()
+        req_types_str = ", ".join([rt.requirement_type for rt in lead.requirement_types]) if lead.requirement_types else "Consulting"
+
+        opportunity = Opportunity(
+            opportunity_id=opp_code,
+            name=opp_name,
+            account_id=account.id,
+            contact_id=contact.id if contact else None,
+            originating_lead_id=lead.id,
+            status="Open",
+            currency=lead.currency or "INR",
+            estimated_value=payload.estimatedValue,
+            description=payload.opportunityDescription or lead.description,
+            requirement_summary=lead.requirement_summary,
+            requirement_types=req_types_str,
+            assigned_to_user_id=payload.assignedToUserId or lead.assigned_to_user_id,
+            created_by_id=str(actor.id) if actor.id else None,
+            updated_by_id=str(actor.id) if actor.id else None
+        )
+        self.db.add(opportunity)
+        self.db.flush()
+
+        # 4. Update Lead
+        before_state = {
+            "leadId": lead.lead_id,
+            "status": lead.lifecycle_status,
+            "accountId": lead.account_id,
+            "contactId": lead.contact_id
+        }
+
+        lead.lifecycle_status = "Qualified"
+        lead.account_id = account.id
+        if contact:
+            lead.contact_id = contact.id
+        lead.opportunity_id = opportunity.id
+        lead.qualified_at = datetime.now(timezone.utc)
+        lead.qualified_by_id = str(actor.id) if actor.id else None
+        lead.updated_by_id = str(actor.id) if actor.id else None
+
+        try:
+            self.db.commit()
+        except IntegrityError as e:
+            self.db.rollback()
+            logger.error(f"IntegrityError during lead qualification: {e}")
+            raise ValidationError("Lead qualification failed due to a database integrity constraint.")
+
+        self.db.refresh(lead)
+        self.db.refresh(opportunity)
+        self.db.refresh(account)
+        if contact:
+            self.db.refresh(contact)
+
+        # Audit logs
+        self.audit_service.log(
+            action="CRM_LEAD_QUALIFIED",
+            request=request,
+            performed_by_employee_id=str(actor.id) if actor.id else None,
+            performed_by_name=actor.name or actor.username,
+            role_used=actor.active_role,
+            target_info={
+                "recordId": lead.id,
+                "leadNumber": lead.lead_id,
+                "accountId": account.id,
+                "accountCode": account.account_id,
+                "accountName": account.name,
+                "contactId": contact.id if contact else None,
+                "contactName": contact.name if contact else None,
+                "opportunityId": opportunity.id,
+                "opportunityNumber": opportunity.opportunity_id,
+                "opportunityName": opportunity.name,
+                "details": f"Qualified Lead '{lead.lead_id}' into Opportunity '{opportunity.opportunity_id}' with Account '{account.name}'."
+            },
+            before_state=before_state,
+            after_state={
+                "status": "Qualified",
+                "accountId": account.id,
+                "contactId": contact.id if contact else None,
+                "opportunityId": opportunity.id
+            }
+        )
+
+        return {
+            "success": True,
+            "message": f"Lead '{lead.lead_id}' successfully qualified into Opportunity '{opportunity.opportunity_id}'.",
+            "lead": self._format_lead(lead),
+            "account": {
+                "id": account.id,
+                "accountId": account.account_id,
+                "name": account.name,
+                "industry": account.industry,
+                "website": account.website,
+                "phone": account.phone,
+                "email": account.email
+            },
+            "contact": {
+                "id": contact.id,
+                "contactId": contact.contact_id,
+                "name": contact.name,
+                "email": contact.email,
+                "mobileNumber": contact.mobile_number,
+                "designation": contact.designation
+            } if contact else None,
+            "opportunity": self._format_opportunity(opportunity)
+        }
+
+    def list_opportunities(
+        self,
+        actor: CurrentUser,
+        search: Optional[str] = None,
+        account_id: Optional[str] = None,
+        status: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0
+    ) -> List[Dict[str, Any]]:
+        query = self.db.query(Opportunity).options(
+            joinedload(Opportunity.account),
+            joinedload(Opportunity.contact),
+            joinedload(Opportunity.originating_lead),
+            joinedload(Opportunity.assigned_to),
+            joinedload(Opportunity.created_by)
+        )
+        if status:
+            query = query.filter(Opportunity.status == status.strip())
+        if account_id:
+            query = query.filter(Opportunity.account_id == account_id.strip())
+        if search:
+            s = f"%{search.strip().lower()}%"
+            query = query.outerjoin(Opportunity.account).filter(
+                or_(
+                    func.lower(Opportunity.name).like(s),
+                    func.lower(Opportunity.opportunity_id).like(s),
+                    func.lower(Account.name).like(s)
+                )
+            )
+
+        opps = query.order_by(Opportunity.created_at.desc()).offset(offset).limit(limit).all()
+        return [self._format_opportunity(o) for o in opps]
+
+    def get_opportunity(self, opp_id: str) -> Dict[str, Any]:
+        opp = self.db.query(Opportunity).options(
+            joinedload(Opportunity.account),
+            joinedload(Opportunity.contact),
+            joinedload(Opportunity.originating_lead),
+            joinedload(Opportunity.assigned_to),
+            joinedload(Opportunity.created_by)
+        ).filter(
+            or_(Opportunity.id == opp_id, Opportunity.opportunity_id == opp_id)
+        ).first()
+        if not opp:
+            raise NotFoundError(f"Opportunity '{opp_id}' not found.")
+        return self._format_opportunity(opp)
 
     # =========================================================================
     # 5. COMMUNICATION HISTORY SERVICES

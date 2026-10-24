@@ -261,6 +261,9 @@ ALLOWED_CHANNELS = {
     "Email", "Phone / Call", "Mobile/Call", "WhatsApp",
     "In-Person Meeting", "Virtual Meeting", "Other"
 }
+ALLOWED_CONTACT_METHODS = {"Email", "Phone", "WhatsApp", "Meeting"}
+ALLOWED_RATINGS = {"Hot", "Warm", "Cold"}
+ALLOWED_CLIENT_STATUSES = {"New", "Existing"}
 
 
 def normalize_and_validate_req_types(
@@ -271,6 +274,8 @@ def normalize_and_validate_req_types(
     if req_types is not None:
         if not isinstance(req_types, list):
             req_types = [req_types]
+        if len(req_types) == 0 and not legacy_single:
+            raise ValueError("At least one requirement type must be selected.")
         for t in req_types:
             if not t:
                 continue
@@ -286,6 +291,9 @@ def normalize_and_validate_req_types(
             if clean not in selected:
                 selected.append(clean)
 
+        if not selected and not legacy_single:
+            raise ValueError("At least one requirement type must be selected.")
+
     if not selected and legacy_single:
         clean = str(legacy_single).strip()
         if clean == "Direct Product/Service":
@@ -298,27 +306,56 @@ def normalize_and_validate_req_types(
         selected.append(clean)
 
     if not selected:
-        raise ValueError("At least one requirement type must be selected (Consulting, Sample Testing, Product).")
+        selected = ["Consulting"]
     return selected
 
 
 class LeadCreate(BaseModel):
+    # Topic / Title (Optional)
     leadName: Optional[str] = None
-    businessArea: str = Field(...)
-    requirementTypes: Optional[List[str]] = None
-    requirementType: Optional[str] = None
-    requirementSummary: Optional[str] = None
-    requestedProductService: Optional[str] = Field(None, max_length=255)
-    leadSource: Optional[str] = "Website"
-    contactId: str = Field(...)
-    accountId: Optional[str] = None
-    assignedToUserId: Optional[str] = None
-    connectedDate: Optional[py_date] = None
-    additionalContactIds: Optional[List[str]] = Field(default_factory=list)
+
+    # Section 1 - Contact
+    firstName: Optional[str] = None
+    lastName: Optional[str] = None
+    jobTitle: Optional[str] = None
+    businessPhone: Optional[str] = None
+    mobilePhone: Optional[str] = None
+    contactEmail: Optional[str] = None
+
+    # Section 2 - Company
+    companyName: Optional[str] = None
     websiteLink: Optional[str] = None
     location: Optional[str] = None
     siteName: Optional[str] = None
     communicationChannel: Optional[str] = "Email"
+    connectedDate: Optional[py_date] = None
+    companyEmail: Optional[str] = None
+
+    # Section 3 - Additional Lead Information
+    leadSource: Optional[str] = "Website"
+    rating: Optional[str] = None
+    clientStatus: Optional[str] = "New"
+    assignedToUserId: Optional[str] = None
+
+    # Section 4 - Description & Business Information
+    description: Optional[str] = None
+    industry: Optional[str] = None
+    numberOfEmployees: Optional[int] = None
+    currency: Optional[str] = "INR"
+    businessArea: Optional[str] = "Biogas"
+    requirementTypes: Optional[List[str]] = None
+    requirementType: Optional[str] = None
+    requirementSummary: Optional[str] = None
+    requestedProductService: Optional[str] = None
+
+    # Section 5 - Contact Method
+    contactMethods: Optional[List[str]] = Field(default_factory=list)
+    preferredContactMethod: Optional[str] = None
+
+    # Optional existing Contact and Account relationships (not required at creation time)
+    contactId: Optional[str] = None
+    accountId: Optional[str] = None
+    additionalContactIds: Optional[List[str]] = Field(default_factory=list)
     remarks: Optional[str] = None
     nextFollowUpDate: Optional[py_date] = None
     nextFollowUpAction: Optional[str] = None
@@ -327,23 +364,63 @@ class LeadCreate(BaseModel):
     @classmethod
     def process_fields(cls, data: Any) -> Any:
         if isinstance(data, dict):
+            # Aliases support for Section 1 & 2
+            if "topic" in data and not data.get("leadName"):
+                data["leadName"] = data["topic"]
+            if "company" in data and not data.get("companyName"):
+                data["companyName"] = data["company"]
+            if "website" in data and not data.get("websiteLink"):
+                data["websiteLink"] = data["website"]
+            if "clientLocation" in data and not data.get("location"):
+                data["location"] = data["clientLocation"]
+            if "email" in data and not data.get("contactEmail"):
+                data["contactEmail"] = data["email"]
+            if "status" in data and data["status"] in ("New", "Existing") and not data.get("clientStatus"):
+                data["clientStatus"] = data["status"]
+
             # Lead title optional: empty string becomes None
             if "leadName" in data and data["leadName"] is not None:
                 cleaned = str(data["leadName"]).strip()
                 data["leadName"] = cleaned if cleaned else None
 
-            # Multi-select requirement types validation
+            # Multi-select requirement types
             types = data.get("requirementTypes")
             single = data.get("requirementType")
             normalized = normalize_and_validate_req_types(types, single)
             data["requirementTypes"] = normalized
             data["requirementType"] = normalized[0]
+
+            # Contact methods validation
+            cms = data.get("contactMethods")
+            if cms:
+                clean_cms = []
+                for m in cms:
+                    if m and str(m).strip() in ALLOWED_CONTACT_METHODS:
+                        clean_m = str(m).strip()
+                        if clean_m not in clean_cms:
+                            clean_cms.append(clean_m)
+                data["contactMethods"] = clean_cms
+
+            # Preferred contact method must be one of selected contact methods
+            pref = data.get("preferredContactMethod")
+            if pref:
+                clean_pref = str(pref).strip()
+                selected_cms = data.get("contactMethods") or []
+                if clean_pref not in ALLOWED_CONTACT_METHODS:
+                    raise ValueError(f"Invalid preferredContactMethod '{pref}'. Must be one of: {sorted(ALLOWED_CONTACT_METHODS)}")
+                if selected_cms and clean_pref not in selected_cms:
+                    raise ValueError(f"Preferred contact method '{clean_pref}' must be one of the selected contact methods.")
+                data["preferredContactMethod"] = clean_pref
+
+            # Business area default
+            if not data.get("businessArea"):
+                data["businessArea"] = "Biogas"
         return data
 
     @field_validator("businessArea")
     @classmethod
-    def validate_business_area(cls, v: str) -> str:
-        clean = (v or "").strip()
+    def validate_business_area(cls, v: Optional[str]) -> str:
+        clean = (v or "Biogas").strip()
         if clean not in ALLOWED_BUSINESS_AREAS:
             raise ValueError(f"Invalid businessArea '{v}'. Must be one of: {sorted(ALLOWED_BUSINESS_AREAS)}")
         return clean
@@ -364,6 +441,33 @@ class LeadCreate(BaseModel):
             raise ValueError(f"Invalid leadSource '{v}'. Must be one of: {CANONICAL_LEAD_SOURCES}")
         return mapped
 
+    @field_validator("rating")
+    @classmethod
+    def validate_rating(cls, v: Optional[str]) -> Optional[str]:
+        if not v:
+            return None
+        clean = v.strip()
+        if clean not in ALLOWED_RATINGS:
+            raise ValueError(f"Invalid rating '{v}'. Must be one of: {sorted(ALLOWED_RATINGS)}")
+        return clean
+
+    @field_validator("clientStatus")
+    @classmethod
+    def validate_client_status(cls, v: Optional[str]) -> str:
+        if not v:
+            return "New"
+        clean = v.strip()
+        if clean not in ALLOWED_CLIENT_STATUSES:
+            raise ValueError(f"Invalid clientStatus '{v}'. Must be 'New' or 'Existing'.")
+        return clean
+
+    @field_validator("numberOfEmployees")
+    @classmethod
+    def validate_num_employees(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v < 0:
+            raise ValueError("Number of employees must be a non-negative integer.")
+        return v
+
     @field_validator("connectedDate", mode="before")
     @classmethod
     def validate_lead_connected_date(cls, v: Any) -> Optional[py_date]:
@@ -381,22 +485,50 @@ class LeadCreate(BaseModel):
 
 
 class LeadUpdate(BaseModel):
+    # Topic / Title
     leadName: Optional[str] = None
+
+    # Section 1 - Contact
+    firstName: Optional[str] = None
+    lastName: Optional[str] = None
+    jobTitle: Optional[str] = None
+    businessPhone: Optional[str] = None
+    mobilePhone: Optional[str] = None
+    contactEmail: Optional[str] = None
+
+    # Section 2 - Company
+    companyName: Optional[str] = None
+    websiteLink: Optional[str] = None
+    location: Optional[str] = None
+    siteName: Optional[str] = None
+    communicationChannel: Optional[str] = None
+    connectedDate: Optional[py_date] = None
+    companyEmail: Optional[str] = None
+
+    # Section 3 - Additional Lead Information
+    leadSource: Optional[str] = None
+    rating: Optional[str] = None
+    clientStatus: Optional[str] = None
+    assignedToUserId: Optional[str] = None
+
+    # Section 4 - Description & Business Information
+    description: Optional[str] = None
+    industry: Optional[str] = None
+    numberOfEmployees: Optional[int] = None
+    currency: Optional[str] = None
     businessArea: Optional[str] = None
     requirementTypes: Optional[List[str]] = None
     requirementType: Optional[str] = None
     requirementSummary: Optional[str] = None
     requestedProductService: Optional[str] = None
-    leadSource: Optional[str] = None
+
+    # Section 5 - Contact Method
+    contactMethods: Optional[List[str]] = None
+    preferredContactMethod: Optional[str] = None
+
     contactId: Optional[str] = None
     accountId: Optional[str] = None
-    assignedToUserId: Optional[str] = None
-    connectedDate: Optional[py_date] = None
     additionalContactIds: Optional[List[str]] = None
-    websiteLink: Optional[str] = None
-    location: Optional[str] = None
-    siteName: Optional[str] = None
-    communicationChannel: Optional[str] = None
     remarks: Optional[str] = None
     nextFollowUpDate: Optional[py_date] = None
     nextFollowUpAction: Optional[str] = None
@@ -406,6 +538,19 @@ class LeadUpdate(BaseModel):
     @classmethod
     def process_update_fields(cls, data: Any) -> Any:
         if isinstance(data, dict):
+            if "topic" in data and not data.get("leadName"):
+                data["leadName"] = data["topic"]
+            if "company" in data and not data.get("companyName"):
+                data["companyName"] = data["company"]
+            if "website" in data and not data.get("websiteLink"):
+                data["websiteLink"] = data["website"]
+            if "clientLocation" in data and not data.get("location"):
+                data["location"] = data["clientLocation"]
+            if "email" in data and not data.get("contactEmail"):
+                data["contactEmail"] = data["email"]
+            if "status" in data and data["status"] in ("New", "Existing") and not data.get("clientStatus"):
+                data["clientStatus"] = data["status"]
+
             if "leadName" in data and data["leadName"] is not None:
                 cleaned = str(data["leadName"]).strip()
                 data["leadName"] = cleaned if cleaned else None
@@ -416,6 +561,23 @@ class LeadUpdate(BaseModel):
                 normalized = normalize_and_validate_req_types(types, single)
                 data["requirementTypes"] = normalized
                 data["requirementType"] = normalized[0]
+
+            cms = data.get("contactMethods")
+            if cms is not None:
+                clean_cms = []
+                for m in cms:
+                    if m and str(m).strip() in ALLOWED_CONTACT_METHODS:
+                        clean_m = str(m).strip()
+                        if clean_m not in clean_cms:
+                            clean_cms.append(clean_m)
+                data["contactMethods"] = clean_cms
+
+            pref = data.get("preferredContactMethod")
+            if pref:
+                clean_pref = str(pref).strip()
+                if clean_pref not in ALLOWED_CONTACT_METHODS:
+                    raise ValueError(f"Invalid preferredContactMethod '{pref}'. Must be one of: {sorted(ALLOWED_CONTACT_METHODS)}")
+                data["preferredContactMethod"] = clean_pref
         return data
 
     @field_validator("businessArea")
@@ -443,6 +605,33 @@ class LeadUpdate(BaseModel):
         if mapped not in ALLOWED_LEAD_SOURCES:
             raise ValueError(f"Invalid leadSource '{v}'. Must be one of: {CANONICAL_LEAD_SOURCES}")
         return mapped
+
+    @field_validator("rating")
+    @classmethod
+    def validate_rating(cls, v: Optional[str]) -> Optional[str]:
+        if not v:
+            return None
+        clean = v.strip()
+        if clean not in ALLOWED_RATINGS:
+            raise ValueError(f"Invalid rating '{v}'. Must be one of: {sorted(ALLOWED_RATINGS)}")
+        return clean
+
+    @field_validator("clientStatus")
+    @classmethod
+    def validate_client_status(cls, v: Optional[str]) -> Optional[str]:
+        if not v:
+            return None
+        clean = v.strip()
+        if clean not in ALLOWED_CLIENT_STATUSES:
+            raise ValueError(f"Invalid clientStatus '{v}'. Must be 'New' or 'Existing'.")
+        return clean
+
+    @field_validator("numberOfEmployees")
+    @classmethod
+    def validate_num_employees(cls, v: Optional[int]) -> Optional[int]:
+        if v is not None and v < 0:
+            raise ValueError("Number of employees must be a non-negative integer.")
+        return v
 
     @field_validator("websiteLink")
     @classmethod
@@ -535,12 +724,38 @@ class LeadItem(BaseModel):
     siteName: Optional[str] = None
     createdAt: Optional[str] = None
     updatedAt: Optional[str] = None
+
+    # Section 1 Direct Contact Fields
+    firstName: Optional[str] = None
+    lastName: Optional[str] = None
+    jobTitle: Optional[str] = None
+    businessPhone: Optional[str] = None
+    mobilePhone: Optional[str] = None
+    contactEmail: Optional[str] = None
+
+    # Section 2 Direct Company Fields
+    companyName: Optional[str] = None
+    companyEmail: Optional[str] = None
+
+    # Section 3 & 4 Fields
+    rating: Optional[str] = None
+    clientStatus: str = "New"
+    description: Optional[str] = None
+    industry: Optional[str] = None
+    numberOfEmployees: Optional[int] = None
+    currency: str = "INR"
+
+    # Section 5 Contact Methods
+    contactMethods: List[str] = []
+    preferredContactMethod: Optional[str] = None
+
+    # Foreign Keys & Linkages
     accountId: Optional[str] = None
     accountName: Optional[str] = None
     contactId: Optional[str] = None
     contactName: Optional[str] = None
-    contactEmail: Optional[str] = None
-    contactPhone: Optional[str] = None
+    contactEmailRel: Optional[str] = None
+    contactPhoneRel: Optional[str] = None
     additionalContacts: List[Dict[str, Any]] = []
     additionalContactIds: List[str] = []
     assignedToUserId: Optional[str] = None
@@ -552,6 +767,14 @@ class LeadItem(BaseModel):
     contact: Optional[LeadContactSummary] = None
     assignedTo: Optional[LeadUserSummary] = None
     createdBy: Optional[LeadUserSummary] = None
+
+    # Qualification Details
+    opportunityId: Optional[str] = None
+    opportunityName: Optional[str] = None
+    opportunity: Optional[Dict[str, Any]] = None
+    qualifiedAt: Optional[str] = None
+    qualifiedById: Optional[str] = None
+    qualifiedByName: Optional[str] = None
 
 
 class LeadListResponse(BaseModel):
@@ -567,6 +790,118 @@ class LeadListResponse(BaseModel):
 class LeadDetailResponse(BaseModel):
     success: bool = True
     lead: LeadItem
+
+
+# =========================================================================
+# OPPORTUNITY & QUALIFICATION SCHEMAS
+# =========================================================================
+
+class OpportunityCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    accountId: str
+    contactId: Optional[str] = None
+    originatingLeadId: Optional[str] = None
+    status: Optional[str] = "Open"
+    currency: Optional[str] = "INR"
+    estimatedValue: Optional[float] = None
+    description: Optional[str] = None
+    requirementSummary: Optional[str] = None
+    requirementTypes: Optional[List[str]] = None
+    assignedToUserId: Optional[str] = None
+
+
+class OpportunityUpdate(BaseModel):
+    name: Optional[str] = None
+    status: Optional[str] = None
+    currency: Optional[str] = None
+    estimatedValue: Optional[float] = None
+    description: Optional[str] = None
+    requirementSummary: Optional[str] = None
+    requirementTypes: Optional[List[str]] = None
+    assignedToUserId: Optional[str] = None
+    contactId: Optional[str] = None
+
+
+class OpportunityItem(BaseModel):
+    id: str
+    opportunityId: str
+    name: str
+    accountId: str
+    accountName: Optional[str] = None
+    contactId: Optional[str] = None
+    contactName: Optional[str] = None
+    originatingLeadId: Optional[str] = None
+    originatingLeadNumber: Optional[str] = None
+    status: str = "Open"
+    currency: str = "INR"
+    estimatedValue: Optional[float] = None
+    description: Optional[str] = None
+    requirementSummary: Optional[str] = None
+    requirementTypes: List[str] = []
+    assignedToUserId: Optional[str] = None
+    assignedToName: Optional[str] = None
+    createdById: Optional[str] = None
+    createdByName: Optional[str] = None
+    createdAt: Optional[str] = None
+    updatedAt: Optional[str] = None
+
+
+class OpportunityListResponse(BaseModel):
+    success: bool = True
+    count: int
+    opportunities: List[OpportunityItem]
+
+
+class OpportunityDetailResponse(BaseModel):
+    success: bool = True
+    opportunity: OpportunityItem
+
+
+class LeadQualificationMatchesResponse(BaseModel):
+    success: bool = True
+    leadId: str
+    matchingAccounts: List[Dict[str, Any]] = []
+    matchingContacts: List[Dict[str, Any]] = []
+    suggestedAccount: Optional[Dict[str, Any]] = None
+    suggestedContact: Optional[Dict[str, Any]] = None
+
+
+class LeadQualifyAccountChoice(BaseModel):
+    action: str = Field(..., description="'reuse' or 'create'")
+    accountId: Optional[str] = None
+    name: Optional[str] = None
+    website: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    industry: Optional[str] = None
+    address: Optional[str] = None
+
+
+class LeadQualifyContactChoice(BaseModel):
+    action: str = Field(..., description="'reuse' or 'create'")
+    contactId: Optional[str] = None
+    name: Optional[str] = None
+    email: Optional[str] = None
+    mobileNumber: Optional[str] = None
+    designation: Optional[str] = None
+
+
+class LeadQualifyRequest(BaseModel):
+    account: LeadQualifyAccountChoice
+    contact: Optional[LeadQualifyContactChoice] = None
+    opportunityName: Optional[str] = None
+    opportunityDescription: Optional[str] = None
+    estimatedValue: Optional[float] = None
+    assignedToUserId: Optional[str] = None
+
+
+class LeadQualifyResponse(BaseModel):
+    success: bool = True
+    message: str
+    lead: LeadItem
+    account: Dict[str, Any]
+    contact: Optional[Dict[str, Any]] = None
+    opportunity: OpportunityItem
 
 
 # =========================================================================

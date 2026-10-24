@@ -12,8 +12,10 @@ import UserManagementLayout from './layouts/UserManagementLayout';
 import CrmLayout from './layouts/CrmLayout';
 import CrmDashboardPage from './pages/CrmDashboardPage';
 import CrmLeadsPage from './pages/CrmLeadsPage';
+import CrmLeadCreatePage from './pages/CrmLeadCreatePage';
 import CrmLeadDetailPage from './pages/CrmLeadDetailPage';
 import CrmAccountsPage from './pages/CrmAccountsPage';
+import CrmOpportunitiesPage from './pages/CrmOpportunitiesPage';
 import CrmContactsPage from './pages/CrmContactsPage';
 import CrmUserHubPage from './pages/CrmUserHubPage';
 
@@ -146,6 +148,22 @@ function AppRoutes() {
         }
       />
       <Route
+        path="/crm/leads/new"
+        element={
+          <CrmLayout>
+            <CrmLeadCreatePage />
+          </CrmLayout>
+        }
+      />
+      <Route
+        path="/crm/leads/:id/edit"
+        element={
+          <CrmLayout>
+            <CrmLeadCreatePage />
+          </CrmLayout>
+        }
+      />
+      <Route
         path="/crm/leads/:id"
         element={
           <CrmLayout>
@@ -158,6 +176,14 @@ function AppRoutes() {
         element={
           <CrmLayout>
             <CrmAccountsPage />
+          </CrmLayout>
+        }
+      />
+      <Route
+        path="/crm/opportunities"
+        element={
+          <CrmLayout>
+            <CrmOpportunitiesPage />
           </CrmLayout>
         }
       />

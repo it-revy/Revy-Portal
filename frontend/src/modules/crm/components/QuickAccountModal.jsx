@@ -82,39 +82,64 @@ export default function QuickAccountModal({ isOpen, onClose, onAccountCreated })
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
+    if (loading) return;
     if (!validate()) return;
 
     setLoading(true);
     setError(null);
 
+    let res = null;
+    let createFailed = false;
+
     try {
       const cleanWebsite = formData.website.trim() || undefined;
-      const res = await crmService.createAccount({
+      res = await crmService.createAccount({
         name: formData.name.trim(),
         industry: formData.industry.trim() || undefined,
         website: cleanWebsite,
         phone: formData.phone.trim() || undefined,
         email: formData.email.trim() || undefined
       });
-
-      if (res.data.success && res.data.account) {
-        onAccountCreated(res.data.account);
-        onClose();
-      } else {
-        setError('Unexpected server response. Please try again.');
-      }
     } catch (err) {
+      createFailed = true;
       if (err.response?.status === 409) {
         setError(err.response.data?.message || 'An account with this name already exists.');
+      } else if (err.response?.status === 401 || err.response?.status === 403) {
+        setError(err.response.data?.message || 'Permission denied. You cannot create accounts.');
+      } else if (err.response?.status >= 500) {
+        setError('A server error occurred while creating the account. Please try again or contact support.');
       } else if (err.response?.data?.details) {
-        // Map backend validation field errors if available
         setError(err.response.data?.message || 'Validation error while saving account.');
+      } else if (err.message === 'Network Error' || err.code === 'ERR_NETWORK') {
+        setError('Network error. Unable to reach the server. Please try again.');
       } else {
-        setError(err.response?.data?.message || 'Failed to create account. Please check inputs.');
+        setError(err.response?.data?.message || err.message || 'Failed to create account. Please check inputs.');
       }
     } finally {
       setLoading(false);
+    }
+
+    if (createFailed) return;
+
+    if (res && res.data?.success && res.data?.account) {
+      const newAccount = res.data.account;
+      if (typeof onClose === 'function') {
+        try {
+          onClose();
+        } catch (closeErr) {
+          console.error('Error closing QuickAccountModal:', closeErr);
+        }
+      }
+      if (typeof onAccountCreated === 'function') {
+        try {
+          onAccountCreated(newAccount);
+        } catch (cbErr) {
+          console.error('Error in onAccountCreated callback:', cbErr);
+        }
+      }
+    } else {
+      setError('Unexpected server response. Please try again.');
     }
   };
 
