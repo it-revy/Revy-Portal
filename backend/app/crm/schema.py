@@ -274,8 +274,6 @@ def normalize_and_validate_req_types(
     if req_types is not None:
         if not isinstance(req_types, list):
             req_types = [req_types]
-        if len(req_types) == 0 and not legacy_single:
-            raise ValueError("At least one requirement type must be selected.")
         for t in req_types:
             if not t:
                 continue
@@ -291,9 +289,6 @@ def normalize_and_validate_req_types(
             if clean not in selected:
                 selected.append(clean)
 
-        if not selected and not legacy_single:
-            raise ValueError("At least one requirement type must be selected.")
-
     if not selected and legacy_single:
         clean = str(legacy_single).strip()
         if clean == "Direct Product/Service":
@@ -305,8 +300,6 @@ def normalize_and_validate_req_types(
             raise ValueError(f"Invalid requirement type '{legacy_single}'. Must be one of: {sorted(ALLOWED_REQUIREMENT_TYPES)}")
         selected.append(clean)
 
-    if not selected:
-        selected = ["Consulting"]
     return selected
 
 
@@ -383,34 +376,49 @@ class LeadCreate(BaseModel):
                 cleaned = str(data["leadName"]).strip()
                 data["leadName"] = cleaned if cleaned else None
 
-            # Multi-select requirement types
+            # Topic / Title or Company Name validation (at least one must be provided)
+            has_title = bool(data.get("leadName") and str(data.get("leadName")).strip())
+            has_company = bool(data.get("companyName") and str(data.get("companyName")).strip())
+            has_existing_rel = bool(data.get("contactId") or data.get("accountId"))
+            if not has_title and not has_company and not has_existing_rel:
+                raise ValueError("At least one identifying title must be provided: either Topic/Title or Company Name.")
+
+            # Multi-select requirement types (Optional during initial lead creation)
             types = data.get("requirementTypes")
             single = data.get("requirementType")
             normalized = normalize_and_validate_req_types(types, single)
             data["requirementTypes"] = normalized
-            data["requirementType"] = normalized[0]
+            data["requirementType"] = normalized[0] if normalized else None
 
             # Contact methods validation
             cms = data.get("contactMethods")
-            if cms:
+            if "contactMethods" in data and (cms is None or len(cms) == 0):
+                raise ValueError("At least one contact method must be selected.")
+            elif cms:
                 clean_cms = []
                 for m in cms:
                     if m and str(m).strip() in ALLOWED_CONTACT_METHODS:
                         clean_m = str(m).strip()
                         if clean_m not in clean_cms:
                             clean_cms.append(clean_m)
+                if not clean_cms:
+                    raise ValueError(f"Invalid contact methods. Must be chosen from: {sorted(ALLOWED_CONTACT_METHODS)}")
                 data["contactMethods"] = clean_cms
+            else:
+                data["contactMethods"] = ["Email"]
 
             # Preferred contact method must be one of selected contact methods
             pref = data.get("preferredContactMethod")
+            selected_cms = data.get("contactMethods") or ["Email"]
             if pref:
                 clean_pref = str(pref).strip()
-                selected_cms = data.get("contactMethods") or []
                 if clean_pref not in ALLOWED_CONTACT_METHODS:
                     raise ValueError(f"Invalid preferredContactMethod '{pref}'. Must be one of: {sorted(ALLOWED_CONTACT_METHODS)}")
                 if selected_cms and clean_pref not in selected_cms:
                     raise ValueError(f"Preferred contact method '{clean_pref}' must be one of the selected contact methods.")
                 data["preferredContactMethod"] = clean_pref
+            else:
+                data["preferredContactMethod"] = selected_cms[0] if selected_cms else None
 
             # Business area default
             if not data.get("businessArea"):

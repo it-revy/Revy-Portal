@@ -25,7 +25,6 @@ import {
   ShieldCheck
 } from 'lucide-react';
 import crmService from '../services/crmService';
-import LeadModal from '../modules/crm/components/LeadModal';
 import LeadStatusModal from '../modules/crm/components/LeadStatusModal';
 import CommunicationModal from '../modules/crm/components/CommunicationModal';
 import LeadQualifyWizard from '../modules/crm/components/LeadQualifyWizard';
@@ -43,7 +42,6 @@ export default function CrmLeadDetailPage() {
   const [warningNotification, setWarningNotification] = useState(null);
 
   // Modals
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
   const [isCommModalOpen, setIsCommModalOpen] = useState(false);
   const [isQualifyWizardOpen, setIsQualifyWizardOpen] = useState(false);
@@ -84,20 +82,7 @@ export default function CrmLeadDetailPage() {
     fetchLeadDetails();
   }, [fetchLeadDetails]);
 
-  const handleLeadSaved = async (updatedLead) => {
-    setIsEditModalOpen(false);
-    setWarningNotification(null);
-    const leadCode = updatedLead?.leadId || updatedLead?.lead_id || lead?.leadId || 'Lead';
-    setSuccessNotification(`Lead ${leadCode} updated successfully.`);
-    setTimeout(() => setSuccessNotification(null), 5000);
 
-    try {
-      await fetchLeadDetails();
-    } catch {
-      setWarningNotification('Lead updated successfully, but details could not be refreshed.');
-      setTimeout(() => setWarningNotification(null), 7000);
-    }
-  };
 
   const formatDateTime = (isoStr) => {
     if (!isoStr) return '—';
@@ -1343,15 +1328,6 @@ export default function CrmLeadDetailPage() {
         </div>
       </div>
 
-      {/* Edit Modal */}
-      {isEditModalOpen && (
-        <LeadModal
-          isOpen={isEditModalOpen}
-          onClose={() => setIsEditModalOpen(false)}
-          onLeadSaved={handleLeadSaved}
-          leadToEdit={lead}
-        />
-      )}
 
       {/* Status Transition Modal */}
       {isStatusModalOpen && (

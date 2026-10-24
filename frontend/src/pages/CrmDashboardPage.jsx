@@ -16,7 +16,6 @@ import {
   Briefcase
 } from 'lucide-react';
 import crmService from '../services/crmService';
-import LeadModal from '../modules/crm/components/LeadModal';
 
 export default function CrmDashboardPage() {
   const navigate = useNavigate();
@@ -25,7 +24,6 @@ export default function CrmDashboardPage() {
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [isLeadModalOpen, setIsLeadModalOpen] = useState(false);
 
   const canCreateLead = hasPermission('crm.lead.create');
 
@@ -103,7 +101,7 @@ export default function CrmDashboardPage() {
 
           {canCreateLead && (
             <button
-              onClick={() => setIsLeadModalOpen(true)}
+              onClick={() => navigate('/crm/leads/new')}
               className="btn btn-primary"
               style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
             >
@@ -420,7 +418,7 @@ export default function CrmDashboardPage() {
               <div style={{ marginTop: '1.5rem', display: 'flex', gap: '0.75rem' }}>
                 {canCreateLead ? (
                   <button
-                    onClick={() => setIsLeadModalOpen(true)}
+                    onClick={() => navigate('/crm/leads/new')}
                     className="btn btn-secondary"
                     style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
                   >
@@ -437,21 +435,6 @@ export default function CrmDashboardPage() {
           </div>
         </>
       )}
-
-      {/* Lead Create Modal */}
-      <LeadModal
-        isOpen={isLeadModalOpen}
-        onClose={() => setIsLeadModalOpen(false)}
-        onLeadSaved={(savedLead) => {
-          setIsLeadModalOpen(false);
-          const leadCode = savedLead?.leadId || savedLead?.lead_id || savedLead?.leadName || 'Lead';
-          navigate('/crm/leads', {
-            state: {
-              successMessage: `Lead ${leadCode} created successfully.`
-            }
-          });
-        }}
-      />
     </div>
   );
 }

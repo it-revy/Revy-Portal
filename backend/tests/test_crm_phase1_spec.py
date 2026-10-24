@@ -199,13 +199,16 @@ def test_requirement_types_validation(setup_phase1_environment):
     }, headers=headers)
     assert res_invalid.status_code in (400, 422)
 
-    # Reject empty requirement selection
+    # Saving lead without requirement selection is now permitted in Phase 1
     res_empty = client.post("/api/v1/crm/leads", json={
         "businessArea": "Biogas",
         "requirementTypes": [],
         "contactId": con_id
     }, headers=headers)
-    assert res_empty.status_code in (400, 422)
+    assert res_empty.status_code == 201
+    lead_empty = res_empty.json()["lead"]
+    assert lead_empty["requirementTypes"] == []
+    assert lead_empty["requirementType"] is None
 
 
 # =========================================================================

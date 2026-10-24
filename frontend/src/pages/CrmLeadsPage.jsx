@@ -24,7 +24,6 @@ import {
   Briefcase
 } from 'lucide-react';
 import crmService from '../services/crmService';
-import LeadModal from '../modules/crm/components/LeadModal';
 import LeadStatusModal from '../modules/crm/components/LeadStatusModal';
 
 const SAVED_VIEWS = [
@@ -65,8 +64,6 @@ export default function CrmLeadsPage() {
   const [warningNotification, setWarningNotification] = useState(null);
 
   // Modals
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [leadToEdit, setLeadToEdit] = useState(null);
   const [leadForStatus, setLeadForStatus] = useState(null);
 
   const canCreate = hasPermission('crm.lead.create');
@@ -914,22 +911,6 @@ export default function CrmLeadsPage() {
         </div>
       </div>
 
-      {/* Create Lead Modal */}
-      <LeadModal
-        isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-        onLeadSaved={handleLeadSaved}
-      />
-
-      {/* Edit Lead Modal */}
-      {leadToEdit && (
-        <LeadModal
-          isOpen={Boolean(leadToEdit)}
-          onClose={() => setLeadToEdit(null)}
-          onLeadSaved={handleLeadSaved}
-          leadToEdit={leadToEdit}
-        />
-      )}
 
       {/* Status Transition Modal */}
       {leadForStatus && (

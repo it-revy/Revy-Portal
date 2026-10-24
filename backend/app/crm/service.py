@@ -1219,10 +1219,10 @@ class CrmService:
         if payload.assignedToUserId:
             assignee = self._validate_assignee(payload.assignedToUserId)
 
-        # 4. Multi-Select Requirement Types
-        req_types = payload.requirementTypes or ([payload.requirementType] if payload.requirementType else ["Consulting"])
+        # 4. Multi-Select Requirement Types (optional during initial creation)
+        req_types = payload.requirementTypes if payload.requirementTypes is not None else ([payload.requirementType] if payload.requirementType else [])
         req_types = normalize_and_validate_req_types(req_types)
-        primary_req_type = req_types[0] if req_types else "Consulting"
+        primary_req_type = req_types[0] if req_types else None
 
         clean_req = payload.requestedProductService.strip() if payload.requestedProductService and payload.requestedProductService.strip() else None
         norm_req = normalize_text(clean_req) if clean_req else None
@@ -1325,22 +1325,25 @@ class CrmService:
         else:
             raise ValidationError("Could not generate a unique Lead ID after multiple attempts.")
 
-        self.audit_service.log(
-            action="CRM_LEAD_CREATED",
-            request=request,
-            performed_by_employee_id=str(actor.id) if actor.id else None,
-            performed_by_name=actor.name or actor.username,
-            role_used=actor.active_role,
-            target_info={
-                "recordId": lead.id,
-                "leadNumber": lead.lead_id,
-                "leadName": lead.lead_name or lead.lead_id,
-                "businessArea": lead.business_area,
-                "requirementTypes": req_types,
-                "assignedTo": assignee.username if assignee else None,
-                "details": f"Created Lead '{lead.lead_name or lead.lead_id}' ({lead.lead_id}) for {lead.business_area}."
-            }
-        )
+        try:
+            self.audit_service.log(
+                action="CRM_LEAD_CREATED",
+                request=request,
+                performed_by_employee_id=str(actor.id) if actor.id else None,
+                performed_by_name=actor.name or actor.username,
+                role_used=actor.active_role,
+                target_info={
+                    "recordId": lead.id,
+                    "leadNumber": lead.lead_id,
+                    "leadName": lead.lead_name or lead.lead_id,
+                    "businessArea": lead.business_area,
+                    "requirementTypes": req_types,
+                    "assignedTo": assignee.username if assignee else None,
+                    "details": f"Created Lead '{lead.lead_name or lead.lead_id}' ({lead.lead_id}) for {lead.business_area}."
+                }
+            )
+        except Exception as audit_err:
+            logger.warning(f"Audit log failed for lead {lead.lead_id}: {audit_err}")
 
         return self.get_lead(actor, lead.id)
 
@@ -1438,9 +1441,9 @@ class CrmService:
 
         # Requirement Types update
         if payload.requirementTypes is not None or payload.requirementType is not None:
-            types = payload.requirementTypes or ([payload.requirementType] if payload.requirementType else ["Consulting"])
+            types = payload.requirementTypes if payload.requirementTypes is not None else ([payload.requirementType] if payload.requirementType else [])
             req_types = normalize_and_validate_req_types(types)
-            lead.requirement_type = req_types[0]
+            lead.requirement_type = req_types[0] if req_types else None
 
             # Replace relationship rows
             self.db.query(LeadRequirementType).filter(LeadRequirementType.lead_id == lead.id).delete()
@@ -1790,8 +1793,6 @@ class CrmService:
         types = [rt.requirement_type for rt in lead.requirement_types] if lead.requirement_types else []
         if not types and lead.requirement_type:
             types = [lead.requirement_type]
-        if not types:
-            types = ["Consulting"]
 
         contact_methods = [cm.contact_method for cm in lead.contact_methods] if getattr(lead, "contact_methods", None) else []
 
@@ -1899,7 +1900,7 @@ class CrmService:
             "leadName": lead.lead_name,
             "displayName": display_name,
             "businessArea": lead.business_area,
-            "requirementType": ", ".join(types),
+            "requirementType": ", ".join(types) if types else None,
             "requirementTypes": types,
             "requirementSummary": lead.requirement_summary,
             "requestedProductService": lead.requested_product_service,

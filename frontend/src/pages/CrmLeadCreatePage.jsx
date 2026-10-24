@@ -91,10 +91,10 @@ export default function CrmLeadCreatePage() {
     industry: '',
     numberOfEmployees: '',
     currency: 'INR',
-    requirementTypes: ['Consulting'],
+    requirementTypes: [],
     businessArea: 'Biogas',
 
-    // Section 5 - Contact Method
+    // Contact Method
     contactMethods: ['Email'],
     preferredContactMethod: 'Email'
   });
@@ -151,7 +151,7 @@ export default function CrmLeadCreatePage() {
             industry: l.industry || l.account?.industry || '',
             numberOfEmployees: l.numberOfEmployees !== null && l.numberOfEmployees !== undefined ? String(l.numberOfEmployees) : '',
             currency: l.currency || 'INR',
-            requirementTypes: l.requirementTypes && l.requirementTypes.length > 0 ? l.requirementTypes : ['Consulting'],
+            requirementTypes: Array.isArray(l.requirementTypes) ? l.requirementTypes : [],
             businessArea: l.businessArea || 'Biogas',
 
             contactMethods: l.contactMethods && l.contactMethods.length > 0 ? l.contactMethods : ['Email'],
@@ -228,6 +228,34 @@ export default function CrmLeadCreatePage() {
   const validateForm = () => {
     const errors = {};
 
+    // Topic/Title or Company Name — at least one must be provided
+    const hasTopic = Boolean(formData.topic && formData.topic.trim());
+    const hasCompany = Boolean(formData.companyName && formData.companyName.trim());
+    if (!hasTopic && !hasCompany) {
+      errors.topic = 'Please provide either a Topic/Title or Company Name.';
+      errors.companyName = 'Please provide either a Topic/Title or Company Name.';
+    }
+
+    // At least one contact method
+    if (!formData.contactMethods || formData.contactMethods.length === 0) {
+      errors.contactMethods = 'Please select at least one contact method.';
+    }
+
+    // Business Area
+    if (!formData.businessArea) {
+      errors.businessArea = 'Please select a business area.';
+    }
+
+    // Date Connected
+    if (!formData.connectedDate) {
+      errors.connectedDate = 'Date connected is required.';
+    }
+
+    // Lead Source
+    if (!formData.leadSource) {
+      errors.leadSource = 'Please select a lead source.';
+    }
+
     // Validate email formats if entered
     if (formData.contactEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.contactEmail.trim())) {
       errors.contactEmail = 'Please enter a valid contact email address.';
@@ -244,21 +272,13 @@ export default function CrmLeadCreatePage() {
       }
     }
 
-    // At least one contact method
-    if (!formData.contactMethods || formData.contactMethods.length === 0) {
-      errors.contactMethods = 'Please select at least one contact method.';
-    }
-
-    // At least one requirement type
-    if (!formData.requirementTypes || formData.requirementTypes.length === 0) {
-      errors.requirementTypes = 'Please select at least one requirement type.';
-    }
-
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
   };
 
   const handleSubmit = async (shouldClose = false) => {
+    if (submitting) return;
+
     if (!validateForm()) {
       setError('Please resolve the errors highlighted below.');
       return;
@@ -266,6 +286,7 @@ export default function CrmLeadCreatePage() {
 
     setSubmitting(true);
     setError(null);
+    setSuccessMsg(null);
 
     const payload = {
       topic: formData.topic.trim() || undefined,
@@ -300,20 +321,49 @@ export default function CrmLeadCreatePage() {
       preferredContactMethod: formData.preferredContactMethod
     };
 
+    let savedLead = null;
+    let saveSucceeded = false;
+
+    // STEP 1: Execute network write and isolate it from follow-up actions
     try {
-      let savedLead = null;
+      let res;
       if (isEditMode) {
-        const res = await crmService.updateLead(id, payload);
-        savedLead = res.data.lead;
+        res = await crmService.updateLead(id, payload);
       } else {
-        const res = await crmService.createLead(payload);
-        savedLead = res.data.lead;
+        res = await crmService.createLead(payload);
       }
 
-      setIsDirty(false);
-      const leadCode = savedLead?.leadId || savedLead?.lead_id || 'Lead';
+      if (res?.data?.success && res.data?.lead) {
+        savedLead = res.data.lead;
+        saveSucceeded = true;
+      } else {
+        throw new Error(res?.data?.message || 'Server returned an invalid save response.');
+      }
+    } catch (err) {
+      console.error('Lead save error:', err);
+      if (err.response) {
+        const serverMsg = err.response.data?.message || err.response.data?.detail || 'Validation error while saving lead.';
+        setError(serverMsg);
+      } else if (err.code === 'ECONNABORTED' || (err.message && err.message.toLowerCase().includes('timeout'))) {
+        setError('Request timed out while waiting for the server. The lead may have already been saved. Please verify the Leads list before retrying to prevent duplicate records.');
+      } else if (err.message === 'Network Error' || err.code === 'ERR_NETWORK') {
+        setError('Connection Error — Unable to reach the server. Please check your network connection and try again.');
+      } else {
+        setError(err.message || 'An unexpected error occurred while saving the lead.');
+      }
+      setSubmitting(false);
+      return;
+    }
 
-      if (shouldClose) {
+    // STEP 2: Handle post-save navigation and notifications safely
+    // Once saveSucceeded is true, the lead IS permanently in the database.
+    // Subsequent actions MUST NEVER report that the save failed!
+    setIsDirty(false);
+    setSubmitting(false);
+    const leadCode = savedLead?.leadId || savedLead?.lead_id || 'Lead';
+
+    if (shouldClose) {
+      try {
         navigate('/crm/leads', {
           state: {
             successMessage: isEditMode
@@ -321,19 +371,24 @@ export default function CrmLeadCreatePage() {
               : `Lead ${leadCode} created successfully.`
           }
         });
-      } else {
-        setSuccessMsg(isEditMode ? `Lead ${leadCode} saved successfully.` : `Lead ${leadCode} created successfully.`);
-        setTimeout(() => setSuccessMsg(null), 5000);
-        if (!isEditMode && savedLead?.id) {
-          navigate(`/crm/leads/${savedLead.id}`);
+      } catch (navErr) {
+        console.error('Post-save navigation error:', navErr);
+        setSuccessMsg(isEditMode ? `Lead ${leadCode} updated successfully.` : `Lead ${leadCode} created successfully.`);
+      }
+    } else {
+      setSuccessMsg(isEditMode ? `Lead ${leadCode} saved successfully.` : `Lead ${leadCode} created successfully.`);
+      setTimeout(() => setSuccessMsg(null), 5000);
+      if (!isEditMode && savedLead?.id) {
+        try {
+          navigate(`/crm/leads/${savedLead.id}`, {
+            state: {
+              successMessage: `Lead ${leadCode} created successfully.`
+            }
+          });
+        } catch (navErr) {
+          console.error('Post-save detail navigation error:', navErr);
         }
       }
-    } catch (err) {
-      console.error('Lead save error:', err);
-      const serverMsg = err.response?.data?.message || err.response?.data?.detail || 'Failed to save lead. Please check your network and inputs.';
-      setError(serverMsg);
-    } finally {
-      setSubmitting(false);
     }
   };
 
@@ -559,7 +614,7 @@ export default function CrmLeadCreatePage() {
               </div>
               <div>
                 <h2 style={{ fontSize: '1.1rem', fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>
-                  Section 1 — Contact Information
+                  Contact Information
                 </h2>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                   Individual contact details for this enquiry
@@ -571,7 +626,7 @@ export default function CrmLeadCreatePage() {
               {/* Topic / Lead Title */}
               <div style={{ gridColumn: '1 / -1' }}>
                 <label className="form-label" style={{ fontWeight: 600 }}>
-                  Topic / Lead Title <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(Optional)</span>
+                  Topic / Lead Title <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(Required if Company is blank)</span>
                 </label>
                 <input
                   type="text"
@@ -579,11 +634,16 @@ export default function CrmLeadCreatePage() {
                   value={formData.topic}
                   onChange={handleChange}
                   placeholder="e.g. Biogas Plant Expansion - Phase 2"
-                  className="form-input"
+                  className={`form-input ${fieldErrors.topic ? 'input-error' : ''}`}
                   style={{ width: '100%' }}
                 />
+                {fieldErrors.topic && (
+                  <span style={{ fontSize: '0.75rem', color: 'var(--danger)', marginTop: '0.25rem', display: 'block' }}>
+                    {fieldErrors.topic}
+                  </span>
+                )}
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'block' }}>
-                  If omitted, unique sequence ID (LEAD-XXXXX) will serve as title.
+                  Provide either a Topic/Title or Company Name.
                 </span>
               </div>
 
@@ -702,7 +762,7 @@ export default function CrmLeadCreatePage() {
               </div>
               <div>
                 <h2 style={{ fontSize: '1.1rem', fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>
-                  Section 2 — Company Information
+                  Company Information
                 </h2>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                   Organization details (an Account record will only be mapped or created at qualification time)
@@ -713,16 +773,23 @@ export default function CrmLeadCreatePage() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem' }}>
               {/* Company Name */}
               <div>
-                <label className="form-label">Company / Organization Name</label>
+                <label className="form-label" style={{ fontWeight: 600 }}>
+                  Company / Organization Name <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(Required if Topic is blank)</span>
+                </label>
                 <input
                   type="text"
                   name="companyName"
                   value={formData.companyName}
                   onChange={handleChange}
                   placeholder="e.g. GreenTech Bio-Energies Pvt Ltd"
-                  className="form-input"
+                  className={`form-input ${fieldErrors.companyName ? 'input-error' : ''}`}
                   style={{ width: '100%' }}
                 />
+                {fieldErrors.companyName && (
+                  <span style={{ fontSize: '0.75rem', color: 'var(--danger)', marginTop: '0.25rem', display: 'block' }}>
+                    {fieldErrors.companyName}
+                  </span>
+                )}
               </div>
 
               {/* Website */}
@@ -835,7 +902,7 @@ export default function CrmLeadCreatePage() {
                 </div>
                 <div>
                   <h2 style={{ fontSize: '1.1rem', fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>
-                    Section 3 — Additional Lead Information
+                    Additional Lead Information
                   </h2>
                   <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                     Lead Source, Rating, Relationship Status, and Owner assignment
@@ -932,7 +999,7 @@ export default function CrmLeadCreatePage() {
             )}
           </div>
 
-          {/* SECTION 4 — DESCRIPTION AND BUSINESS INFORMATION */}
+          {/* DESCRIPTION AND BUSINESS INFORMATION */}
           <div className="glass-panel" style={{ padding: '1.5rem', borderRadius: 'var(--radius-md)', boxShadow: 'var(--card-shadow)' }}>
             <div style={{
               display: 'flex',
@@ -956,7 +1023,7 @@ export default function CrmLeadCreatePage() {
               </div>
               <div>
                 <h2 style={{ fontSize: '1.1rem', fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>
-                  Section 4 — Description & Business Information
+                  Description and Business Information
                 </h2>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                   Enquiry details, requirement types, business area, and company profile
@@ -967,9 +1034,9 @@ export default function CrmLeadCreatePage() {
             {/* Requirement Types Multi-Select */}
             <div style={{ marginBottom: '1.25rem' }}>
               <label className="form-label" style={{ fontWeight: 600, marginBottom: '0.5rem', display: 'block' }}>
-                Requirement Types <span style={{ color: 'var(--danger)' }}>*</span>
+                Requirement Types
                 <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '0.8rem', marginLeft: '0.5rem' }}>
-                  (Select all that apply)
+                  (Optional — select any that apply; can be added later)
                 </span>
               </label>
               <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
@@ -1095,7 +1162,7 @@ export default function CrmLeadCreatePage() {
             </div>
           </div>
 
-          {/* SECTION 5 — CONTACT METHOD */}
+          {/* CONTACT METHOD */}
           <div className="glass-panel" style={{ padding: '1.5rem', borderRadius: 'var(--radius-md)', boxShadow: 'var(--card-shadow)' }}>
             <div style={{
               display: 'flex',
@@ -1119,7 +1186,7 @@ export default function CrmLeadCreatePage() {
               </div>
               <div>
                 <h2 style={{ fontSize: '1.1rem', fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>
-                  Section 5 — Contact Method Preferences
+                  Contact Method
                 </h2>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                   Allowed channels for client outreach and designation of preferred method
