@@ -1,12 +1,13 @@
 import logging
 import threading
+import time
 from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime, timezone, timedelta, date
 from decimal import Decimal, ROUND_HALF_UP
 from fastapi import Request
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, or_, and_
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from app.core.dependencies import CurrentUser
 from app.core.exceptions import (
@@ -68,10 +69,11 @@ def normalize_text(val: Optional[str]) -> str:
 _sequence_lock = threading.Lock()
 
 
-def get_next_sequence_id(db: Session, entity_name: str, prefix: str, padding: int = 5) -> str:
+def get_next_sequence_id(db: Session, entity_name: str, prefix: str, padding: int = 5, commit: bool = True) -> str:
     """
     Concurrency-safe sequence generator using CrmSequence with thread locking and row locking.
     Generates IDs like LEAD-00001, ACC-00001, CON-00001, COM-00001, ENG-00001, SMP-00001, TST-00001, CHG-00001, PRD-00001.
+    If commit=False, flushes instead of committing to preserve outer transaction atomicity.
     """
     entity_key = entity_name.strip().upper()
     with _sequence_lock:
@@ -80,14 +82,20 @@ def get_next_sequence_id(db: Session, entity_name: str, prefix: str, padding: in
             try:
                 seq = CrmSequence(entity_name=entity_key, current_value=1)
                 db.add(seq)
-                db.commit()
+                if commit:
+                    db.commit()
+                else:
+                    db.flush()
                 return f"{prefix}-{1:0{padding}d}"
             except IntegrityError:
                 db.rollback()
                 seq = db.query(CrmSequence).filter(CrmSequence.entity_name == entity_key).with_for_update().first()
 
         seq.current_value += 1
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
         return f"{prefix}-{seq.current_value:0{padding}d}"
 
 
@@ -2440,6 +2448,7 @@ class CrmService:
         # Suggest default account and contact
         suggested_acc = matching_accounts[0] if matching_accounts else None
         suggested_con = matching_contacts[0] if matching_contacts else None
+        suggested_status = "Existing" if (matching_accounts or matching_contacts) else "New"
 
         return {
             "success": True,
@@ -2447,7 +2456,8 @@ class CrmService:
             "matchingAccounts": matching_accounts,
             "matchingContacts": matching_contacts,
             "suggestedAccount": suggested_acc,
-            "suggestedContact": suggested_con
+            "suggestedContact": suggested_con,
+            "suggestedClientStatus": suggested_status
         }
 
     def qualify_lead(
@@ -2470,8 +2480,14 @@ class CrmService:
         if not lead:
             raise NotFoundError(f"Lead '{lead_id}' not found.")
 
+        # Lifecycle check: Disqualified leads cannot be qualified directly
+        if lead.lifecycle_status == "Disqualified":
+            raise ValidationError(
+                f"Cannot qualify disqualified Lead '{lead.lead_id}'. Disqualified leads must be reopened to 'Open' before qualification."
+            )
+
         # Idempotency / Retry-Safety:
-        # If the lead is already qualified, return existing linked records safely without creating duplicates
+        # If the lead is already qualified and linked to an opportunity, return existing linked records safely without creating duplicates
         if lead.lifecycle_status == "Qualified" and lead.opportunity_id:
             opp = self.db.query(Opportunity).options(
                 joinedload(Opportunity.account),
@@ -2495,40 +2511,38 @@ class CrmService:
                     "opportunity": self._format_opportunity(opp)
                 }
 
-        # 1. Resolve Account
-        acc_action = (payload.account.action or "create").strip().lower()
-        account = None
-        if acc_action == "reuse":
-            if not payload.account.accountId:
-                raise ValidationError("accountId is required when reusing an existing account.")
-            account = self.db.query(Account).filter(
-                or_(Account.id == payload.account.accountId, Account.account_id == payload.account.accountId),
-                Account.is_active == True
-            ).first()
-            if not account:
-                raise NotFoundError(f"Account '{payload.account.accountId}' does not exist or is inactive.")
-            # Safely enrich existing account fields if empty on account but present in payload/lead
-            if not account.website and (payload.account.website or lead.website_link):
-                account.website = (payload.account.website or lead.website_link).strip()
-            if not account.email and (payload.account.email or lead.company_email):
-                account.email = (payload.account.email or lead.company_email).strip().lower()
-            if not account.industry and (payload.account.industry or lead.industry):
-                account.industry = (payload.account.industry or lead.industry).strip()
-        elif acc_action == "create":
-            acc_name = (payload.account.name or lead.company_name or "").strip()
-            if not acc_name:
-                acc_name = (lead.lead_name or f"Account for Lead {lead.lead_id}").strip()
+        # Lifecycle check: Only Open leads are eligible for qualification
+        if lead.lifecycle_status != "Open":
+            raise ValidationError(
+                f"Lead '{lead.lead_id}' is in status '{lead.lifecycle_status}' and cannot be qualified. Only Open leads can be qualified."
+            )
 
-            # Check if active account with same normalized name already exists
-            norm_name = normalize_text(acc_name)
-            existing_acc = self.db.query(Account).filter(
-                func.lower(func.trim(Account.name)) == norm_name,
-                Account.is_active == True
-            ).first()
-            if existing_acc:
-                account = existing_acc
-            else:
-                account_code = get_next_sequence_id(self.db, "ACCOUNT", "ACC")
+        try:
+            # 1. Resolve Account
+            acc_action = (payload.account.action or "create").strip().lower()
+            account = None
+            if acc_action == "reuse":
+                if not payload.account.accountId:
+                    raise ValidationError("accountId is required when reusing an existing account.")
+                account = self.db.query(Account).filter(
+                    or_(Account.id == payload.account.accountId, Account.account_id == payload.account.accountId),
+                    Account.is_active == True
+                ).first()
+                if not account:
+                    raise NotFoundError(f"Account '{payload.account.accountId}' does not exist or is inactive.")
+                # Safely enrich existing account fields if empty on account but present in payload/lead
+                if not account.website and (payload.account.website or lead.website_link):
+                    account.website = (payload.account.website or lead.website_link).strip()
+                if not account.email and (payload.account.email or lead.company_email):
+                    account.email = (payload.account.email or lead.company_email).strip().lower()
+                if not account.industry and (payload.account.industry or lead.industry):
+                    account.industry = (payload.account.industry or lead.industry).strip()
+            elif acc_action == "create":
+                acc_name = (payload.account.name or lead.company_name or "").strip()
+                if not acc_name:
+                    raise ValidationError("Account name is required when creating a new Account.")
+
+                account_code = get_next_sequence_id(self.db, "ACCOUNT", "ACC", commit=False)
                 account = Account(
                     account_id=account_code,
                     name=acc_name,
@@ -2541,58 +2555,53 @@ class CrmService:
                 )
                 self.db.add(account)
                 self.db.flush()
-        else:
-            raise ValidationError(f"Invalid account action '{payload.account.action}'. Must be 'reuse' or 'create'.")
+            else:
+                raise ValidationError(f"Invalid account action '{payload.account.action}'. Must be 'reuse' or 'create'.")
 
-        # 2. Resolve Contact
-        contact = None
-        if payload.contact:
-            con_action = (payload.contact.action or "create").strip().lower()
-            if con_action == "reuse":
-                if not payload.contact.contactId:
-                    raise ValidationError("contactId is required when reusing an existing contact.")
-                contact = self.db.query(Contact).filter(
-                    or_(Contact.id == payload.contact.contactId, Contact.contact_id == payload.contact.contactId),
-                    Contact.is_active == True
-                ).first()
-                if not contact:
-                    raise NotFoundError(f"Contact '{payload.contact.contactId}' does not exist or is inactive.")
-
-                # Ensure selected contact belongs to the chosen Account or link them if unassigned
-                if contact.account_id and contact.account_id != account.id:
-                    raise ValidationError(
-                        f"Selected Contact '{contact.name}' belongs to a different Account ({contact.account.name if contact.account else contact.account_id})."
-                    )
-                elif not contact.account_id:
-                    contact.account_id = account.id
-            elif con_action == "create":
-                con_name = (payload.contact.name or "").strip()
-                if not con_name and (lead.first_name or lead.last_name):
-                    con_name = f"{lead.first_name or ''} {lead.last_name or ''}".strip()
-                if not con_name:
-                    con_name = (lead.lead_name or "Primary Contact").strip()
-
-                con_email = (payload.contact.email or lead.contact_email or "").strip().lower() or None
-                con_phone = (payload.contact.mobileNumber or lead.mobile_phone or lead.business_phone or "").strip() or None
-                con_desig = (payload.contact.designation or lead.job_title or "").strip() or None
-
-                # Check duplicate email if provided
-                if con_email:
-                    existing_con = self.db.query(Contact).filter(
-                        func.lower(Contact.email) == con_email,
+            # 2. Resolve Contact (Mandatory designated Primary Contact)
+            contact = None
+            if payload.contact:
+                con_action = (payload.contact.action or "create").strip().lower()
+                if con_action == "reuse":
+                    if not payload.contact.contactId:
+                        raise ValidationError("contactId is required when reusing an existing contact.")
+                    contact = self.db.query(Contact).filter(
+                        or_(Contact.id == payload.contact.contactId, Contact.contact_id == payload.contact.contactId),
                         Contact.is_active == True
                     ).first()
-                    if existing_con:
-                        if existing_con.account_id and existing_con.account_id != account.id:
+                    if not contact:
+                        raise NotFoundError(f"Contact '{payload.contact.contactId}' does not exist or is inactive.")
+
+                    # Ensure selected contact belongs to the chosen Account or link them if unassigned
+                    if contact.account_id and contact.account_id != account.id:
+                        raise ValidationError(
+                            f"Selected Contact '{contact.name}' belongs to a different Account ({contact.account.name if contact.account else contact.account_id})."
+                        )
+                    elif not contact.account_id:
+                        contact.account_id = account.id
+                elif con_action == "create":
+                    con_name = (payload.contact.name or "").strip()
+                    if not con_name and (lead.first_name or lead.last_name):
+                        con_name = f"{lead.first_name or ''} {lead.last_name or ''}".strip()
+                    if not con_name:
+                        raise ValidationError("Contact name is required when creating a new Contact.")
+
+                    con_email = (payload.contact.email or lead.contact_email or "").strip().lower() or None
+                    con_phone = (payload.contact.mobileNumber or lead.mobile_phone or lead.business_phone or "").strip() or None
+                    con_desig = (payload.contact.designation or lead.job_title or "").strip() or None
+
+                    # If an existing contact has this email under a DIFFERENT account, reject with explanation
+                    if con_email:
+                        existing_con = self.db.query(Contact).filter(
+                            func.lower(Contact.email) == con_email,
+                            Contact.is_active == True
+                        ).first()
+                        if existing_con and existing_con.account_id and existing_con.account_id != account.id:
                             raise ValidationError(
                                 f"A contact with email '{con_email}' already exists under account '{existing_con.account.name if existing_con.account else existing_con.account_id}'."
                             )
-                        elif not existing_con.account_id:
-                            existing_con.account_id = account.id
-                        contact = existing_con
 
-                if not contact:
-                    contact_code = get_next_sequence_id(self.db, "CONTACT", "CON")
+                    contact_code = get_next_sequence_id(self.db, "CONTACT", "CON", commit=False)
                     contact = Contact(
                         contact_id=contact_code,
                         account_id=account.id,
@@ -2604,60 +2613,112 @@ class CrmService:
                     )
                     self.db.add(contact)
                     self.db.flush()
-            else:
-                raise ValidationError(f"Invalid contact action '{payload.contact.action}'. Must be 'reuse' or 'create'.")
-        elif lead.contact_id:
-            contact = self.db.query(Contact).filter(Contact.id == lead.contact_id).first()
-            if contact and not contact.account_id:
-                contact.account_id = account.id
+                else:
+                    raise ValidationError(f"Invalid contact action '{payload.contact.action}'. Must be 'reuse' or 'create'.")
+            elif lead.contact_id:
+                contact = self.db.query(Contact).filter(Contact.id == lead.contact_id).first()
+                if contact:
+                    if contact.account_id and contact.account_id != account.id:
+                        raise ValidationError(
+                            f"Lead's existing Contact '{contact.name}' belongs to a different Account ({contact.account.name if contact.account else contact.account_id})."
+                        )
+                    elif not contact.account_id:
+                        contact.account_id = account.id
 
-        # 3. Create Opportunity
-        opp_code = get_next_sequence_id(self.db, "OPPORTUNITY", "OPP")
-        opp_name = (payload.opportunityName or lead.lead_name or f"Opportunity - {account.name}").strip()
-        req_types_str = ", ".join([rt.requirement_type for rt in lead.requirement_types]) if lead.requirement_types else "Consulting"
+            # Enforce Primary Contact presence
+            if not contact:
+                raise ValidationError("A designated Primary Contact is required to qualify a Lead into an Opportunity.")
 
-        opportunity = Opportunity(
-            opportunity_id=opp_code,
-            name=opp_name,
-            account_id=account.id,
-            contact_id=contact.id if contact else None,
-            originating_lead_id=lead.id,
-            status="Open",
-            currency=lead.currency or "INR",
-            estimated_value=payload.estimatedValue,
-            description=payload.opportunityDescription or lead.description,
-            requirement_summary=lead.requirement_summary,
-            requirement_types=req_types_str,
-            assigned_to_user_id=payload.assignedToUserId or lead.assigned_to_user_id,
-            created_by_id=str(actor.id) if actor.id else None,
-            updated_by_id=str(actor.id) if actor.id else None
-        )
-        self.db.add(opportunity)
-        self.db.flush()
+            # Validate Contact-Account relationship consistency
+            if contact.account_id and contact.account_id != account.id:
+                raise ValidationError(
+                    f"Selected Primary Contact '{contact.name}' belongs to a different Account ({contact.account.name if contact.account else contact.account_id})."
+                )
 
-        # 4. Update Lead
-        before_state = {
-            "leadId": lead.lead_id,
-            "status": lead.lifecycle_status,
-            "accountId": lead.account_id,
-            "contactId": lead.contact_id
-        }
+            # 3. Create Opportunity
+            opp_code = get_next_sequence_id(self.db, "OPPORTUNITY", "OPP", commit=False)
+            opp_name = (payload.opportunityName or lead.lead_name or f"Opportunity - {account.name}").strip()
+            req_types_str = ", ".join([rt.requirement_type for rt in lead.requirement_types]) if lead.requirement_types else "Consulting"
 
-        lead.lifecycle_status = "Qualified"
-        lead.account_id = account.id
-        if contact:
+            opportunity = Opportunity(
+                opportunity_id=opp_code,
+                name=opp_name,
+                account_id=account.id,
+                contact_id=contact.id,  # Mandatory Primary Contact
+                originating_lead_id=lead.id,
+                status="Open",
+                currency=lead.currency or "INR",
+                estimated_value=payload.estimatedValue,
+                description=payload.opportunityDescription or lead.description,
+                requirement_summary=lead.requirement_summary,
+                requirement_types=req_types_str,
+                assigned_to_user_id=payload.assignedToUserId or lead.assigned_to_user_id,
+                created_by_id=str(actor.id) if actor.id else None,
+                updated_by_id=str(actor.id) if actor.id else None
+            )
+            self.db.add(opportunity)
+            self.db.flush()
+
+            # 4. Update Lead Lifecycle and Qualification Metadata
+            before_state = {
+                "leadId": lead.lead_id,
+                "status": lead.lifecycle_status,
+                "accountId": lead.account_id,
+                "contactId": lead.contact_id
+            }
+
+            lead.lifecycle_status = "Qualified"
+            lead.account_id = account.id
             lead.contact_id = contact.id
-        lead.opportunity_id = opportunity.id
-        lead.qualified_at = datetime.now(timezone.utc)
-        lead.qualified_by_id = str(actor.id) if actor.id else None
-        lead.updated_by_id = str(actor.id) if actor.id else None
+            lead.opportunity_id = opportunity.id
+            lead.qualified_at = datetime.now(timezone.utc)
+            lead.qualified_by_id = str(actor.id) if actor.id else None
+            lead.updated_by_id = str(actor.id) if actor.id else None
 
-        try:
+            # Optional client relationship update
+            if payload.clientStatus and payload.clientStatus in ("New", "Existing"):
+                lead.client_status = payload.clientStatus
+
             self.db.commit()
-        except IntegrityError as e:
+
+        except (ValidationError, NotFoundError):
             self.db.rollback()
-            logger.error(f"IntegrityError during lead qualification: {e}")
+            raise
+        except (IntegrityError, OperationalError) as e:
+            self.db.rollback()
+            self.db.expire_all()
+            logger.warning(f"IntegrityError/OperationalError during lead qualification, checking if already qualified concurrently: {e}")
+            for attempt in range(10):
+                time.sleep(0.05)
+                self.db.expire_all()
+                recheck_lead = self.db.query(Lead).filter(Lead.id == lead_id).first()
+                if recheck_lead and recheck_lead.lifecycle_status == "Qualified" and recheck_lead.opportunity_id:
+                    opp = self.db.query(Opportunity).options(
+                        joinedload(Opportunity.account),
+                        joinedload(Opportunity.contact)
+                    ).filter(Opportunity.id == recheck_lead.opportunity_id).first()
+                    if opp:
+                        return {
+                            "success": True,
+                            "message": f"Lead '{recheck_lead.lead_id}' is already qualified with Opportunity '{opp.opportunity_id}'.",
+                            "lead": self._format_lead(recheck_lead),
+                            "account": {
+                                "id": opp.account.id,
+                                "accountId": opp.account.account_id,
+                                "name": opp.account.name
+                            } if opp.account else {},
+                            "contact": {
+                                "id": opp.contact.id,
+                                "contactId": opp.contact.contact_id,
+                                "name": opp.contact.name
+                            } if opp.contact else None,
+                            "opportunity": self._format_opportunity(opp)
+                        }
             raise ValidationError("Lead qualification failed due to a database integrity constraint.")
+        except Exception as e:
+            self.db.rollback()
+            logger.error(f"Unexpected error during lead qualification: {e}")
+            raise
 
         self.db.refresh(lead)
         self.db.refresh(opportunity)
@@ -2665,34 +2726,37 @@ class CrmService:
         if contact:
             self.db.refresh(contact)
 
-        # Audit logs
-        self.audit_service.log(
-            action="CRM_LEAD_QUALIFIED",
-            request=request,
-            performed_by_employee_id=str(actor.id) if actor.id else None,
-            performed_by_name=actor.name or actor.username,
-            role_used=actor.active_role,
-            target_info={
-                "recordId": lead.id,
-                "leadNumber": lead.lead_id,
-                "accountId": account.id,
-                "accountCode": account.account_id,
-                "accountName": account.name,
-                "contactId": contact.id if contact else None,
-                "contactName": contact.name if contact else None,
-                "opportunityId": opportunity.id,
-                "opportunityNumber": opportunity.opportunity_id,
-                "opportunityName": opportunity.name,
-                "details": f"Qualified Lead '{lead.lead_id}' into Opportunity '{opportunity.opportunity_id}' with Account '{account.name}'."
-            },
-            before_state=before_state,
-            after_state={
-                "status": "Qualified",
-                "accountId": account.id,
-                "contactId": contact.id if contact else None,
-                "opportunityId": opportunity.id
-            }
-        )
+        # Audit logs (protected with try/except)
+        try:
+            self.audit_service.log(
+                action="CRM_LEAD_QUALIFIED",
+                request=request,
+                performed_by_employee_id=str(actor.id) if actor.id else None,
+                performed_by_name=actor.name or actor.username,
+                role_used=actor.active_role,
+                target_info={
+                    "recordId": lead.id,
+                    "leadNumber": lead.lead_id,
+                    "accountId": account.id,
+                    "accountCode": account.account_id,
+                    "accountName": account.name,
+                    "contactId": contact.id if contact else None,
+                    "contactName": contact.name if contact else None,
+                    "opportunityId": opportunity.id,
+                    "opportunityNumber": opportunity.opportunity_id,
+                    "opportunityName": opportunity.name,
+                    "details": f"Qualified Lead '{lead.lead_id}' into Opportunity '{opportunity.opportunity_id}' with Account '{account.name}'."
+                },
+                before_state=before_state,
+                after_state={
+                    "status": "Qualified",
+                    "accountId": account.id,
+                    "contactId": contact.id if contact else None,
+                    "opportunityId": opportunity.id
+                }
+            )
+        except Exception as e:
+            logger.warning(f"Failed to record audit log for lead qualification: {e}")
 
         return {
             "success": True,

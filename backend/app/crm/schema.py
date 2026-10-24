@@ -1015,6 +1015,7 @@ class LeadQualificationMatchesResponse(BaseModel):
     matchingContacts: List[Dict[str, Any]] = []
     suggestedAccount: Optional[Dict[str, Any]] = None
     suggestedContact: Optional[Dict[str, Any]] = None
+    suggestedClientStatus: str = "New"
 
 
 class LeadQualifyAccountChoice(BaseModel):
@@ -1044,6 +1045,7 @@ class LeadQualifyRequest(BaseModel):
     opportunityDescription: Optional[str] = None
     estimatedValue: Optional[float] = None
     assignedToUserId: Optional[str] = None
+    clientStatus: Optional[str] = None
 
 
 class LeadQualifyResponse(BaseModel):

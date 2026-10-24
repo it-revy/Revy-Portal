@@ -4,7 +4,6 @@ import {
   X,
   Check,
   ArrowRight,
-  ArrowLeft,
   Building,
   User,
   Briefcase,
@@ -14,7 +13,6 @@ import {
   Sparkles,
   ExternalLink,
   ShieldCheck,
-  RefreshCw,
   Info
 } from 'lucide-react';
 import crmService from '../../../services/crmService';
@@ -77,6 +75,9 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
     description: '',
     assignedToUserId: ''
   });
+
+  // Client Relationship Classification State (New vs Existing)
+  const [clientRelationship, setClientRelationship] = useState('New');
 
   // Submission State
   const [submitting, setSubmitting] = useState(false);
@@ -163,6 +164,12 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
           } else {
             setContactAction('create');
           }
+          // Set suggested client classification
+          if (matchData.suggestedClientStatus) {
+            setClientRelationship(matchData.suggestedClientStatus);
+          } else if (lead.clientStatus) {
+            setClientRelationship(lead.clientStatus);
+          }
         }
       } catch (err) {
         console.error('Failed to load qualification matches:', err);
@@ -225,6 +232,13 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
   const handleNext = () => {
     setSubmitError(null);
 
+    if (currentStep === 1) {
+      if (lead.lifecycleStatus === 'Disqualified') {
+        setSubmitError("Cannot qualify a Disqualified Lead. Disqualified leads must be reopened to 'Open' before qualification.");
+        return;
+      }
+    }
+
     if (currentStep === 2) {
       // Validate Account Step
       if (accountAction === 'reuse') {
@@ -241,15 +255,19 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
     }
 
     if (currentStep === 3) {
-      // Validate Contact Step
+      // Validate Contact Step (Primary Contact)
       if (contactAction === 'reuse') {
         if (!selectedContactId) {
-          setSubmitError('Please select an existing contact to reuse, or choose Create New Contact.');
+          setSubmitError('Please select an existing contact to designate as Primary Contact, or choose Create New Contact.');
+          return;
+        }
+        if (selectedAccountObj?.id && selectedContactObj?.accountId && selectedContactObj.accountId !== selectedAccountObj.id) {
+          setSubmitError(`Selected contact '${selectedContactObj.name}' belongs to a different account (${selectedContactObj.accountName || selectedContactObj.accountId}). Please select a contact from the chosen account or create a new contact.`);
           return;
         }
       } else {
         if (!newContactData.name || !newContactData.name.trim()) {
-          setSubmitError('Contact Name is required to create a new contact.');
+          setSubmitError('Primary Contact Name is required.');
           return;
         }
       }
@@ -298,7 +316,8 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
       opportunityName: opportunityData.name.trim(),
       opportunityDescription: opportunityData.description.trim() || undefined,
       estimatedValue: opportunityData.estimatedValue ? parseFloat(opportunityData.estimatedValue) : undefined,
-      assignedToUserId: opportunityData.assignedToUserId || undefined
+      assignedToUserId: opportunityData.assignedToUserId || undefined,
+      clientStatus: clientRelationship
     };
 
     try {
@@ -392,7 +411,6 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
           overflowX: 'auto'
         }}>
           {WIZARD_STEPS.map((step) => {
-            const Icon = step.icon;
             const isCompleted = currentStep > step.id || Boolean(qualificationResult);
             const isCurrent = currentStep === step.id && !qualificationResult;
 
@@ -698,6 +716,46 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
                       )}
                     </div>
 
+                    {/* Client Relationship Classification */}
+                    <div style={{ gridColumn: '1 / -1', padding: '1rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', background: 'var(--bg-secondary)' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
+                        <div style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                          <ShieldCheck size={16} color="var(--accent-primary)" />
+                          <span>Client Relationship Classification</span>
+                        </div>
+                        {matches.suggestedClientStatus && (
+                          <span style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--accent-primary)', background: 'var(--accent-light)', padding: '2px 8px', borderRadius: '4px' }}>
+                            Suggested: {matches.suggestedClientStatus}
+                          </span>
+                        )}
+                      </div>
+                      <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.75rem' }}>
+                        Dynamics 365 Sales classification: Specify whether this organization represents a New Client or an Existing Client relationship.
+                      </p>
+                      <div style={{ display: 'flex', gap: '1.5rem' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+                          <input
+                            type="radio"
+                            name="clientRelationship"
+                            value="New"
+                            checked={clientRelationship === 'New'}
+                            onChange={() => setClientRelationship('New')}
+                          />
+                          <span>New Client</span>
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.875rem', fontWeight: 500, color: 'var(--text-primary)' }}>
+                          <input
+                            type="radio"
+                            name="clientRelationship"
+                            value="Existing"
+                            checked={clientRelationship === 'Existing'}
+                            onChange={() => setClientRelationship('Existing')}
+                          />
+                          <span>Existing Client</span>
+                        </label>
+                      </div>
+                    </div>
+
                     {/* Additional Contacts (if any attached to lead) */}
                     {lead.additionalContacts && lead.additionalContacts.length > 0 && (
                       <div style={{ gridColumn: '1 / -1', padding: '1rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', background: '#f8fafc' }}>
@@ -856,6 +914,7 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
                           <Search size={16} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                         </div>
                       </div>
+                      {searchingAccounts && <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '-0.25rem 0 0.5rem 0' }}>Searching accounts...</p>}
 
                       {searchedAccounts.length > 0 && (
                         <div style={{ maxHeight: '180px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', marginBottom: '1rem' }}>
@@ -1088,6 +1147,7 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
                           <Search size={16} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                         </div>
                       </div>
+                      {searchingContacts && <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '-0.25rem 0 0.5rem 0' }}>Searching contacts...</p>}
 
                       {searchedContacts.length > 0 && (
                         <div style={{ maxHeight: '180px', overflowY: 'auto', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-sm)', marginBottom: '1rem' }}>
@@ -1122,9 +1182,20 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
 
                       {selectedContactObj && (
                         <div style={{ padding: '0.75rem', background: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', marginTop: '0.5rem' }}>
-                          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent-primary)', textTransform: 'uppercase' }}>Selected Contact for Reuse:</span>
+                          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent-primary)', textTransform: 'uppercase' }}>Selected Primary Contact for Reuse:</span>
                           <div style={{ fontWeight: 600, fontSize: '0.95rem', marginTop: '0.2rem' }}>{selectedContactObj.name} ({selectedContactObj.contactId})</div>
                           <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{selectedContactObj.email || selectedContactObj.mobileNumber}</div>
+                        </div>
+                      )}
+
+                      {/* Account Mismatch Warning */}
+                      {selectedAccountObj?.id && selectedContactObj?.accountId && selectedContactObj.accountId !== selectedAccountObj.id && (
+                        <div style={{ marginTop: '0.75rem', padding: '0.75rem 1rem', background: 'var(--danger-bg)', border: '1px solid var(--danger-border)', borderRadius: 'var(--radius-sm)', color: 'var(--danger-text)', fontSize: '0.825rem', display: 'flex', alignItems: 'flex-start', gap: '0.6rem' }}>
+                          <AlertCircle size={18} style={{ flexShrink: 0, marginTop: '2px' }} />
+                          <div>
+                            <strong>Account Mismatch:</strong> Selected contact '{selectedContactObj.name}' belongs to another Account ({selectedContactObj.accountName || selectedContactObj.accountId}).
+                            The Opportunity's Primary Contact must belong to the selected Opportunity Account. Please select a contact from the chosen account or create a new contact.
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1248,6 +1319,21 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
                   </p>
 
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    {/* Classification Summary */}
+                    <div style={{ padding: '0.85rem 1rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)', background: 'var(--bg-secondary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.875rem' }}>Client Classification</span>
+                      <span style={{
+                        fontSize: '0.75rem',
+                        fontWeight: 700,
+                        padding: '2px 8px',
+                        borderRadius: '4px',
+                        background: clientRelationship === 'Existing' ? '#ecfdf5' : '#eff6ff',
+                        color: clientRelationship === 'Existing' ? '#065f46' : '#1e40af'
+                      }}>
+                        {clientRelationship} Client
+                      </span>
+                    </div>
+
                     {/* Account Summary */}
                     <div style={{ padding: '1rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
@@ -1271,7 +1357,7 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
                     {/* Contact Summary */}
                     <div style={{ padding: '1rem', border: '1px solid var(--border-color)', borderRadius: 'var(--radius-md)' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
-                        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Contact Action</span>
+                        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Primary Contact</span>
                         <span style={{
                           fontSize: '0.75rem',
                           fontWeight: 700,
