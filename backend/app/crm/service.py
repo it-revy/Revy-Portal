@@ -642,7 +642,7 @@ class CrmService:
         search: Optional[str] = None,
         limit: int = 50,
         offset: int = 0
-    ) -> List[Dict[str, Any]]:
+    ) -> Tuple[List[Dict[str, Any]], int]:
         query = self.db.query(Account)
         if search:
             s = f"%{search.strip().lower()}%"
@@ -656,6 +656,7 @@ class CrmService:
                 (func.lower(Account.email).like(s))
             )
 
+        total = query.count()
         accounts = query.order_by(Account.name.asc()).offset(offset).limit(limit).all()
 
         acc_ids = [a.id for a in accounts]
@@ -678,7 +679,7 @@ class CrmService:
             .all()
         )
 
-        return [
+        formatted = [
             {
                 "id": a.id,
                 "accountId": a.account_id,
@@ -698,6 +699,7 @@ class CrmService:
             }
             for a in accounts
         ]
+        return formatted, total
 
     def get_account(self, account_id: str) -> Dict[str, Any]:
         acc = self.db.query(Account).filter(
@@ -1108,7 +1110,7 @@ class CrmService:
         include_unassigned: bool = False,
         limit: int = 50,
         offset: int = 0
-    ) -> List[Dict[str, Any]]:
+    ) -> Tuple[List[Dict[str, Any]], int]:
         query = self.db.query(Contact).options(joinedload(Contact.account))
 
         if account_id:
@@ -1127,6 +1129,7 @@ class CrmService:
                 (func.lower(Contact.designation).like(s))
             )
 
+        total = query.count()
         contacts = query.order_by(Contact.name.asc()).offset(offset).limit(limit).all()
 
         con_ids = [c.id for c in contacts]
@@ -1137,7 +1140,7 @@ class CrmService:
             .all()
         )
 
-        return [
+        formatted = [
             {
                 "id": c.id,
                 "contactId": c.contact_id,
@@ -1154,6 +1157,7 @@ class CrmService:
             }
             for c in contacts
         ]
+        return formatted, total
 
     def get_contact(self, contact_id: str) -> Dict[str, Any]:
         c = self.db.query(Contact).options(joinedload(Contact.account)).filter(
@@ -2131,6 +2135,7 @@ class CrmService:
         return {
             "success": True,
             "count": len(leads),
+            "total": total_count,
             "totalCount": total_count,
             "page": safe_page,
             "pageSize": safe_page_size,
@@ -2990,41 +2995,31 @@ class CrmService:
         limit: int = 50,
         offset: int = 0
     ) -> Tuple[List[Dict[str, Any]], int]:
-        query = self.db.query(Opportunity).options(
-            joinedload(Opportunity.account),
-            joinedload(Opportunity.contact),
-            joinedload(Opportunity.originating_lead),
-            joinedload(Opportunity.assigned_to),
-            joinedload(Opportunity.created_by),
-            joinedload(Opportunity.milestones),
-            joinedload(Opportunity.consulting_engagements),
-            joinedload(Opportunity.sample_submissions),
-            joinedload(Opportunity.product_transactions)
-        )
+        base_query = self.db.query(Opportunity)
         if view:
             v = view.strip().lower()
             if v == "open":
-                query = query.filter(Opportunity.status == "Open")
+                base_query = base_query.filter(Opportunity.status == "Open")
             elif v == "won":
-                query = query.filter(Opportunity.status == "Won")
+                base_query = base_query.filter(Opportunity.status == "Won")
             elif v == "lost":
-                query = query.filter(Opportunity.status == "Lost")
+                base_query = base_query.filter(Opportunity.status == "Lost")
             elif v == "my":
-                query = query.filter(Opportunity.assigned_to_user_id == str(actor.id))
+                base_query = base_query.filter(Opportunity.assigned_to_user_id == str(actor.id))
 
         if status and status.strip().upper() != "ALL":
-            query = query.filter(Opportunity.status == status.strip())
+            base_query = base_query.filter(Opportunity.status == status.strip())
         if stage and stage.strip().upper() != "ALL":
-            query = query.filter(Opportunity.stage == stage.strip())
+            base_query = base_query.filter(Opportunity.stage == stage.strip())
         if business_area and business_area.strip().upper() != "ALL":
-            query = query.filter(Opportunity.business_area == business_area.strip())
+            base_query = base_query.filter(Opportunity.business_area == business_area.strip())
         if assigned_to_user_id:
-            query = query.filter(Opportunity.assigned_to_user_id == assigned_to_user_id.strip())
+            base_query = base_query.filter(Opportunity.assigned_to_user_id == assigned_to_user_id.strip())
         if account_id:
-            query = query.filter(Opportunity.account_id == account_id.strip())
+            base_query = base_query.filter(Opportunity.account_id == account_id.strip())
         if search:
             s = f"%{search.strip().lower()}%"
-            query = query.outerjoin(Opportunity.account).filter(
+            base_query = base_query.outerjoin(Opportunity.account).filter(
                 or_(
                     func.lower(Opportunity.name).like(s),
                     func.lower(Opportunity.opportunity_id).like(s),
@@ -3032,8 +3027,25 @@ class CrmService:
                 )
             )
 
-        total_count = query.distinct().count()
-        opps = query.order_by(Opportunity.created_at.desc()).offset(offset).limit(limit).all()
+        total_count = base_query.count()
+        opps = (
+            base_query
+            .options(
+                joinedload(Opportunity.account),
+                joinedload(Opportunity.contact),
+                joinedload(Opportunity.originating_lead),
+                joinedload(Opportunity.assigned_to),
+                joinedload(Opportunity.created_by),
+                selectinload(Opportunity.milestones),
+                selectinload(Opportunity.consulting_engagements),
+                selectinload(Opportunity.sample_submissions),
+                selectinload(Opportunity.product_transactions)
+            )
+            .order_by(Opportunity.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
         return [self._format_opportunity(o) for o in opps], total_count
 
     def get_opportunity(self, opp_id: str) -> Dict[str, Any]:
@@ -3768,7 +3780,9 @@ class CrmService:
         if actor and actor.id:
             my_leads = self.db.query(func.count(Lead.id)).filter(Lead.assigned_to_user_id == str(actor.id)).scalar() or 0
 
-        due_window = date.today() + timedelta(days=1)
+        KOLKATA_TZ = zoneinfo.ZoneInfo("Asia/Kolkata")
+        today_ist = datetime.now(KOLKATA_TZ).date()
+        due_window = today_ist + timedelta(days=1)
         follow_ups_due = self.db.query(func.count(Lead.id)).filter(
             Lead.lifecycle_status == "Open",
             Lead.next_follow_up_date.isnot(None),
@@ -3778,7 +3792,7 @@ class CrmService:
         overdue_follow_ups = self.db.query(func.count(Lead.id)).filter(
             Lead.lifecycle_status == "Open",
             Lead.next_follow_up_date.isnot(None),
-            Lead.next_follow_up_date < date.today()
+            Lead.next_follow_up_date < today_ist
         ).scalar() or 0
 
         return {

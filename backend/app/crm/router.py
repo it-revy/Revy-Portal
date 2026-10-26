@@ -256,8 +256,8 @@ def list_accounts(
     Search and list active CRM Accounts.
     """
     service = CrmService(db)
-    accounts = service.list_accounts(search=search, limit=limit, offset=offset)
-    return {"success": True, "count": len(accounts), "accounts": accounts}
+    accounts, total = service.list_accounts(search=search, limit=limit, offset=offset)
+    return {"success": True, "count": len(accounts), "total": total, "accounts": accounts}
 
 
 @router.get("/accounts/matches", response_model=AccountMatchResponse)
@@ -354,14 +354,14 @@ def list_contacts(
     Search and list active CRM Contacts, with optional Account filter and unassigned option.
     """
     service = CrmService(db)
-    contacts = service.list_contacts(
+    contacts, total = service.list_contacts(
         search=search,
         account_id=accountId,
         include_unassigned=includeUnassigned,
         limit=limit,
         offset=offset
     )
-    return {"success": True, "count": len(contacts), "contacts": contacts}
+    return {"success": True, "count": len(contacts), "total": total, "contacts": contacts}
 
 
 @router.get("/contacts/matches", response_model=ContactMatchResponse)

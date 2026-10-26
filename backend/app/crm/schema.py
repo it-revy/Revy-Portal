@@ -223,6 +223,7 @@ class AccountItem(BaseModel):
 class AccountListResponse(BaseModel):
     success: bool = True
     count: int
+    total: Optional[int] = None
     accounts: List[AccountItem]
 
 
@@ -351,6 +352,7 @@ class ContactItem(BaseModel):
 class ContactListResponse(BaseModel):
     success: bool = True
     count: int
+    total: Optional[int] = None
     contacts: List[ContactItem]
 
 
@@ -935,6 +937,7 @@ class LeadItem(BaseModel):
 class LeadListResponse(BaseModel):
     success: bool = True
     count: int
+    total: Optional[int] = None
     totalCount: int
     page: int
     pageSize: int

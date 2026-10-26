@@ -1,66 +1,71 @@
-import sys
 import httpx
-
-backend_dir = r"e:\IT Development\REVY Portal\Revy-Portal\backend"
-if backend_dir not in sys.path:
-    sys.path.insert(0, backend_dir)
-
-from app.core.database import get_engine
-from app.core.security import create_access_token
-from sqlalchemy import text
-
-engine = get_engine()
-with engine.connect() as conn:
-    user = conn.execute(text("SELECT id, username, email FROM users WHERE username = 'vasudev';")).fetchone()
-
-token = create_access_token({
-    "userId": user.id,
-    "username": user.username,
-    "roles": ["IT_ADMIN"]
-})
-
-headers = {
-    "Authorization": f"Bearer {token}",
-    "X-Role-Used": "IT_ADMIN"
-}
 
 base_url = "http://127.0.0.1:5001/api"
 
+# 1. Login
+login_res = httpx.post(f"{base_url}/auth/login", json={
+    "username": "crm.admin",
+    "password": "CrmAdmin123!"
+}, timeout=15)
+
+assert login_res.status_code == 200, f"Login failed: {login_res.text}"
+token = login_res.json()["token"]
+
+headers = {
+    "Authorization": f"Bearer {token}",
+    "X-Role-Used": "CRM_ADMIN"
+}
+
 endpoints = [
-    ("/crm/leads", "Leads"),
-    ("/crm/accounts", "Accounts"),
-    ("/crm/contacts", "Contacts"),
-    ("/crm/opportunities", "Opportunities"),
+    ("/crm/status", "CRM Status"),
+    ("/crm/dashboard/metrics", "Dashboard Metrics"),
+    ("/crm/leads", "Leads List"),
+    ("/crm/accounts", "Accounts List"),
+    ("/crm/contacts", "Contacts List"),
+    ("/crm/opportunities", "Opportunities List"),
     ("/crm/opportunities/pipeline-summary", "Pipeline Summary"),
-    ("/crm/dashboard/metrics", "Dashboard Metrics")
+    ("/crm/users", "CRM Users"),
+    ("/crm/roles", "CRM Roles"),
+    ("/crm/assignees", "CRM Assignees")
 ]
 
-print("=== ACTUAL HTTP ENDPOINT VERIFICATION (http://127.0.0.1:5001) ===")
-all_passed = True
+print("==================================================")
+print("LIVE HTTP VERIFICATION ON http://127.0.0.1:5001")
+print("==================================================")
+
+passed = 0
 for path, name in endpoints:
     url = f"{base_url}{path}"
     try:
         r = httpx.get(url, headers=headers, timeout=15)
-        print(f"\n[{name}] {url}")
-        print(f"  HTTP Status: {r.status_code}")
+        print(f"\n[{name}] {path} -> HTTP {r.status_code}")
         if r.status_code == 200:
             data = r.json()
-            print(f"  Success: {data.get('success')}")
+            success = data.get("success")
+            extra = ""
             if "leads" in data:
-                print(f"  Record Count: {len(data['leads'])} (total: {data.get('total')})")
+                extra = f"leads count: {len(data['leads'])}, total: {data.get('total')}"
             elif "accounts" in data:
-                print(f"  Record Count: {len(data['accounts'])} (count: {data.get('count')})")
+                extra = f"accounts count: {len(data['accounts'])}, total: {data.get('total')}"
             elif "contacts" in data:
-                print(f"  Record Count: {len(data['contacts'])} (count: {data.get('count')})")
+                extra = f"contacts count: {len(data['contacts'])}, total: {data.get('total')}"
             elif "opportunities" in data:
-                print(f"  Record Count: {len(data['opportunities'])} (totalCount: {data.get('totalCount')})")
-            else:
-                print(f"  Response keys: {list(data.keys())}")
+                extra = f"opps count: {len(data['opportunities'])}, totalCount: {data.get('totalCount')}"
+            elif "totalLeads" in data:
+                extra = f"totalLeads: {data.get('totalLeads')}, openLeads: {data.get('openLeads')}"
+            elif "users" in data:
+                extra = f"users count: {len(data['users'])}"
+            elif "roles" in data:
+                extra = f"roles count: {len(data['roles'])}"
+            elif "assignees" in data:
+                extra = f"assignees count: {len(data['assignees'])}"
+            print(f"  Result: SUCCESS (success={success}) | {extra}")
+            passed += 1
         else:
-            print(f"  FAILED: {r.status_code} - {r.text}")
-            all_passed = False
+            print(f"  FAILED: {r.status_code} - {r.text[:200]}")
     except Exception as e:
-        print(f"  ERROR calling {url}: {e}")
-        all_passed = False
+        print(f"  EXCEPTION: {e}")
 
-print(f"\nFinal Result: {'ALL PASSED' if all_passed else 'SOME FAILED'}")
+print("\n==================================================")
+print(f"VERIFICATION COMPLETE: {passed}/{len(endpoints)} ENDPOINTS PASSED")
+print("==================================================")

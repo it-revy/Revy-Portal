@@ -1,7 +1,15 @@
 import os
 from typing import List, Union
+from dotenv import load_dotenv
 from pydantic import AnyHttpUrl, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Standard 12-factor configuration precedence:
+# 1. OS / Deployment Environment Variables (highest precedence)
+# 2. Local .env file (development defaults only when not in os.environ)
+# 3. Settings class field defaults (fallback)
+_env_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
+load_dotenv(_env_file, override=False)
 
 
 class Settings(BaseSettings):
