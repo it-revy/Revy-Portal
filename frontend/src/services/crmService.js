@@ -53,20 +53,88 @@ export const crmService = {
   },
 
   // =========================================================================
-  // OPPORTUNITIES
+  // OPPORTUNITIES & PIPELINE (PHASE 4A)
   // =========================================================================
   getOpportunities: async (params = {}) => {
     const query = new URLSearchParams();
     if (params.search) query.append('search', params.search);
     if (params.accountId) query.append('accountId', params.accountId);
     if (params.status) query.append('status', params.status);
+    if (params.stage) query.append('stage', params.stage);
+    if (params.businessArea) query.append('businessArea', params.businessArea);
+    if (params.assignedToUserId) query.append('assignedToUserId', params.assignedToUserId);
+    if (params.view) query.append('view', params.view);
     if (params.limit) query.append('limit', params.limit);
     if (params.offset) query.append('offset', params.offset);
     return API.get(`/crm/opportunities?${query.toString()}`);
   },
 
+  getPipelineSummary: async () => {
+    return API.get('/crm/opportunities/pipeline-summary');
+  },
+
   getOpportunityById: async (id) => {
     return API.get(`/crm/opportunities/${id}`);
+  },
+
+  updateOpportunity: async (id, data) => {
+    return API.put(`/crm/opportunities/${id}`, data);
+  },
+
+  transitionOpportunityStage: async (id, data) => {
+    return API.post(`/crm/opportunities/${id}/stage`, data);
+  },
+
+  // =========================================================================
+  // REQUIREMENT ROUTING (PHASE 4B)
+  // =========================================================================
+  getOpportunityWorkstreams: async (id) => {
+    return API.get(`/crm/opportunities/${id}/workstreams`);
+  },
+
+  routeOpportunityRequirements: async (id, data = {}) => {
+    return API.post(`/crm/opportunities/${id}/route-requirements`, data);
+  },
+
+  updateOpportunityRequirements: async (id, data) => {
+    return API.put(`/crm/opportunities/${id}/requirements`, data);
+  },
+
+  // =========================================================================
+  // MILESTONE INTEGRATION (PHASE 4C)
+  // =========================================================================
+  getOpportunityMilestones: async (id, params = {}) => {
+    const query = new URLSearchParams();
+    if (params.status) query.append('status', params.status);
+    if (params.assignedToUserId) query.append('assignedToUserId', params.assignedToUserId);
+    return API.get(`/crm/opportunities/${id}/milestones?${query.toString()}`);
+  },
+
+  createOpportunityMilestone: async (id, data) => {
+    return API.post(`/crm/opportunities/${id}/milestones`, data);
+  },
+
+  getUpcomingMilestones: async (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.days) query.append('days', params.days);
+    if (params.assignedToUserId) query.append('assignedToUserId', params.assignedToUserId);
+    return API.get(`/crm/milestones/upcoming?${query.toString()}`);
+  },
+
+  getMilestoneById: async (id) => {
+    return API.get(`/crm/milestones/${id}`);
+  },
+
+  updateMilestone: async (id, data) => {
+    return API.put(`/crm/milestones/${id}`, data);
+  },
+
+  transitionMilestoneStatus: async (id, data) => {
+    return API.post(`/crm/milestones/${id}/status`, data);
+  },
+
+  deleteMilestone: async (id) => {
+    return API.delete(`/crm/milestones/${id}`);
   },
 
   // =========================================================================

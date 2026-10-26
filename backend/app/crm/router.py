@@ -37,6 +37,19 @@ from app.crm.schema import (
     LeadQualifyResponse,
     OpportunityListResponse,
     OpportunityDetailResponse,
+    OpportunityStageTransitionRequest,
+    OpportunityUpdateRequest,
+    OpportunityPipelineSummaryResponse,
+    WorkstreamItem,
+    OpportunityWorkstreamsResponse,
+    RequirementRouteRequest,
+    RequirementRouteResponse,
+    MilestoneCreate,
+    MilestoneUpdate,
+    MilestoneStatusTransitionRequest,
+    MilestoneItem,
+    MilestoneListResponse,
+    MilestoneDetailResponse,
     CommunicationCreate,
     CommunicationListResponse,
     DashboardMetricsResponse
@@ -645,25 +658,45 @@ def list_crm_assignees(
 def list_opportunities(
     search: Optional[str] = Query(None, description="Search by name, code, or account"),
     accountId: Optional[str] = Query(None, description="Filter by account ID"),
-    status: Optional[str] = Query(None, description="Filter by opportunity status"),
+    status: Optional[str] = Query(None, description="Filter by opportunity status (Open, Won, Lost, ALL)"),
+    stage: Optional[str] = Query(None, description="Filter by stage (Qualify, Develop, Propose, Close, ALL)"),
+    businessArea: Optional[str] = Query(None, description="Filter by business area"),
+    assignedToUserId: Optional[str] = Query(None, description="Filter by assigned user ID"),
+    view: Optional[str] = Query(None, description="Preset view: all, open, my, won, lost"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
     current_user: CurrentUser = Depends(require_permission("crm.lead.view")),
     db: Session = Depends(get_db)
 ):
     """
-    List Opportunities resulting from Lead qualification.
+    List Opportunities with advanced filters, pagination, and total count.
     """
     service = CrmService(db)
-    opps = service.list_opportunities(
+    opps, total_count = service.list_opportunities(
         actor=current_user,
         search=search,
         account_id=accountId,
         status=status,
+        stage=stage,
+        business_area=businessArea,
+        assigned_to_user_id=assignedToUserId,
+        view=view,
         limit=limit,
         offset=offset
     )
-    return {"success": True, "count": len(opps), "opportunities": opps}
+    return {"success": True, "count": len(opps), "totalCount": total_count, "opportunities": opps}
+
+
+@router.get("/opportunities/pipeline-summary", response_model=OpportunityPipelineSummaryResponse)
+def get_pipeline_summary(
+    current_user: CurrentUser = Depends(require_permission("crm.lead.view")),
+    db: Session = Depends(get_db)
+):
+    """
+    Get authoritative metrics for the Opportunity Pipeline Kanban workspace.
+    """
+    service = CrmService(db)
+    return service.get_pipeline_summary(actor=current_user)
 
 
 @router.get("/opportunities/{opportunity_id}", response_model=OpportunityDetailResponse)
@@ -678,4 +711,257 @@ def get_opportunity(
     service = CrmService(db)
     opp = service.get_opportunity(opportunity_id)
     return {"success": True, "opportunity": opp}
+
+
+@router.post("/opportunities/{opportunity_id}/stage", response_model=OpportunityDetailResponse)
+def transition_opportunity_stage(
+    opportunity_id: str,
+    payload: OpportunityStageTransitionRequest,
+    request: Request,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.edit")),
+    db: Session = Depends(get_db)
+):
+    """
+    Transition Opportunity stage (Qualify -> Develop -> Propose -> Close) or mark Won/Lost.
+    Enforces mandatory lossReason when marking an opportunity as Lost.
+    """
+    service = CrmService(db)
+    opp = service.transition_opportunity_stage(
+        actor=current_user,
+        opp_id=opportunity_id,
+        payload=payload,
+        request=request
+    )
+    return {"success": True, "opportunity": opp}
+
+
+@router.put("/opportunities/{opportunity_id}", response_model=OpportunityDetailResponse)
+def update_opportunity(
+    opportunity_id: str,
+    payload: OpportunityUpdateRequest,
+    request: Request,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.edit")),
+    db: Session = Depends(get_db)
+):
+    """
+    Update core editable fields of an Opportunity (name, estimatedValue, expectedCloseDate, etc.).
+    """
+    service = CrmService(db)
+    opp = service.update_opportunity(
+        actor=current_user,
+        opp_id=opportunity_id,
+        payload=payload,
+        request=request
+    )
+    return {"success": True, "opportunity": opp}
+
+
+# =========================================================================
+# 8. REQUIREMENT ROUTING ENDPOINTS
+# =========================================================================
+
+@router.get("/opportunities/{opportunity_id}/workstreams", response_model=OpportunityWorkstreamsResponse)
+def get_opportunity_workstreams(
+    opportunity_id: str,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.view")),
+    db: Session = Depends(get_db)
+):
+    """
+    List all downstream workstreams (Consulting, Sample Testing, Product) linked to an Opportunity.
+    """
+    service = CrmService(db)
+    workstreams = service.get_opportunity_workstreams(opp_id=opportunity_id)
+    return {"success": True, "opportunityId": opportunity_id, "workstreams": workstreams}
+
+
+@router.post("/opportunities/{opportunity_id}/route-requirements", response_model=RequirementRouteResponse)
+def route_opportunity_requirements(
+    opportunity_id: str,
+    payload: RequirementRouteRequest,
+    request: Request,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.edit")),
+    db: Session = Depends(get_db)
+):
+    """
+    Route Opportunity requirement types to downstream workstreams idempotently.
+    Consulting -> Consulting Engagement (Draft)
+    Sample Testing -> Sample Submission (Received)
+    Product -> Product Transaction (Recommendation)
+    """
+    service = CrmService(db)
+    routed, message = service.route_opportunity_requirements(
+        actor=current_user,
+        opp_id=opportunity_id,
+        payload=payload,
+        request=request
+    )
+    return {
+        "success": True,
+        "message": message,
+        "opportunityId": opportunity_id,
+        "routedWorkstreams": routed
+    }
+
+
+@router.put("/opportunities/{opportunity_id}/requirements", response_model=OpportunityDetailResponse)
+def update_opportunity_requirements(
+    opportunity_id: str,
+    payload: RequirementRouteRequest,
+    request: Request,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.edit")),
+    db: Session = Depends(get_db)
+):
+    """
+    Update the requirement types for an Opportunity.
+    """
+    service = CrmService(db)
+    update_payload = OpportunityUpdateRequest(requirementTypes=payload.requirementTypes)
+    opp = service.update_opportunity(
+        actor=current_user,
+        opp_id=opportunity_id,
+        payload=update_payload,
+        request=request
+    )
+    return {"success": True, "opportunity": opp}
+
+
+# =========================================================================
+# 9. MILESTONE INTEGRATION ENDPOINTS
+# =========================================================================
+
+@router.get("/opportunities/{opportunity_id}/milestones", response_model=MilestoneListResponse)
+def list_opportunity_milestones(
+    opportunity_id: str,
+    status: Optional[str] = Query(None, description="Filter by status (Pending, In Progress, Completed, Cancelled)"),
+    assignedToUserId: Optional[str] = Query(None, description="Filter by assigned user ID"),
+    current_user: CurrentUser = Depends(require_permission("crm.lead.view")),
+    db: Session = Depends(get_db)
+):
+    """
+    List milestones associated with a specific Opportunity.
+    """
+    service = CrmService(db)
+    milestones = service.list_milestones(
+        actor=current_user,
+        opportunity_id=opportunity_id,
+        status=status,
+        assigned_to_user_id=assignedToUserId
+    )
+    return {"success": True, "count": len(milestones), "milestones": milestones}
+
+
+@router.post("/opportunities/{opportunity_id}/milestones", response_model=MilestoneDetailResponse, status_code=status.HTTP_201_CREATED)
+def create_milestone(
+    opportunity_id: str,
+    payload: MilestoneCreate,
+    request: Request,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.edit")),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new milestone associated with an Opportunity.
+    """
+    service = CrmService(db)
+    milestone = service.create_milestone(
+        actor=current_user,
+        opp_id=opportunity_id,
+        payload=payload,
+        request=request
+    )
+    return {"success": True, "milestone": milestone}
+
+
+@router.get("/milestones/upcoming", response_model=MilestoneListResponse)
+def get_upcoming_milestones(
+    days: int = Query(14, ge=1, le=90, description="Horizon in days to look ahead"),
+    assignedToUserId: Optional[str] = Query(None, description="Filter by assigned user ID"),
+    current_user: CurrentUser = Depends(require_permission("crm.lead.view")),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all active milestones due within the next N days (Asia/Kolkata timezone aware).
+    """
+    service = CrmService(db)
+    milestones = service.get_upcoming_milestones(
+        actor=current_user,
+        days=days,
+        assigned_to_user_id=assignedToUserId
+    )
+    return {"success": True, "count": len(milestones), "milestones": milestones}
+
+
+@router.get("/milestones/{milestone_id}", response_model=MilestoneDetailResponse)
+def get_milestone(
+    milestone_id: str,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.view")),
+    db: Session = Depends(get_db)
+):
+    """
+    Get a single milestone by ID or code.
+    """
+    service = CrmService(db)
+    milestone = service.get_milestone(milestone_id)
+    return {"success": True, "milestone": milestone}
+
+
+@router.put("/milestones/{milestone_id}", response_model=MilestoneDetailResponse)
+def update_milestone(
+    milestone_id: str,
+    payload: MilestoneUpdate,
+    request: Request,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.edit")),
+    db: Session = Depends(get_db)
+):
+    """
+    Update details of an existing milestone.
+    """
+    service = CrmService(db)
+    milestone = service.update_milestone(
+        actor=current_user,
+        milestone_id=milestone_id,
+        payload=payload,
+        request=request
+    )
+    return {"success": True, "milestone": milestone}
+
+
+@router.post("/milestones/{milestone_id}/status", response_model=MilestoneDetailResponse)
+def transition_milestone_status(
+    milestone_id: str,
+    payload: MilestoneStatusTransitionRequest,
+    request: Request,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.edit")),
+    db: Session = Depends(get_db)
+):
+    """
+    Transition milestone status (Pending -> In Progress -> Completed / Cancelled).
+    Sets completed_at automatically when transitioning to Completed.
+    """
+    service = CrmService(db)
+    milestone = service.transition_milestone_status(
+        actor=current_user,
+        milestone_id=milestone_id,
+        payload=payload,
+        request=request
+    )
+    return {"success": True, "milestone": milestone}
+
+
+@router.delete("/milestones/{milestone_id}")
+def delete_milestone(
+    milestone_id: str,
+    request: Request,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.edit")),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a milestone.
+    """
+    service = CrmService(db)
+    service.delete_milestone(
+        actor=current_user,
+        milestone_id=milestone_id,
+        request=request
+    )
+    return {"success": True, "message": "Milestone deleted successfully."}
 

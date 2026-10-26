@@ -48,6 +48,20 @@ def setup_test_database():
             if chg_cols and not any(c[1] == 'agreed_unit_rate' for c in chg_cols):
                 conn.exec_driver_sql("DROP TABLE IF EXISTS crm_testing_charges")
                 conn.commit()
+
+            opp_cols = conn.exec_driver_sql("PRAGMA table_info(crm_opportunities)").fetchall()
+            if opp_cols and not any(c[1] == 'stage' for c in opp_cols):
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_milestones")
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_product_transactions")
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_sample_submissions")
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_consulting_engagements")
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_opportunities")
+                conn.commit()
+
+            acc_cols = conn.exec_driver_sql("PRAGMA table_info(accounts)").fetchall()
+            if acc_cols and not any(c[1] == 'site_name' for c in acc_cols):
+                conn.exec_driver_sql("ALTER TABLE accounts ADD COLUMN site_name VARCHAR(255)")
+                conn.commit()
         except Exception:
             pass
     init_db()

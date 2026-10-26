@@ -127,6 +127,7 @@ class CrmRoleListResponse(BaseModel):
 
 class AccountCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
+    siteName: Optional[str] = Field(None, max_length=255)
     industry: Optional[str] = Field(None, max_length=100)
     website: Optional[str] = Field(None, max_length=255)
     phone: Optional[str] = Field(None, max_length=50)
@@ -161,6 +162,7 @@ class AccountCreate(BaseModel):
 
 class AccountUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=255)
+    siteName: Optional[str] = Field(None, max_length=255)
     industry: Optional[str] = Field(None, max_length=100)
     website: Optional[str] = Field(None, max_length=255)
     phone: Optional[str] = Field(None, max_length=50)
@@ -200,6 +202,7 @@ class AccountItem(BaseModel):
     id: str
     accountId: str
     name: str
+    siteName: Optional[str] = None
     industry: Optional[str] = None
     website: Optional[str] = None
     phone: Optional[str] = None
@@ -235,6 +238,7 @@ class AccountMatchItem(BaseModel):
     id: str
     accountId: str
     name: str
+    siteName: Optional[str] = None
     industry: Optional[str] = None
     website: Optional[str] = None
     phone: Optional[str] = None
@@ -984,6 +988,11 @@ class OpportunityItem(BaseModel):
     originatingLeadId: Optional[str] = None
     originatingLeadNumber: Optional[str] = None
     status: str = "Open"
+    stage: str = "Qualify"
+    lossReason: Optional[str] = None
+    businessArea: Optional[str] = "Biogas"
+    expectedCloseDate: Optional[str] = None
+    actualCloseDate: Optional[str] = None
     currency: str = "INR"
     estimatedValue: Optional[float] = None
     description: Optional[str] = None
@@ -995,17 +1004,164 @@ class OpportunityItem(BaseModel):
     createdByName: Optional[str] = None
     createdAt: Optional[str] = None
     updatedAt: Optional[str] = None
+    milestoneCount: int = 0
+    workstreamCount: int = 0
 
 
 class OpportunityListResponse(BaseModel):
     success: bool = True
     count: int
+    totalCount: Optional[int] = None
     opportunities: List[OpportunityItem]
 
 
 class OpportunityDetailResponse(BaseModel):
     success: bool = True
     opportunity: OpportunityItem
+
+
+class OpportunityStageTransitionRequest(BaseModel):
+    newStage: str = Field(..., description="Target stage: Qualify, Develop, Propose, Close")
+    status: Optional[str] = Field(None, description="Optional target status: Open, Won, or Lost")
+    lossReason: Optional[str] = Field(None, description="Required when status is Lost")
+    actualCloseDate: Optional[py_date] = None
+    remarks: Optional[str] = None
+
+    @field_validator("actualCloseDate", mode="before")
+    @classmethod
+    def validate_actual_close_date(cls, v: Any) -> Optional[py_date]:
+        return parse_date_only_value(v)
+
+
+class OpportunityUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    estimatedValue: Optional[float] = None
+    expectedCloseDate: Optional[py_date] = None
+    businessArea: Optional[str] = None
+    requirementTypes: Optional[List[str]] = None
+    description: Optional[str] = None
+    assignedToUserId: Optional[str] = None
+    contactId: Optional[str] = None
+
+    @field_validator("expectedCloseDate", mode="before")
+    @classmethod
+    def validate_expected_close_date(cls, v: Any) -> Optional[py_date]:
+        return parse_date_only_value(v)
+
+
+class PipelineStageMetrics(BaseModel):
+    stage: str
+    count: int
+    totalValue: float
+
+
+class OpportunityPipelineSummaryResponse(BaseModel):
+    success: bool = True
+    totalCount: int
+    totalOpenValue: float
+    byStage: List[PipelineStageMetrics]
+    byStatus: Dict[str, int]
+
+
+# Workstream & Routing Schemas
+class WorkstreamItem(BaseModel):
+    type: str  # "consulting", "sample_testing", "product"
+    id: str
+    recordNumber: str
+    title: str
+    status: str
+    details: Dict[str, Any]
+    createdAt: Optional[str] = None
+
+
+class OpportunityWorkstreamsResponse(BaseModel):
+    success: bool = True
+    opportunityId: str
+    workstreams: List[WorkstreamItem]
+
+
+class RequirementRouteRequest(BaseModel):
+    requirementTypes: Optional[List[str]] = None
+    notes: Optional[str] = None
+
+
+class RequirementRouteResponse(BaseModel):
+    success: bool = True
+    message: str
+    opportunityId: str
+    routedWorkstreams: List[WorkstreamItem]
+
+
+# Milestone Schemas
+class MilestoneCreate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = None
+    workstreamType: Optional[str] = None
+    workstreamId: Optional[str] = None
+    plannedStartDate: Optional[py_date] = None
+    dueDate: Optional[py_date] = None
+    assignedToUserId: Optional[str] = None
+
+    @field_validator("plannedStartDate", "dueDate", mode="before")
+    @classmethod
+    def validate_milestone_dates(cls, v: Any) -> Optional[py_date]:
+        return parse_date_only_value(v)
+
+
+class MilestoneUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    workstreamType: Optional[str] = None
+    workstreamId: Optional[str] = None
+    plannedStartDate: Optional[py_date] = None
+    dueDate: Optional[py_date] = None
+    assignedToUserId: Optional[str] = None
+    completionNotes: Optional[str] = None
+
+    @field_validator("plannedStartDate", "dueDate", mode="before")
+    @classmethod
+    def validate_milestone_update_dates(cls, v: Any) -> Optional[py_date]:
+        return parse_date_only_value(v)
+
+
+class MilestoneStatusTransitionRequest(BaseModel):
+    status: str = Field(..., description="Pending, In Progress, Completed, Cancelled")
+    completionNotes: Optional[str] = None
+    completedAt: Optional[datetime] = None
+
+
+class MilestoneItem(BaseModel):
+    id: str
+    milestoneId: str
+    opportunityId: str
+    opportunityName: Optional[str] = None
+    workstreamType: Optional[str] = None
+    workstreamId: Optional[str] = None
+    title: str
+    description: Optional[str] = None
+    plannedStartDate: Optional[str] = None
+    dueDate: Optional[str] = None
+    status: str
+    completedAt: Optional[str] = None
+    completionNotes: Optional[str] = None
+    assignedToUserId: Optional[str] = None
+    assignedToName: Optional[str] = None
+    createdById: Optional[str] = None
+    createdByName: Optional[str] = None
+    createdAt: Optional[str] = None
+    updatedAt: Optional[str] = None
+    isOverdue: bool = False
+
+
+class MilestoneListResponse(BaseModel):
+    success: bool = True
+    count: int
+    milestones: List[MilestoneItem]
+
+
+class MilestoneDetailResponse(BaseModel):
+    success: bool = True
+    milestone: MilestoneItem
 
 
 class LeadQualificationMatchesResponse(BaseModel):
@@ -1022,6 +1178,7 @@ class LeadQualifyAccountChoice(BaseModel):
     action: str = Field(..., description="'reuse' or 'create'")
     accountId: Optional[str] = None
     name: Optional[str] = None
+    siteName: Optional[str] = None
     website: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None

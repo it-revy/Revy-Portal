@@ -68,17 +68,18 @@ export default function CrmLeadCreatePage() {
     firstName: '',
     lastName: '',
     jobTitle: '',
-    businessPhone: '',
     mobilePhone: '',
     contactEmail: '',
 
     // Section 2 - Company
     companyName: '',
+    siteName: '',
     websiteLink: '',
     location: '',
+    businessPhone: '',
+    companyEmail: '',
     communicationChannel: 'Email',
     connectedDate: new Date().toISOString().slice(0, 10),
-    companyEmail: '',
 
     // Section 3 - Additional Lead Information
     leadSource: 'Website',
@@ -131,16 +132,17 @@ export default function CrmLeadCreatePage() {
             firstName: l.firstName || (l.contact ? l.contact.name.split(' ')[0] : '') || '',
             lastName: l.lastName || (l.contact ? l.contact.name.split(' ').slice(1).join(' ') : '') || '',
             jobTitle: l.jobTitle || l.contact?.designation || '',
-            businessPhone: l.businessPhone || '',
             mobilePhone: l.mobilePhone || l.contact?.mobileNumber || '',
             contactEmail: l.contactEmail || l.contact?.email || '',
 
             companyName: l.companyName || l.account?.name || '',
+            siteName: l.siteName || l.account?.siteName || '',
             websiteLink: l.websiteLink || l.account?.website || '',
             location: l.location || l.account?.address || '',
+            businessPhone: l.businessPhone || l.account?.phone || '',
+            companyEmail: l.companyEmail || l.account?.email || '',
             communicationChannel: l.communicationChannel || 'Email',
             connectedDate: l.connectedDate ? l.connectedDate.slice(0, 10) : new Date().toISOString().slice(0, 10),
-            companyEmail: l.companyEmail || l.account?.email || '',
 
             leadSource: l.leadSource || 'Website',
             rating: l.rating || 'Warm',
@@ -294,15 +296,14 @@ export default function CrmLeadCreatePage() {
       firstName: formData.firstName.trim() || undefined,
       lastName: formData.lastName.trim() || undefined,
       jobTitle: formData.jobTitle.trim() || undefined,
-      businessPhone: formData.businessPhone.trim() || undefined,
       mobilePhone: formData.mobilePhone.trim() || undefined,
       contactEmail: formData.contactEmail.trim() || undefined,
 
       companyName: formData.companyName.trim() || undefined,
+      siteName: formData.siteName.trim() || undefined,
       websiteLink: formData.websiteLink.trim() || undefined,
       location: formData.location.trim() || undefined,
-      communicationChannel: formData.communicationChannel,
-      connectedDate: formData.connectedDate || undefined,
+      businessPhone: formData.businessPhone.trim() || undefined,
       companyEmail: formData.companyEmail.trim() || undefined,
 
       leadSource: formData.leadSource,
@@ -676,6 +677,7 @@ export default function CrmLeadCreatePage() {
               </div>
 
               {/* Job Title */}
+              {/* Job Title */}
               <div>
                 <label className="form-label">Job Title / Designation</label>
                 <input
@@ -684,39 +686,6 @@ export default function CrmLeadCreatePage() {
                   value={formData.jobTitle}
                   onChange={handleChange}
                   placeholder="e.g. Technical Director"
-                  className="form-input"
-                  style={{ width: '100%' }}
-                />
-              </div>
-
-              {/* Contact Email */}
-              <div>
-                <label className="form-label">Contact Email</label>
-                <input
-                  type="email"
-                  name="contactEmail"
-                  value={formData.contactEmail}
-                  onChange={handleChange}
-                  placeholder="rajesh.sharma@example.com"
-                  className={`form-input ${fieldErrors.contactEmail ? 'input-error' : ''}`}
-                  style={{ width: '100%' }}
-                />
-                {fieldErrors.contactEmail && (
-                  <span style={{ fontSize: '0.75rem', color: 'var(--danger)', marginTop: '0.25rem', display: 'block' }}>
-                    {fieldErrors.contactEmail}
-                  </span>
-                )}
-              </div>
-
-              {/* Business Phone */}
-              <div>
-                <label className="form-label">Business Phone</label>
-                <input
-                  type="tel"
-                  name="businessPhone"
-                  value={formData.businessPhone}
-                  onChange={handleChange}
-                  placeholder="e.g. +91 22 2345 6789"
                   className="form-input"
                   style={{ width: '100%' }}
                 />
@@ -734,6 +703,25 @@ export default function CrmLeadCreatePage() {
                   className="form-input"
                   style={{ width: '100%' }}
                 />
+              </div>
+
+              {/* Email */}
+              <div>
+                <label className="form-label">Email</label>
+                <input
+                  type="email"
+                  name="contactEmail"
+                  value={formData.contactEmail}
+                  onChange={handleChange}
+                  placeholder="rajesh.sharma@example.com"
+                  className={`form-input ${fieldErrors.contactEmail ? 'input-error' : ''}`}
+                  style={{ width: '100%' }}
+                />
+                {fieldErrors.contactEmail && (
+                  <span style={{ fontSize: '0.75rem', color: 'var(--danger)', marginTop: '0.25rem', display: 'block' }}>
+                    {fieldErrors.contactEmail}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -792,6 +780,23 @@ export default function CrmLeadCreatePage() {
                 )}
               </div>
 
+              {/* Client Site Name */}
+              <div>
+                <label className="form-label">Client Site Name</label>
+                <input
+                  type="text"
+                  name="siteName"
+                  value={formData.siteName}
+                  onChange={handleChange}
+                  placeholder="e.g. Pune Plant / Unit 2"
+                  className="form-input"
+                  style={{ width: '100%' }}
+                />
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'block' }}>
+                  Specific facility, plant, or branch site name
+                </span>
+              </div>
+
               {/* Website */}
               <div>
                 <label className="form-label">Website</label>
@@ -818,6 +823,39 @@ export default function CrmLeadCreatePage() {
                   className="form-input"
                   style={{ width: '100%' }}
                 />
+              </div>
+
+              {/* Business Phone */}
+              <div>
+                <label className="form-label">Business Phone</label>
+                <input
+                  type="tel"
+                  name="businessPhone"
+                  value={formData.businessPhone}
+                  onChange={handleChange}
+                  placeholder="e.g. +91 22 2345 6789"
+                  className="form-input"
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              {/* Company Email */}
+              <div>
+                <label className="form-label">Company Email</label>
+                <input
+                  type="email"
+                  name="companyEmail"
+                  value={formData.companyEmail}
+                  onChange={handleChange}
+                  placeholder="e.g. info@greentech-bio.com"
+                  className={`form-input ${fieldErrors.companyEmail ? 'input-error' : ''}`}
+                  style={{ width: '100%' }}
+                />
+                {fieldErrors.companyEmail && (
+                  <span style={{ fontSize: '0.75rem', color: 'var(--danger)', marginTop: '0.25rem', display: 'block' }}>
+                    {fieldErrors.companyEmail}
+                  </span>
+                )}
               </div>
 
               {/* Initial Communication Channel */}
@@ -850,25 +888,6 @@ export default function CrmLeadCreatePage() {
                   className="form-input"
                   style={{ width: '100%' }}
                 />
-              </div>
-
-              {/* Company Email */}
-              <div>
-                <label className="form-label">Company Email</label>
-                <input
-                  type="email"
-                  name="companyEmail"
-                  value={formData.companyEmail}
-                  onChange={handleChange}
-                  placeholder="e.g. info@greentech-bio.com"
-                  className={`form-input ${fieldErrors.companyEmail ? 'input-error' : ''}`}
-                  style={{ width: '100%' }}
-                />
-                {fieldErrors.companyEmail && (
-                  <span style={{ fontSize: '0.75rem', color: 'var(--danger)', marginTop: '0.25rem', display: 'block' }}>
-                    {fieldErrors.companyEmail}
-                  </span>
-                )}
               </div>
             </div>
           </div>

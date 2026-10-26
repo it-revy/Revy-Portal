@@ -41,8 +41,10 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
   const [accountAction, setAccountAction] = useState('create'); // 'create' or 'reuse'
   const [selectedAccountId, setSelectedAccountId] = useState('');
   const [selectedAccountObj, setSelectedAccountObj] = useState(null);
+  const [reuseAccountSiteChoice, setReuseAccountSiteChoice] = useState('lead'); // 'existing' or 'lead'
   const [newAccountData, setNewAccountData] = useState({
     name: '',
+    siteName: '',
     website: '',
     email: '',
     phone: '',
@@ -91,6 +93,7 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
     setCurrentStep(1);
     setQualificationResult(null);
     setSubmitError(null);
+    setReuseAccountSiteChoice('lead');
 
     // Derived lead contact name
     let leadPersonName = '';
@@ -102,22 +105,23 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
       leadPersonName = lead.contactName;
     }
 
-    // Default company details
+    // Default company details (Business Phone and Company Email belong to Account)
     const compName = lead.companyName || lead.account?.name || (lead.leadName ? `${lead.leadName} Company` : '');
     setNewAccountData({
       name: compName,
+      siteName: lead.siteName || lead.account?.siteName || '',
       website: lead.websiteLink || lead.account?.website || '',
       email: lead.companyEmail || lead.account?.email || '',
-      phone: lead.businessPhone || lead.mobilePhone || lead.account?.phone || '',
+      phone: lead.businessPhone || lead.account?.phone || '',
       address: lead.location || lead.account?.address || '',
       industry: lead.industry || lead.account?.industry || ''
     });
 
-    // Default contact details
+    // Default contact details (Mobile Phone and Contact Email belong to Contact)
     setNewContactData({
       name: leadPersonName || (lead.leadName ? `${lead.leadName} Contact` : 'Primary Contact'),
       email: lead.contactEmail || lead.contact?.email || '',
-      mobileNumber: lead.mobilePhone || lead.businessPhone || lead.contact?.mobileNumber || '',
+      mobileNumber: lead.mobilePhone || lead.contact?.mobileNumber || '',
       designation: lead.jobTitle || lead.contact?.designation || ''
     });
 
@@ -294,11 +298,16 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
     setSubmitting(true);
     setSubmitError(null);
 
+    const resolvedSite = accountAction === 'create'
+      ? (newAccountData.siteName?.trim() || undefined)
+      : (reuseAccountSiteChoice === 'lead' ? (lead.siteName?.trim() || undefined) : (selectedAccountObj?.siteName?.trim() || undefined));
+
     const payload = {
       account: {
         action: accountAction,
         accountId: accountAction === 'reuse' ? selectedAccountId : undefined,
         name: accountAction === 'create' ? newAccountData.name.trim() : undefined,
+        siteName: resolvedSite,
         website: newAccountData.website.trim() || undefined,
         email: newAccountData.email.trim() || undefined,
         phone: newAccountData.phone.trim() || undefined,
@@ -946,10 +955,56 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
                       )}
 
                       {selectedAccountObj && (
-                        <div style={{ padding: '0.75rem', background: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', marginTop: '0.5rem' }}>
+                        <div style={{ padding: '0.85rem', background: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', marginTop: '0.5rem' }}>
                           <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent-primary)', textTransform: 'uppercase' }}>Selected Account for Reuse:</span>
                           <div style={{ fontWeight: 600, fontSize: '0.95rem', marginTop: '0.2rem' }}>{selectedAccountObj.name} ({selectedAccountObj.accountId})</div>
-                          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{selectedAccountObj.website || selectedAccountObj.email || selectedAccountObj.address}</div>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.2rem' }}>
+                            {selectedAccountObj.website || selectedAccountObj.email || selectedAccountObj.phone || selectedAccountObj.address}
+                          </div>
+
+                          {/* Client Site Name Alignment / Choice */}
+                          <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border-color)' }}>
+                            <div style={{ fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.35rem', color: 'var(--text-primary)' }}>
+                              Client Site Name Resolution:
+                            </div>
+                            {selectedAccountObj.siteName && lead.siteName && selectedAccountObj.siteName.toLowerCase() !== lead.siteName.toLowerCase() ? (
+                              <div style={{ background: '#fffbeb', border: '1px solid #fde68a', padding: '0.65rem 0.85rem', borderRadius: '4px', fontSize: '0.8rem' }}>
+                                <div style={{ marginBottom: '0.45rem', color: '#92400e', lineHeight: 1.4 }}>
+                                  Existing Account site: <strong>{selectedAccountObj.siteName}</strong><br />
+                                  Lead client site: <strong>{lead.siteName}</strong>
+                                </div>
+                                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer', fontWeight: 500 }}>
+                                    <input
+                                      type="radio"
+                                      name="reuseAccountSiteChoice"
+                                      checked={reuseAccountSiteChoice === 'existing'}
+                                      onChange={() => setReuseAccountSiteChoice('existing')}
+                                    />
+                                    <span>Keep existing site ({selectedAccountObj.siteName})</span>
+                                  </label>
+                                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer', fontWeight: 500 }}>
+                                    <input
+                                      type="radio"
+                                      name="reuseAccountSiteChoice"
+                                      checked={reuseAccountSiteChoice === 'lead'}
+                                      onChange={() => setReuseAccountSiteChoice('lead')}
+                                    />
+                                    <span>Update to Lead's site ({lead.siteName})</span>
+                                  </label>
+                                </div>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                Site Name: <strong>{lead.siteName || selectedAccountObj.siteName || '(None specified)'}</strong>
+                                {lead.siteName && !selectedAccountObj.siteName && (
+                                  <span style={{ color: '#047857', marginLeft: '0.5rem', fontWeight: 500 }}>
+                                    (Will assign Lead's Client Site Name "{lead.siteName}" to this Account)
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -964,6 +1019,20 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
                           className="form-input"
                           style={{ width: '100%' }}
                         />
+                      </div>
+                      <div>
+                        <label className="form-label">Client Site Name</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Pune Plant / Unit 2"
+                          value={newAccountData.siteName}
+                          onChange={(e) => setNewAccountData({ ...newAccountData, siteName: e.target.value })}
+                          className="form-input"
+                          style={{ width: '100%' }}
+                        />
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'block' }}>
+                          Prefilled from Lead Client Site Name
+                        </span>
                       </div>
                       <div>
                         <label className="form-label">Website</label>
@@ -986,9 +1055,10 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
                         />
                       </div>
                       <div>
-                        <label className="form-label">Phone</label>
+                        <label className="form-label">Business Phone</label>
                         <input
                           type="text"
+                          placeholder="Company / office phone"
                           value={newAccountData.phone}
                           onChange={(e) => setNewAccountData({ ...newAccountData, phone: e.target.value })}
                           className="form-input"
@@ -1349,8 +1419,11 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
                           {accountAction === 'reuse' ? 'Reuse Existing Account' : 'Create New Account'}
                         </span>
                       </div>
-                      <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-                        <strong>Name:</strong> {accountAction === 'reuse' ? (selectedAccountObj?.name || selectedAccountId) : newAccountData.name}
+                      <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.35rem' }}>
+                        <div><strong>Name:</strong> {accountAction === 'reuse' ? (selectedAccountObj?.name || selectedAccountId) : newAccountData.name}</div>
+                        <div><strong>Client Site Name:</strong> {(accountAction === 'create' ? (newAccountData.siteName || lead.siteName) : (reuseAccountSiteChoice === 'lead' ? (lead.siteName || selectedAccountObj?.siteName) : (selectedAccountObj?.siteName || lead.siteName))) || '—'}</div>
+                        <div><strong>Business Phone:</strong> {accountAction === 'reuse' ? (selectedAccountObj?.phone || lead.businessPhone || '—') : (newAccountData.phone || '—')}</div>
+                        <div><strong>Company Email:</strong> {accountAction === 'reuse' ? (selectedAccountObj?.email || lead.companyEmail || '—') : (newAccountData.email || '—')}</div>
                       </div>
                     </div>
 
@@ -1369,8 +1442,11 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
                           {contactAction === 'reuse' ? 'Reuse Existing Contact' : 'Create New Contact'}
                         </span>
                       </div>
-                      <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-                        <strong>Name:</strong> {contactAction === 'reuse' ? (selectedContactObj?.name || selectedContactId) : newContactData.name}
+                      <div style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '0.25rem', marginTop: '0.35rem' }}>
+                        <div><strong>Name:</strong> {contactAction === 'reuse' ? (selectedContactObj?.name || selectedContactId) : newContactData.name}</div>
+                        <div><strong>Mobile Phone:</strong> {contactAction === 'reuse' ? (selectedContactObj?.mobileNumber || '—') : (newContactData.mobileNumber || '—')}</div>
+                        <div><strong>Email:</strong> {contactAction === 'reuse' ? (selectedContactObj?.email || '—') : (newContactData.email || '—')}</div>
+                        <div><strong>Designation:</strong> {contactAction === 'reuse' ? (selectedContactObj?.designation || '—') : (newContactData.designation || '—')}</div>
                       </div>
                     </div>
 

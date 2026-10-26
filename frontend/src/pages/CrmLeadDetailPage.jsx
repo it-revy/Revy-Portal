@@ -853,8 +853,9 @@ export default function CrmLeadDetailPage() {
               id: lead.accountId,
               accountId: lead.account?.accountId || lead.accountId,
               name: lead.accountName || lead.account?.name || 'Associated Account',
+              siteName: lead.account?.siteName || lead.siteName,
               industry: lead.account?.industry || lead.industry,
-              phone: lead.account?.phone,
+              phone: lead.account?.phone || lead.businessPhone,
               email: lead.account?.email || lead.companyEmail,
               website: lead.account?.website || lead.websiteLink,
               address: lead.account?.address || lead.location
@@ -862,6 +863,7 @@ export default function CrmLeadDetailPage() {
               id: null,
               accountId: null,
               name: lead.companyName,
+              siteName: lead.siteName,
               industry: lead.industry,
               phone: lead.businessPhone,
               email: lead.companyEmail,
@@ -913,6 +915,19 @@ export default function CrmLeadDetailPage() {
                       paddingTop: '0.75rem',
                       marginTop: '0.25rem'
                     }}>
+                      {/* Client Site Name */}
+                      {accountData.siteName && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '72px 1fr', gap: '0.5rem', alignItems: 'baseline', fontSize: '0.85rem' }}>
+                          <span style={{ color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center', gap: '0.35rem', fontWeight: 500 }}>
+                            <Building size={13} color="var(--text-muted)" style={{ flexShrink: 0 }} />
+                            Site Name:
+                          </span>
+                          <span style={{ color: '#0369a1', fontWeight: 600, wordBreak: 'break-word' }}>
+                            {accountData.siteName}
+                          </span>
+                        </div>
+                      )}
+
                       {/* Industry */}
                       {accountData.industry && (
                         <div style={{ display: 'grid', gridTemplateColumns: '72px 1fr', gap: '0.5rem', alignItems: 'baseline', fontSize: '0.85rem' }}>
@@ -1031,7 +1046,6 @@ export default function CrmLeadDetailPage() {
               designation: lead.contact?.designation || lead.jobTitle,
               email: lead.contactEmail || lead.contact?.email,
               mobileNumber: lead.contactPhone || lead.contact?.mobileNumber || lead.mobilePhone,
-              businessPhone: lead.businessPhone,
               accountName: lead.contact?.accountName || lead.accountName
             } : (leadPersonName || lead.contactEmail || lead.mobilePhone ? {
               id: null,
@@ -1040,7 +1054,6 @@ export default function CrmLeadDetailPage() {
               designation: lead.jobTitle,
               email: lead.contactEmail,
               mobileNumber: lead.mobilePhone,
-              businessPhone: lead.businessPhone,
               accountName: lead.companyName,
               isLeadOwned: true
             } : null));

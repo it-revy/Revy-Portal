@@ -36,7 +36,8 @@ from app.crm.model import (
     SampleSubmission,
     SampleTestRequest,
     TestingChargeRecord,
-    ProductTransaction
+    ProductTransaction,
+    Milestone
 )
 
 __all__ = [
@@ -79,5 +80,6 @@ __all__ = [
     "SampleSubmission",
     "SampleTestRequest",
     "TestingChargeRecord",
-    "ProductTransaction"
+    "ProductTransaction",
+    "Milestone"
 ]

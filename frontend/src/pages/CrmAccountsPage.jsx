@@ -48,6 +48,7 @@ export default function CrmAccountsPage() {
   // Form states for Create/Edit Modal
   const [modalFormData, setModalFormData] = useState({
     name: '',
+    siteName: '',
     industry: '',
     website: '',
     phone: '',
@@ -144,6 +145,7 @@ export default function CrmAccountsPage() {
     setAccountToEdit(null);
     setModalFormData({
       name: '',
+      siteName: '',
       industry: '',
       website: '',
       phone: '',
@@ -163,6 +165,7 @@ export default function CrmAccountsPage() {
     setAccountToEdit(acc);
     setModalFormData({
       name: acc.name || '',
+      siteName: acc.siteName || '',
       industry: acc.industry || '',
       website: acc.website || '',
       phone: acc.phone || '',
@@ -226,6 +229,7 @@ export default function CrmAccountsPage() {
 
     const payload = {
       name: modalFormData.name.trim(),
+      siteName: modalFormData.siteName.trim() || undefined,
       industry: modalFormData.industry.trim() || undefined,
       website: modalFormData.website.trim() || undefined,
       phone: modalFormData.phone.trim() || undefined,
@@ -410,6 +414,11 @@ export default function CrmAccountsPage() {
                         {acc.name}
                       </span>
                     </button>
+                    {acc.siteName && (
+                      <div style={{ fontSize: '0.78rem', color: '#0284c7', fontWeight: 500 }}>
+                        Site: {acc.siteName}
+                      </div>
+                    )}
                     {acc.address && (
                       <div className="crm-cell-secondary" style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
                         <MapPin size={11} /> {acc.address}
@@ -609,6 +618,18 @@ export default function CrmAccountsPage() {
                   {fieldErrors.name && (
                     <div style={{ color: '#dc2626', fontSize: '0.75rem', marginTop: '0.25rem' }}>{fieldErrors.name}</div>
                   )}
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 600 }}>Client Site Name</label>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. Pune Plant / Unit 2"
+                    value={modalFormData.siteName}
+                    onChange={e => setModalFormData({ ...modalFormData, siteName: e.target.value })}
+                  />
+                  <small style={{ color: 'var(--text-muted)' }}>Facility, site, or branch name if this account represents a specific site</small>
                 </div>
 
                 {/* Potential Duplicate / Matching Accounts Panel */}
@@ -864,6 +885,13 @@ export default function CrmAccountsPage() {
             <div className="modal-body" style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               {/* Account Meta Grid */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', background: '#f8fafc', padding: '1rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                <div>
+                  <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Client Site Name</div>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0369a1', marginTop: '2px' }}>
+                    {selectedAccountDetail.siteName || '—'}
+                  </div>
+                </div>
+
                 <div>
                   <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Website</div>
                   <div style={{ fontSize: '0.875rem', fontWeight: 500, marginTop: '2px' }}>

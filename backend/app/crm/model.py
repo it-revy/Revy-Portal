@@ -17,6 +17,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 from app.core.database import Base
+from app.users.model import User
 
 
 def generate_uuid():
@@ -34,6 +35,7 @@ class Account(Base):
     phone = Column(String(50), nullable=True)
     email = Column(String(255), nullable=True)
     address = Column(Text, nullable=True)
+    site_name = Column(String(255), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
@@ -111,6 +113,12 @@ class Opportunity(Base):
     originating_lead_id = Column(String(36), ForeignKey("leads.id", ondelete="SET NULL"), nullable=True, index=True)
 
     status = Column(String(50), nullable=False, default="Open", index=True)  # Open, Won, Lost
+    stage = Column(String(50), nullable=False, default="Qualify", index=True)  # Qualify, Develop, Propose, Close
+    loss_reason = Column(Text, nullable=True)
+    business_area = Column(String(50), nullable=True, default="Biogas")  # Biogas, Wastewater Treatment (WWT), R&D Lab, Other
+    expected_close_date = Column(Date, nullable=True, index=True)
+    actual_close_date = Column(DateTime, nullable=True)
+
     currency = Column(String(10), nullable=False, default="INR")
     estimated_value = Column(Numeric(12, 2), nullable=True)
     description = Column(Text, nullable=True)
@@ -130,6 +138,11 @@ class Opportunity(Base):
     assigned_to = relationship("User", foreign_keys=[assigned_to_user_id])
     created_by = relationship("User", foreign_keys=[created_by_id])
     updated_by = relationship("User", foreign_keys=[updated_by_id])
+
+    consulting_engagements = relationship("ConsultingEngagement", back_populates="opportunity")
+    sample_submissions = relationship("SampleSubmission", back_populates="opportunity")
+    product_transactions = relationship("ProductTransaction", back_populates="opportunity")
+    milestones = relationship("Milestone", back_populates="opportunity", cascade="all, delete-orphan")
 
 
 class Lead(Base):
@@ -281,6 +294,7 @@ class ConsultingEngagement(Base):
     account_id = Column(String(36), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False, index=True)
     contact_id = Column(String(36), ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True, index=True)
     lead_id = Column(String(36), ForeignKey("leads.id", ondelete="SET NULL"), nullable=True, index=True)
+    opportunity_id = Column(String(36), ForeignKey("crm_opportunities.id", ondelete="SET NULL"), nullable=True, index=True)
 
     title = Column(String(255), nullable=False, default="Consulting Engagement")
     scope_description = Column(Text, nullable=True)
@@ -298,6 +312,7 @@ class ConsultingEngagement(Base):
     account = relationship("Account", backref="consulting_engagements")
     contact = relationship("Contact", backref="consulting_engagements")
     lead = relationship("Lead", backref="consulting_engagements")
+    opportunity = relationship("Opportunity", back_populates="consulting_engagements")
 
     @property
     def duration_description(self):
@@ -324,6 +339,7 @@ class SampleSubmission(Base):
     lead_id = Column(String(36), ForeignKey("leads.id", ondelete="SET NULL"), nullable=True, index=True)
     account_id = Column(String(36), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False, index=True)
     contact_id = Column(String(36), ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True, index=True)
+    opportunity_id = Column(String(36), ForeignKey("crm_opportunities.id", ondelete="SET NULL"), nullable=True, index=True)
 
     sample_description = Column(String(255), nullable=False)
     sample_type = Column(String(100), nullable=True)
@@ -350,6 +366,7 @@ class SampleSubmission(Base):
     account = relationship("Account", backref="sample_submissions")
     contact = relationship("Contact", backref="sample_submissions")
     lead = relationship("Lead", backref="sample_submissions")
+    opportunity = relationship("Opportunity", back_populates="sample_submissions")
     replacement_of = relationship("SampleSubmission", remote_side=[id], backref="replacements")
     tests = relationship("SampleTestRequest", back_populates="sample", cascade="all, delete-orphan")
     charges = relationship("TestingChargeRecord", back_populates="sample", cascade="all, delete-orphan")
@@ -446,6 +463,7 @@ class ProductTransaction(Base):
     lead_id = Column(String(36), ForeignKey("leads.id", ondelete="SET NULL"), nullable=True, index=True)
     account_id = Column(String(36), ForeignKey("accounts.id", ondelete="CASCADE"), nullable=False, index=True)
     contact_id = Column(String(36), ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True, index=True)
+    opportunity_id = Column(String(36), ForeignKey("crm_opportunities.id", ondelete="SET NULL"), nullable=True, index=True)
 
     product_name = Column(String(255), nullable=False)
     sku_code = Column(String(100), nullable=True)
@@ -465,6 +483,7 @@ class ProductTransaction(Base):
     lead = relationship("Lead", backref="product_transactions")
     account = relationship("Account", backref="product_transactions")
     contact = relationship("Contact", backref="product_transactions")
+    opportunity = relationship("Opportunity", back_populates="product_transactions")
 
     @property
     def product_reference(self):
@@ -473,3 +492,32 @@ class ProductTransaction(Base):
     @product_reference.setter
     def product_reference(self, value):
         self.product_name = value
+
+
+class Milestone(Base):
+    __tablename__ = "crm_milestones"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    milestone_id = Column(String(50), unique=True, index=True, nullable=False)  # MLS-00001
+    opportunity_id = Column(String(36), ForeignKey("crm_opportunities.id", ondelete="CASCADE"), nullable=False, index=True)
+    workstream_type = Column(String(50), nullable=True)  # "consulting", "sample_testing", "product", "general"
+    workstream_id = Column(String(36), nullable=True)
+    title = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    planned_start_date = Column(Date, nullable=True)
+    due_date = Column(Date, nullable=True, index=True)
+    status = Column(String(50), nullable=False, default="Pending", index=True)  # Pending, In Progress, Completed, Cancelled
+    completed_at = Column(DateTime, nullable=True)
+    completion_notes = Column(Text, nullable=True)
+
+    assigned_to_user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    opportunity = relationship("Opportunity", back_populates="milestones")
+    assigned_to = relationship("User", foreign_keys=[assigned_to_user_id])
+    created_by = relationship("User", foreign_keys=[created_by_id])
+    updated_by = relationship("User", foreign_keys=[updated_by_id])

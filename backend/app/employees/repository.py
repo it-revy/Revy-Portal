@@ -10,8 +10,12 @@ class EmployeeRepository:
         self.db = db
 
     def generate_next_employee_id(self) -> str:
-        count = self.db.query(Employee).count()
-        return f"EMP-{(count + 1):04d}"
+        idx = self.db.query(Employee).count() + 1
+        candidate = f"EMP-{idx:04d}"
+        while self.db.query(Employee).filter(Employee.employee_id == candidate).first():
+            idx += 1
+            candidate = f"EMP-{idx:04d}"
+        return candidate
 
     def get_by_employee_id(self, employee_id: str, include_deleted: bool = False) -> Optional[Employee]:
         q = self.db.query(Employee).filter(Employee.employee_id == employee_id.upper())
