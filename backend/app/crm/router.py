@@ -247,7 +247,7 @@ def remove_crm_membership(
 @router.get("/accounts", response_model=AccountListResponse)
 def list_accounts(
     search: Optional[str] = Query(None, description="Search accounts by name, ID, industry, etc."),
-    limit: int = Query(50, ge=1, le=100),
+    limit: int = Query(50, ge=1, le=250),
     offset: int = Query(0, ge=0),
     current_user: CurrentUser = Depends(require_permission("crm.account.view")),
     db: Session = Depends(get_db)
