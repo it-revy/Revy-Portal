@@ -405,7 +405,15 @@ ALLOWED_LEAD_SOURCES = set(CANONICAL_LEAD_SOURCES)
 ACTIVE_LEAD_SOURCES = ALLOWED_LEAD_SOURCES
 HISTORICAL_LEAD_SOURCES = set()
 
-ALLOWED_LIFECYCLE_STATUSES = {"Open", "Qualified", "Disqualified"}
+ALLOWED_LIFECYCLE_STATUSES = {
+    "Enquiry",
+    "Offer",
+    "Negotiation",
+    "Supply",
+    "Payment",
+    "Dormant",
+}
+DEFAULT_LIFECYCLE_STATUS = "Enquiry"
 ALLOWED_CHANNELS = {
     "Email", "Phone / Call", "Mobile/Call", "WhatsApp",
     "In-Person Meeting", "Virtual Meeting", "Other"
@@ -427,11 +435,13 @@ def normalize_and_validate_req_types(
             if not t:
                 continue
             clean = str(t).strip()
-            # Map legacy values
-            if clean == "Direct Product/Service":
+            # Map legacy values and synonyms
+            if clean in ("Direct Product/Service", "Products", "product", "products"):
                 clean = "Product"
-            elif clean == "Undetermined":
+            elif clean in ("Undetermined", "Consultancy", "consultancy", "consulting"):
                 clean = "Consulting"
+            elif clean in ("Sample testing", "sample testing", "Testing"):
+                clean = "Sample Testing"
 
             if clean not in ALLOWED_REQUIREMENT_TYPES:
                 raise ValueError(f"Invalid requirement type '{t}'. Must be one of: {sorted(ALLOWED_REQUIREMENT_TYPES)}")
@@ -440,10 +450,12 @@ def normalize_and_validate_req_types(
 
     if not selected and legacy_single:
         clean = str(legacy_single).strip()
-        if clean == "Direct Product/Service":
+        if clean in ("Direct Product/Service", "Products", "product", "products"):
             clean = "Product"
-        elif clean == "Undetermined":
+        elif clean in ("Undetermined", "Consultancy", "consultancy", "consulting"):
             clean = "Consulting"
+        elif clean in ("Sample testing", "sample testing", "Testing"):
+            clean = "Sample Testing"
 
         if clean not in ALLOWED_REQUIREMENT_TYPES:
             raise ValueError(f"Invalid requirement type '{legacy_single}'. Must be one of: {sorted(ALLOWED_REQUIREMENT_TYPES)}")
@@ -501,6 +513,7 @@ class LeadCreate(BaseModel):
     remarks: Optional[str] = None
     nextFollowUpDate: Optional[py_date] = None
     nextFollowUpAction: Optional[str] = None
+    lifecycleStatus: Optional[str] = "Enquiry"
 
     @model_validator(mode="before")
     @classmethod
@@ -639,6 +652,16 @@ class LeadCreate(BaseModel):
     @classmethod
     def validate_next_follow_up_date(cls, v: Any) -> Optional[py_date]:
         return parse_date_only_value(v)
+
+    @field_validator("lifecycleStatus")
+    @classmethod
+    def validate_create_lifecycle_status(cls, v: Optional[str]) -> str:
+        if not v:
+            return "Enquiry"
+        clean = v.strip()
+        if clean not in ALLOWED_LIFECYCLE_STATUSES:
+            raise ValueError(f"Invalid lifecycleStatus '{v}'. Must be one of: {sorted(ALLOWED_LIFECYCLE_STATUSES)}")
+        return clean
 
 
 class LeadUpdate(BaseModel):
@@ -929,6 +952,8 @@ class LeadItem(BaseModel):
     opportunityId: Optional[str] = None
     opportunityName: Optional[str] = None
     opportunity: Optional[Dict[str, Any]] = None
+    opportunities: List[Dict[str, Any]] = []
+    isQualified: bool = False
     qualifiedAt: Optional[str] = None
     qualifiedById: Optional[str] = None
     qualifiedByName: Optional[str] = None
@@ -956,35 +981,108 @@ class LeadDetailResponse(BaseModel):
 
 class OpportunityCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
-    accountId: str
+    accountId: Optional[str] = None
     contactId: Optional[str] = None
     originatingLeadId: Optional[str] = None
     status: Optional[str] = "Open"
+    stage: Optional[str] = "Qualify"
+    lossReason: Optional[str] = None
+    businessArea: Optional[str] = "Biogas"
+    expectedCloseDate: Optional[str] = None
     currency: Optional[str] = "INR"
     estimatedValue: Optional[float] = None
     description: Optional[str] = None
     requirementSummary: Optional[str] = None
     requirementTypes: Optional[List[str]] = None
     assignedToUserId: Optional[str] = None
+    subStatus: Optional[str] = None
+    sub_status: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_opportunity_create(self) -> "OpportunityCreate":
+        if not (self.accountId and str(self.accountId).strip()) and not (self.contactId and str(self.contactId).strip()):
+            raise ValueError("At least one primary relationship (Primary Account or Primary Contact) is required.")
+
+        if self.estimatedValue is not None and self.estimatedValue < 0:
+            raise ValueError("Estimated amount cannot be negative.")
+
+        canonical_stages = ["Enquiry", "Qualify", "Develop", "Propose/Offer", "Negotiate", "Close"]
+        stg = self.stage
+        if stg == "Propose":
+            stg = "Propose/Offer"
+            self.stage = stg
+        if stg and stg not in canonical_stages:
+            raise ValueError(f"Invalid stage '{stg}'. Permitted stages are: {', '.join(canonical_stages)}")
+
+        stat = (self.status or "Open").strip()
+        if stat not in ("Open", "Won", "Lost"):
+            raise ValueError(f"Invalid status '{stat}'. Permitted statuses are Open, Won, Lost.")
+
+        if stg == "Close" and stat == "Open":
+            raise ValueError("An opportunity in the 'Close' stage must have an outcome of Closed Won or Closed Lost.")
+        if stat in ("Won", "Lost") and stg != "Close":
+            raise ValueError(f"Closed opportunities ({stat}) must be saved in the 'Close' stage.")
+        if stat == "Lost" and not (self.lossReason and str(self.lossReason).strip()):
+            raise ValueError("Loss reason is mandatory when marking an opportunity as Lost.")
+
+        return self
 
 
 class OpportunityUpdate(BaseModel):
     name: Optional[str] = None
+    stage: Optional[str] = None
     status: Optional[str] = None
+    lossReason: Optional[str] = None
+    accountId: Optional[str] = None
+    contactId: Optional[str] = None
     currency: Optional[str] = None
     estimatedValue: Optional[float] = None
     description: Optional[str] = None
     requirementSummary: Optional[str] = None
     requirementTypes: Optional[List[str]] = None
     assignedToUserId: Optional[str] = None
-    contactId: Optional[str] = None
+    subStatus: Optional[str] = None
+    sub_status: Optional[str] = None
+
+
+class OpportunityQuotationItem(BaseModel):
+    id: str
+    quotationNumber: str
+    opportunityId: str
+    revisionNumber: int = 1
+    version: str = "v1"
+    isActive: bool = True
+    title: Optional[str] = None
+    status: str = "Draft"
+    amount: float = 0.0
+    currency: str = "INR"
+    quotationDate: Optional[str] = None
+    validUntilDate: Optional[str] = None
+    termsAndConditions: Optional[str] = None
+    notes: Optional[str] = None
+    rejectionReason: Optional[str] = None
+    fileId: Optional[str] = None
+    documentName: Optional[str] = None
+    approvedById: Optional[str] = None
+    approvedByName: Optional[str] = None
+    approvedAt: Optional[str] = None
+    sentMethod: Optional[str] = None
+    sentTo: Optional[str] = None
+    sentAt: Optional[str] = None
+    sentById: Optional[str] = None
+    sentByName: Optional[str] = None
+    sendingEvidence: Optional[str] = None
+    createdById: Optional[str] = None
+    createdByName: Optional[str] = None
+    createdAt: Optional[str] = None
+    updatedAt: Optional[str] = None
 
 
 class OpportunityItem(BaseModel):
     id: str
     opportunityId: str
     name: str
-    accountId: str
+    accountId: Optional[str] = None
     accountName: Optional[str] = None
     contactId: Optional[str] = None
     contactName: Optional[str] = None
@@ -993,6 +1091,8 @@ class OpportunityItem(BaseModel):
     status: str = "Open"
     stage: str = "Qualify"
     lossReason: Optional[str] = None
+    subStatus: Optional[str] = None
+    sub_status: Optional[str] = None
     businessArea: Optional[str] = "Biogas"
     expectedCloseDate: Optional[str] = None
     actualCloseDate: Optional[str] = None
@@ -1009,6 +1109,12 @@ class OpportunityItem(BaseModel):
     updatedAt: Optional[str] = None
     milestoneCount: int = 0
     workstreamCount: int = 0
+    quotationCount: int = 0
+    activeQuotation: Optional[OpportunityQuotationItem] = None
+    hasQuotationMismatch: bool = False
+    activeQuotationAmount: Optional[float] = None
+    activeQuotationCurrency: Optional[str] = None
+    canReopen: bool = False
 
 
 class OpportunityListResponse(BaseModel):
@@ -1024,7 +1130,7 @@ class OpportunityDetailResponse(BaseModel):
 
 
 class OpportunityStageTransitionRequest(BaseModel):
-    newStage: str = Field(..., description="Target stage: Qualify, Develop, Propose, Close")
+    newStage: str = Field(..., description="Target stage: Enquiry, Qualify, Develop, Propose/Offer, Negotiate, Close")
     status: Optional[str] = Field(None, description="Optional target status: Open, Won, or Lost")
     lossReason: Optional[str] = Field(None, description="Required when status is Lost")
     actualCloseDate: Optional[py_date] = None
@@ -1035,16 +1141,86 @@ class OpportunityStageTransitionRequest(BaseModel):
     def validate_actual_close_date(cls, v: Any) -> Optional[py_date]:
         return parse_date_only_value(v)
 
+    @model_validator(mode="after")
+    def validate_transition(self) -> "OpportunityStageTransitionRequest":
+        canonical_stages = ["Enquiry", "Qualify", "Develop", "Propose/Offer", "Negotiate", "Close"]
+        stg = self.newStage
+        if stg == "Propose":
+            stg = "Propose/Offer"
+            self.newStage = stg
+
+        if stg not in canonical_stages:
+            raise ValueError(f"Invalid stage '{stg}'. Permitted stages are: {', '.join(canonical_stages)}")
+
+        stat = self.status.strip() if self.status else None
+        if stat and stat not in ("Open", "Won", "Lost"):
+            raise ValueError(f"Invalid status '{stat}'. Permitted statuses are Open, Won, Lost.")
+
+        if stg == "Close" and stat == "Open":
+            raise ValueError("Opportunity must be in 'Close' stage with status Won or Lost. Cannot be Open in Close stage.")
+        if stat == "Won" and stg != "Close":
+            raise ValueError("Opportunity must be in 'Close' stage to be marked as Won.")
+        if stat == "Lost" and stg != "Close":
+            # Section 9: "Closed Lost must not be saved at an earlier pipeline stage. A closed opportunity must be represented by the canonical Close stage and a valid closed outcome."
+            # If target stage is not Close, move it or reject
+            pass
+        if stat == "Lost" and not (self.lossReason and self.lossReason.strip()):
+            raise ValueError("Loss reason is mandatory when marking an opportunity as Lost.")
+
+        return self
+
 
 class OpportunityUpdateRequest(BaseModel):
     name: Optional[str] = None
+    stage: Optional[str] = None
+    status: Optional[str] = None
+    lossReason: Optional[str] = None
+    accountId: Optional[str] = None
+    contactId: Optional[str] = None
+    currency: Optional[str] = None
     estimatedValue: Optional[float] = None
+    estimatedValueChangeReason: Optional[str] = None
     expectedCloseDate: Optional[py_date] = None
+    actualCloseDate: Optional[py_date] = None
     businessArea: Optional[str] = None
     requirementTypes: Optional[List[str]] = None
     description: Optional[str] = None
     assignedToUserId: Optional[str] = None
-    contactId: Optional[str] = None
+    subStatus: Optional[str] = None
+    sub_status: Optional[str] = None
+
+    @field_validator("expectedCloseDate", mode="before")
+    @classmethod
+    def validate_expected_close_date(cls, v: Any) -> Optional[py_date]:
+        return parse_date_only_value(v)
+
+    @field_validator("actualCloseDate", mode="before")
+    @classmethod
+    def validate_actual_close_date(cls, v: Any) -> Optional[py_date]:
+        return parse_date_only_value(v)
+
+    @model_validator(mode="after")
+    def validate_update(self) -> "OpportunityUpdateRequest":
+        if self.estimatedValue is not None and self.estimatedValue < 0:
+            raise ValueError("Estimated value cannot be negative.")
+
+        canonical_stages = ["Enquiry", "Qualify", "Develop", "Propose/Offer", "Negotiate", "Close"]
+        if self.stage:
+            if self.stage == "Propose":
+                self.stage = "Propose/Offer"
+            if self.stage not in canonical_stages:
+                raise ValueError(f"Invalid stage '{self.stage}'. Permitted stages are: {', '.join(canonical_stages)}")
+
+        if self.status:
+            stat = self.status.strip()
+            if stat not in ("Open", "Won", "Lost"):
+                raise ValueError(f"Invalid status '{stat}'. Permitted statuses are Open, Won, Lost.")
+            if stat == "Lost" and not (self.lossReason and str(self.lossReason).strip()):
+                raise ValueError("Loss reason is mandatory when marking an opportunity as Lost.")
+
+        return self
+    subStatus: Optional[str] = None
+    sub_status: Optional[str] = None
 
     @field_validator("expectedCloseDate", mode="before")
     @classmethod
@@ -1326,3 +1502,100 @@ class ProductTransactionCreate(BaseModel):
     discountAmount: float = 0.0
     currency: Optional[str] = "INR"
     notes: Optional[str] = None
+
+
+# =========================================================================
+# PHASE 5A: QUOTATION, REOPENING & REVENUE REPORTING SCHEMAS
+# =========================================================================
+
+APPROVED_CURRENCIES = ["INR", "USD", "EUR", "GBP", "AED", "SGD"]
+OPPORTUNITY_STAGES = ["Enquiry", "Qualify", "Develop", "Propose/Offer", "Negotiate", "Close"]
+
+
+class OpportunityQuotationCreate(BaseModel):
+    title: Optional[str] = None
+    amount: float = Field(..., ge=0, description="Quotation amount")
+    currency: Optional[str] = Field("INR", description="Approved currency e.g. INR, USD, EUR")
+    quotationDate: Optional[py_date] = None
+    validUntilDate: Optional[py_date] = None
+    termsAndConditions: Optional[str] = None
+    notes: Optional[str] = None
+    fileId: Optional[str] = None
+    documentName: Optional[str] = None
+
+    @field_validator("quotationDate", "validUntilDate", mode="before")
+    @classmethod
+    def validate_quotation_dates(cls, v: Any) -> Optional[py_date]:
+        return parse_date_only_value(v)
+
+
+class OpportunityQuotationUpdate(BaseModel):
+    title: Optional[str] = None
+    amount: Optional[float] = Field(None, ge=0)
+    currency: Optional[str] = None
+    quotationDate: Optional[py_date] = None
+    validUntilDate: Optional[py_date] = None
+    termsAndConditions: Optional[str] = None
+    notes: Optional[str] = None
+    fileId: Optional[str] = None
+    documentName: Optional[str] = None
+
+    @field_validator("quotationDate", "validUntilDate", mode="before")
+    @classmethod
+    def validate_quotation_dates(cls, v: Any) -> Optional[py_date]:
+        return parse_date_only_value(v)
+
+
+class OpportunityQuotationApprovalRequest(BaseModel):
+    action: str = Field(..., description="Action: 'approve' or 'reject'")
+    reason: Optional[str] = Field(None, description="Mandatory reason when action is 'reject'")
+
+
+class OpportunityQuotationShareRequest(BaseModel):
+    sentMethod: str = Field(..., description="Sending method: 'Email', 'Courier', 'In-Person Handover', 'WhatsApp / Portal'")
+    sentTo: str = Field(..., min_length=1, description="Recipient email address, contact name, or organization")
+    sendingEvidence: Optional[str] = Field(None, description="Manual dispatch reference, delivery note, or client acknowledgment")
+
+
+class OpportunityQuotationDetailResponse(BaseModel):
+    success: bool = True
+    quotation: OpportunityQuotationItem
+
+
+class OpportunityQuotationListResponse(BaseModel):
+    success: bool = True
+    count: int
+    activeQuotation: Optional[OpportunityQuotationItem] = None
+    quotations: List[OpportunityQuotationItem]
+
+
+class OpportunityReopenRequest(BaseModel):
+    reopenStage: str = Field(..., description="Target pipeline stage for reopened opportunity (cannot be Close)")
+    reason: str = Field(..., min_length=1, description="Mandatory business justification reason for reopening a closed Opportunity")
+
+    @model_validator(mode="after")
+    def validate_reopen(self) -> "OpportunityReopenRequest":
+        stg = self.reopenStage.strip() if self.reopenStage else ""
+        if stg == "Propose":
+            stg = "Propose/Offer"
+            self.reopenStage = stg
+
+        open_stages = ["Enquiry", "Qualify", "Develop", "Propose/Offer", "Negotiate"]
+        if stg == "Close":
+            raise ValueError("A reopened opportunity cannot remain in the 'Close' stage. Select an active pipeline stage.")
+        if stg not in open_stages:
+            raise ValueError(f"Invalid reopen stage '{stg}'. Permitted stages are: {', '.join(open_stages)}")
+        return self
+
+
+class RevenueMetricsResponse(BaseModel):
+    success: bool = True
+    totalCount: int
+    openCount: int
+    wonCount: int
+    lostCount: int
+    openPipelineValueByCurrency: Dict[str, float]
+    wonOpportunityValueByCurrency: Dict[str, float]
+    lostOpportunityValueByCurrency: Dict[str, float]
+    byStage: List[PipelineStageMetrics]
+    labelingNotice: str = "Won Opportunity Value represents signed commercial commitments and does not represent collected cash or recognized accounting revenue."

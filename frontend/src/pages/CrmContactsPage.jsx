@@ -66,7 +66,7 @@ export default function CrmContactsPage() {
   useEffect(() => {
     const loadAccounts = async () => {
       try {
-        const res = await crmService.getAccounts({ limit: 200 });
+        const res = await crmService.getAccounts({ limit: 100 });
         if (res.data?.success) {
           setAccounts(res.data.accounts || []);
         }
@@ -267,37 +267,39 @@ export default function CrmContactsPage() {
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   return (
-    <div className="crm-leads-container">
+    <div className="page-body">
       {/* Page Header */}
       <div className="crm-page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <div style={{
-            width: '42px',
-            height: '42px',
-            borderRadius: '10px',
-            background: 'linear-gradient(135deg, #10b981, #059669)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'white',
-            boxShadow: '0 4px 12px rgba(16, 185, 129, 0.25)'
-          }}>
+        <div className="crm-page-header-title-group">
+          <div className="crm-page-header-icon" style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}>
             <Contact size={22} />
           </div>
           <div>
-            <h1 className="crm-page-title" style={{ margin: 0 }}>Contacts Directory</h1>
-            <p className="crm-page-subtitle" style={{ margin: 0 }}>
+            <h1 className="crm-page-header-title">Contacts Directory</h1>
+            <p className="crm-page-header-subtitle">
               Individual client stakeholders, designations, and associated enterprise accounts
             </p>
           </div>
         </div>
 
-        {canCreate && (
-          <button onClick={openCreateModal} className="crm-btn crm-btn-primary">
-            <Plus size={16} />
-            <span>New Contact</span>
+        <div className="crm-page-header-actions">
+          <button
+            onClick={fetchContacts}
+            className="crm-btn crm-btn-secondary"
+            title="Refresh Contacts"
+            disabled={loading}
+          >
+            <RefreshCw size={15} className={loading ? 'spin' : ''} />
+            <span>Refresh</span>
           </button>
-        )}
+
+          {canCreate && (
+            <button onClick={openCreateModal} className="crm-btn crm-btn-primary">
+              <Plus size={16} />
+              <span>New Contact</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Toolbar & Filters */}
@@ -348,10 +350,10 @@ export default function CrmContactsPage() {
               ))}
             </select>
           </div>
-        </div>
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-          <span>Total: <strong>{totalCount}</strong> Contacts</span>
+          <span style={{ fontSize: '0.85rem', color: 'var(--crm-text-muted)', marginLeft: 'auto' }}>
+            Total: <strong>{totalCount}</strong> Contacts
+          </span>
         </div>
       </div>
 
@@ -374,9 +376,10 @@ export default function CrmContactsPage() {
         </div>
       )}
 
-      {/* Contacts Table */}
-      <div className="crm-table-container">
-        <table className="crm-table">
+      {/* Contacts Table Card */}
+      <div className="crm-table-card">
+        <div className="crm-table-container">
+          <table className="crm-table">
           <thead>
             <tr>
               <th style={{ width: '130px' }}>Contact ID</th>
@@ -519,30 +522,34 @@ export default function CrmContactsPage() {
         </table>
       </div>
 
-      {/* Pagination Footer */}
-      {totalPages > 1 && (
-        <div className="crm-pagination-wrap" style={{ marginTop: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            Page {page} of {totalPages}
-          </span>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+        {/* Standard Pagination Footer inside Table Card */}
+        <div className="crm-pagination-footer">
+          <div>
+            Showing <strong>{contacts.length}</strong> of <strong>{totalCount}</strong> contacts
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page <= 1}
+              disabled={page <= 1 || loading}
               className="crm-btn crm-btn-secondary crm-btn-sm"
+              aria-label="Previous page"
             >
-              <ChevronLeft size={14} /> Previous
+              <ChevronLeft size={16} />
             </button>
+            <span style={{ fontWeight: 600 }}>
+              {page} / {totalPages}
+            </span>
             <button
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages}
+              disabled={page >= totalPages || loading}
               className="crm-btn crm-btn-secondary crm-btn-sm"
+              aria-label="Next page"
             >
-              Next <ChevronRight size={14} />
+              <ChevronRight size={16} />
             </button>
           </div>
         </div>
-      )}
+      </div>
 
       {/* Create / Edit Contact Modal */}
       {isModalOpen && (

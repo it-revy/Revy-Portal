@@ -96,10 +96,10 @@ def test_pipeline_summary_endpoint(setup_phase4_env):
     assert data["totalCount"] >= 1
     assert data["totalOpenValue"] >= 750000.0
     assert "byStage" in data
-    assert len(data["byStage"]) == 4
+    assert len(data["byStage"]) == 6
 
     stages = [item["stage"] for item in data["byStage"]]
-    assert stages == ["Qualify", "Develop", "Propose", "Close"]
+    assert stages == ["Enquiry", "Qualify", "Develop", "Propose/Offer", "Negotiate", "Close"]
 
     assert "byStatus" in data
     assert "Open" in data["byStatus"]
@@ -109,7 +109,7 @@ def test_pipeline_summary_endpoint(setup_phase4_env):
 
 def test_opportunity_stage_progression(setup_phase4_env):
     """
-    Verify stage progression: Qualify -> Develop -> Propose -> Close.
+    Verify stage progression: Qualify -> Develop -> Propose/Offer -> Negotiate -> Close.
     """
     headers = setup_phase4_env["mgr"]
     opp = _create_test_opportunity(headers, "prog")
@@ -124,22 +124,39 @@ def test_opportunity_stage_progression(setup_phase4_env):
     assert res.json()["opportunity"]["stage"] == "Develop"
     assert res.json()["opportunity"]["status"] == "Open"
 
-    # 2. Develop -> Propose
+    # 2. Develop -> Propose/Offer
     res = client.post(f"/api/v1/crm/opportunities/{opp_id}/stage", json={
-        "newStage": "Propose",
+        "newStage": "Propose/Offer",
         "remarks": "Proposal delivered to client"
     }, headers=headers)
     assert res.status_code == 200
-    assert res.json()["opportunity"]["stage"] == "Propose"
+    assert res.json()["opportunity"]["stage"] == "Propose/Offer"
 
-    # 3. Propose -> Close
+    # 3. Propose/Offer -> Negotiate
     res = client.post(f"/api/v1/crm/opportunities/{opp_id}/stage", json={
-        "newStage": "Close",
+        "newStage": "Negotiate",
         "remarks": "Commercial negotiations active"
     }, headers=headers)
     assert res.status_code == 200
-    assert res.json()["opportunity"]["stage"] == "Close"
-    assert res.json()["opportunity"]["status"] == "Open"
+    assert res.json()["opportunity"]["stage"] == "Negotiate"
+
+    # 4. Negotiate -> Close (Attempting Close + Open must be rejected per Section 9)
+    res_open = client.post(f"/api/v1/crm/opportunities/{opp_id}/stage", json={
+        "newStage": "Close",
+        "status": "Open",
+        "remarks": "Contract finalized"
+    }, headers=headers)
+    assert res_open.status_code == 400
+
+    # 4b. Advancing to Close with valid outcome Won succeeds
+    res_won = client.post(f"/api/v1/crm/opportunities/{opp_id}/stage", json={
+        "newStage": "Close",
+        "status": "Won",
+        "remarks": "Contract signed and won"
+    }, headers=headers)
+    assert res_won.status_code == 200
+    assert res_won.json()["opportunity"]["stage"] == "Close"
+    assert res_won.json()["opportunity"]["status"] == "Won"
 
 
 def test_opportunity_won_outcome(setup_phase4_env):

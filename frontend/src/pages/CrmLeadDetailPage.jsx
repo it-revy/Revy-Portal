@@ -28,6 +28,7 @@ import crmService from '../services/crmService';
 import LeadStatusModal from '../modules/crm/components/LeadStatusModal';
 import CommunicationModal from '../modules/crm/components/CommunicationModal';
 import LeadQualifyWizard from '../modules/crm/components/LeadQualifyWizard';
+import OpportunityDetailModal from '../modules/crm/components/OpportunityDetailModal';
 
 export default function CrmLeadDetailPage() {
   const { id } = useParams();
@@ -47,6 +48,21 @@ export default function CrmLeadDetailPage() {
   const [isQualifyWizardOpen, setIsQualifyWizardOpen] = useState(false);
   const [viewContactModal, setViewContactModal] = useState(null);
   const [viewOpportunityModal, setViewOpportunityModal] = useState(null);
+  const [selectedOppIdForDetail, setSelectedOppIdForDetail] = useState(null);
+
+  // Add Opportunity Modal State
+  const [isAddOppModalOpen, setIsAddOppModalOpen] = useState(false);
+  const [newOppFormData, setNewOppFormData] = useState({
+    name: '',
+    estimatedValue: '',
+    stage: 'Qualify',
+    businessArea: 'Biogas',
+    subStatus: '',
+    description: '',
+    expectedCloseDate: ''
+  });
+  const [submittingOpp, setSubmittingOpp] = useState(false);
+  const [addOppError, setAddOppError] = useState(null);
 
   const canEdit = hasPermission('crm.lead.edit');
   const canUpdateStatus = hasPermission('crm.lead.status.update');
@@ -121,11 +137,54 @@ export default function CrmLeadDetailPage() {
   const getStatusBadge = (status) => {
     const s = (status || '').toLowerCase();
     let badgeClass = 'status-badge';
-    if (s === 'open') badgeClass = 'status-badge open';
-    else if (s === 'qualified') badgeClass = 'status-badge present';
-    else if (s === 'disqualified') badgeClass = 'status-badge absent';
+    if (s === 'enquiry' || s === 'open') badgeClass = 'status-badge open';
+    else if (s === 'offer') badgeClass = 'status-badge info';
+    else if (s === 'negotiation' || s === 'qualified') badgeClass = 'status-badge in-progress';
+    else if (s === 'supply') badgeClass = 'status-badge present';
+    else if (s === 'payment') badgeClass = 'status-badge late';
+    else if (s === 'dormant' || s === 'disqualified') badgeClass = 'status-badge absent';
 
     return <span className={badgeClass}>{status}</span>;
+  };
+
+  const handleCreateOpportunity = async (e) => {
+    e.preventDefault();
+    if (!newOppFormData.name.trim()) {
+      setAddOppError('Opportunity name is required.');
+      return;
+    }
+    setSubmittingOpp(true);
+    setAddOppError(null);
+    try {
+      const payload = {
+        name: newOppFormData.name.trim(),
+        estimatedValue: newOppFormData.estimatedValue ? Number(newOppFormData.estimatedValue) : null,
+        stage: newOppFormData.stage || 'Qualify',
+        businessArea: newOppFormData.businessArea || null,
+        subStatus: newOppFormData.subStatus ? newOppFormData.subStatus.trim() : null,
+        description: newOppFormData.description ? newOppFormData.description.trim() : null,
+        expectedCloseDate: newOppFormData.expectedCloseDate || null
+      };
+      const res = await crmService.createLeadOpportunity(lead.id, payload);
+      if (res.data?.success) {
+        setIsAddOppModalOpen(false);
+        setNewOppFormData({
+          name: '',
+          estimatedValue: '',
+          stage: 'Qualify',
+          businessArea: 'Biogas',
+          subStatus: '',
+          description: '',
+          expectedCloseDate: ''
+        });
+        setSuccessNotification('New Commercial Opportunity created and linked successfully.');
+        fetchLeadDetails();
+      }
+    } catch (err) {
+      setAddOppError(err.response?.data?.message || 'Failed to create opportunity.');
+    } finally {
+      setSubmittingOpp(false);
+    }
   };
 
   if (loading) {
@@ -248,7 +307,7 @@ export default function CrmLeadDetailPage() {
 
         {/* Action Buttons */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-          {lead.lifecycleStatus !== 'Qualified' && (canEdit || canUpdateStatus) && (
+          {(!lead.isQualified && !lead.qualifiedAt && lead.lifecycleStatus !== 'Qualified') && (canEdit || canUpdateStatus) && (
             <button
               onClick={() => setIsQualifyWizardOpen(true)}
               className="btn btn-primary"
@@ -267,10 +326,29 @@ export default function CrmLeadDetailPage() {
             </button>
           )}
 
+          {canEdit && (
+            <button
+              onClick={() => setIsAddOppModalOpen(true)}
+              className="btn btn-primary"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                background: 'var(--accent-primary)',
+                borderColor: 'var(--accent-primary)',
+                color: '#ffffff',
+                fontWeight: 600
+              }}
+            >
+              <Plus size={15} />
+              <span>Add Opportunity</span>
+            </button>
+          )}
+
           {canLogComm && (
             <button
               onClick={() => setIsCommModalOpen(true)}
-              className="btn btn-primary"
+              className="btn btn-secondary"
               style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
             >
               <Plus size={15} />
@@ -302,89 +380,185 @@ export default function CrmLeadDetailPage() {
         </div>
       </div>
 
-      {/* Qualified Status Banner */}
-      {lead.lifecycleStatus === 'Qualified' && (
-        <div style={{
+      {/* Commercial Opportunities (1:N) & Qualification Status */}
+      {((lead.opportunities && lead.opportunities.length > 0) || lead.opportunity || lead.isQualified || lead.qualifiedAt || lead.lifecycleStatus === 'Qualified') && (
+        <div className="glass-panel" style={{
           padding: '1.25rem 1.5rem',
-          background: '#ecfdf5',
-          border: '1px solid #a7f3d0',
           borderRadius: 'var(--radius-md)',
           marginBottom: '1.5rem',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: '1rem',
-          boxShadow: 'var(--card-shadow)'
+          border: '1px solid #e2e8f0',
+          background: '#ffffff'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
-            <div style={{
-              width: '40px',
-              height: '40px',
-              borderRadius: '50%',
-              background: '#10b981',
-              color: '#ffffff',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0
-            }}>
-              <CheckCircle2 size={24} />
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: '1rem',
+            flexWrap: 'wrap',
+            gap: '0.75rem'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+              <div style={{
+                width: '38px',
+                height: '38px',
+                borderRadius: '8px',
+                background: 'var(--accent-light)',
+                color: 'var(--accent-primary)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                <Briefcase size={20} />
+              </div>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Commercial Opportunities ({lead.opportunities?.length || (lead.opportunity ? 1 : 0)})
+                </h3>
+                <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  {lead.isQualified || lead.qualifiedAt
+                    ? `Lead qualified on ${lead.qualifiedAt ? new Date(lead.qualifiedAt).toLocaleDateString() : '—'}${lead.qualifiedByName ? ` by ${lead.qualifiedByName}` : ''}.`
+                    : 'Track multiple commercial requirements, offers, and proposals for this lead.'}
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 700, color: '#065f46' }}>
-                Lead Qualified into Opportunity: {lead.opportunityName || lead.opportunity?.name || lead.opportunityId || 'Linked Opportunity'}
-              </h3>
-              <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.85rem', color: '#047857' }}>
-                Qualified on {lead.qualifiedAt ? new Date(lead.qualifiedAt).toLocaleDateString() : '—'}
-                {lead.qualifiedByName ? ` by ${lead.qualifiedByName}` : ''}.
-                Associated Account and Contact records have been linked.
-              </p>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              {lead.account && (
+                <Link
+                  to={`/crm/accounts?search=${encodeURIComponent(lead.account.name)}`}
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                >
+                  <Building size={14} color="#d97706" />
+                  <span>{lead.account.name}</span>
+                </Link>
+              )}
+              {lead.contact && (
+                <Link
+                  to={`/crm/contacts?search=${encodeURIComponent(lead.contact.name)}`}
+                  className="btn btn-secondary"
+                  style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                >
+                  <User size={14} />
+                  <span>{lead.contact.name}</span>
+                </Link>
+              )}
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={() => setIsAddOppModalOpen(true)}
+                  className="btn btn-primary"
+                  style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                >
+                  <Plus size={14} />
+                  <span>Add Opportunity</span>
+                </button>
+              )}
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
-            {(lead.opportunity || lead.opportunityId) && (
-              <button
-                type="button"
-                onClick={() => setViewOpportunityModal(lead.opportunity || { id: lead.opportunityId, name: lead.opportunityName || 'Linked Opportunity' })}
-                className="btn btn-primary"
-                style={{
-                  fontSize: '0.8rem',
-                  padding: '0.35rem 0.75rem',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: '0.35rem',
-                  background: 'var(--accent-primary)',
-                  borderColor: 'var(--accent-primary)',
-                  color: '#ffffff'
-                }}
-              >
-                <Briefcase size={14} />
-                <span>View Opportunity</span>
-              </button>
-            )}
-            {lead.account && (
-              <Link
-                to={`/crm/accounts?search=${encodeURIComponent(lead.account.name)}`}
-                className="btn btn-secondary"
-                style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
-              >
-                <Building size={14} />
-                <span>View Account</span>
-              </Link>
-            )}
-            {lead.contact && (
-              <Link
-                to={`/crm/contacts?search=${encodeURIComponent(lead.contact.name)}`}
-                className="btn btn-secondary"
-                style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
-              >
-                <User size={14} />
-                <span>View Contact</span>
-              </Link>
-            )}
-          </div>
+          {/* Opportunity List Table */}
+          {((lead.opportunities && lead.opportunities.length > 0) || lead.opportunity) ? (
+            <div className="table-responsive">
+              <table className="crm-table" style={{ fontSize: '0.85rem' }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: '120px' }}>Opp ID</th>
+                    <th>Opportunity Name</th>
+                    <th style={{ width: '100px' }}>Stage</th>
+                    <th style={{ width: '140px' }}>Sub-status</th>
+                    <th style={{ width: '120px' }}>Est. Value</th>
+                    <th style={{ width: '90px' }}>Status</th>
+                    <th style={{ width: '90px', textAlign: 'right' }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(lead.opportunities && lead.opportunities.length > 0
+                    ? lead.opportunities
+                    : [lead.opportunity]
+                  ).map((opp) => (
+                    <tr key={opp.id}>
+                      <td style={{ fontWeight: 700, color: 'var(--accent-primary)', whiteSpace: 'nowrap' }}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedOppIdForDetail(opp.id)}
+                          style={{ background: 'none', border: 'none', color: 'var(--accent-primary)', fontWeight: 700, cursor: 'pointer', padding: 0 }}
+                        >
+                          {opp.opportunityId || opp.id}
+                        </button>
+                      </td>
+                      <td style={{ fontWeight: 600 }}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedOppIdForDetail(opp.id)}
+                          style={{ background: 'none', border: 'none', textAlign: 'left', font: 'inherit', fontWeight: 600, cursor: 'pointer', padding: 0, color: 'var(--text-primary)' }}
+                        >
+                          {opp.name}
+                        </button>
+                      </td>
+                      <td>
+                        <span style={{
+                          padding: '2px 7px',
+                          borderRadius: '4px',
+                          fontSize: '0.725rem',
+                          fontWeight: 700,
+                          background: opp.stage === 'Close' ? '#dcfce7' : '#eff6ff',
+                          color: opp.stage === 'Close' ? '#166534' : '#1d4ed8'
+                        }}>
+                          {opp.stage || 'Qualify'}
+                        </span>
+                      </td>
+                      <td>
+                        {opp.subStatus || opp.sub_status ? (
+                          <span style={{ fontSize: '0.75rem', color: '#334155', fontWeight: 500 }} title={opp.subStatus || opp.sub_status}>
+                            {(opp.subStatus || opp.sub_status).length > 20
+                              ? `${(opp.subStatus || opp.sub_status).substring(0, 20)}...`
+                              : (opp.subStatus || opp.sub_status)}
+                          </span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem', fontStyle: 'italic' }}>—</span>
+                        )}
+                      </td>
+                      <td style={{ fontWeight: 600, whiteSpace: 'nowrap' }}>
+                        {opp.estimatedValue !== null && opp.estimatedValue !== undefined ? (
+                          `${opp.currency || 'INR'} ${Number(opp.estimatedValue).toLocaleString()}`
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontWeight: 400 }}>—</span>
+                        )}
+                      </td>
+                      <td>
+                        <span style={{
+                          padding: '2px 7px',
+                          borderRadius: '4px',
+                          fontSize: '0.725rem',
+                          fontWeight: 700,
+                          textTransform: 'uppercase',
+                          background: opp.status === 'Won' ? 'var(--success-bg)' : opp.status === 'Lost' ? 'var(--danger-bg)' : 'var(--accent-light)',
+                          color: opp.status === 'Won' ? 'var(--success)' : opp.status === 'Lost' ? 'var(--danger)' : 'var(--accent-primary)'
+                        }}>
+                          {opp.status || 'Open'}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedOppIdForDetail(opp.id)}
+                          className="crm-btn crm-btn-secondary crm-btn-sm"
+                          style={{ padding: '2px 8px', fontSize: '0.75rem' }}
+                        >
+                          View
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              No commercial opportunities created yet. Click "+ Add Opportunity" to record a commercial requirement.
+            </div>
+          )}
         </div>
       )}
 
@@ -1614,6 +1788,211 @@ export default function CrmLeadDetailPage() {
             fetchLeadDetails();
           }}
         />
+      )}
+
+      {/* Comprehensive Opportunity Detail & Workstream Modal */}
+      {selectedOppIdForDetail && (
+        <OpportunityDetailModal
+          isOpen={Boolean(selectedOppIdForDetail)}
+          opportunityId={selectedOppIdForDetail}
+          onClose={() => setSelectedOppIdForDetail(null)}
+          onOpportunityUpdated={() => fetchLeadDetails()}
+        />
+      )}
+
+      {/* Add Commercial Opportunity Modal (1:N) */}
+      {isAddOppModalOpen && (
+        <div className="modal-backdrop" style={{ zIndex: 1200 }} onClick={() => !submittingOpp && setIsAddOppModalOpen(false)}>
+          <div
+            className="modal-content"
+            style={{
+              maxWidth: '560px',
+              width: '92%',
+              borderRadius: '12px',
+              padding: '1.75rem',
+              background: '#ffffff',
+              boxShadow: 'var(--modal-shadow)'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', borderBottom: '1px solid #f1f5f9', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <div style={{
+                  width: '38px',
+                  height: '38px',
+                  borderRadius: '10px',
+                  background: 'var(--accent-light)',
+                  color: 'var(--accent-primary)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}>
+                  <Briefcase size={20} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: '#0f172a' }}>
+                    Add Commercial Opportunity
+                  </h3>
+                  <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
+                    Link a new requirement or proposal to Lead: <strong>{lead.leadId}</strong>
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                disabled={submittingOpp}
+                onClick={() => setIsAddOppModalOpen(false)}
+                style={{ background: 'none', border: 'none', fontSize: '1.3rem', color: '#94a3b8', cursor: 'pointer', lineHeight: 1 }}
+                title="Close"
+              >
+                ✕
+              </button>
+            </div>
+
+            {addOppError && (
+              <div style={{ padding: '0.75rem 1rem', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', color: '#b91c1c', fontSize: '0.825rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <AlertCircle size={16} />
+                <span>{addOppError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleCreateOpportunity} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                  Opportunity Name <span style={{ color: 'var(--danger)' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Wastewater Biogas Trial 2026, Annual Testing Batch"
+                  className="form-control"
+                  value={newOppFormData.name}
+                  onChange={(e) => setNewOppFormData({ ...newOppFormData, name: e.target.value })}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                    Estimated Value (INR)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    placeholder="e.g. 250000"
+                    className="form-control"
+                    value={newOppFormData.estimatedValue}
+                    onChange={(e) => setNewOppFormData({ ...newOppFormData, estimatedValue: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                    Pipeline Stage
+                  </label>
+                  <select
+                    className="form-control"
+                    value={newOppFormData.stage}
+                    onChange={(e) => setNewOppFormData({ ...newOppFormData, stage: e.target.value })}
+                  >
+                    <option value="Qualify">Qualify</option>
+                    <option value="Develop">Develop</option>
+                    <option value="Propose">Propose</option>
+                    <option value="Close">Close</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                    Business Area
+                  </label>
+                  <select
+                    className="form-control"
+                    value={newOppFormData.businessArea}
+                    onChange={(e) => setNewOppFormData({ ...newOppFormData, businessArea: e.target.value })}
+                  >
+                    <option value="Biogas">Biogas</option>
+                    <option value="Wastewater Treatment (WWT)">Wastewater Treatment (WWT)</option>
+                    <option value="R&D Lab">R&D Lab</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                    Expected Close Date
+                  </label>
+                  <input
+                    type="date"
+                    className="form-control"
+                    value={newOppFormData.expectedCloseDate}
+                    onChange={(e) => setNewOppFormData({ ...newOppFormData, expectedCloseDate: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                  Operational Sub-status (Free Text)
+                </label>
+                <input
+                  type="text"
+                  maxLength={255}
+                  placeholder="e.g. Waiting for revised quotation, Sample collection to be scheduled..."
+                  className="form-control"
+                  value={newOppFormData.subStatus}
+                  onChange={(e) => setNewOppFormData({ ...newOppFormData, subStatus: e.target.value })}
+                />
+                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                  Unrestricted free-text operational progress note.
+                </span>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                  Scope & Requirements Description
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Commercial scope details, deliverables, assumptions..."
+                  className="form-control"
+                  value={newOppFormData.description}
+                  onChange={(e) => setNewOppFormData({ ...newOppFormData, description: e.target.value })}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem', paddingTop: '0.75rem', borderTop: '1px solid #f1f5f9' }}>
+                <button
+                  type="button"
+                  disabled={submittingOpp}
+                  onClick={() => setIsAddOppModalOpen(false)}
+                  className="btn btn-secondary"
+                  style={{ padding: '0.45rem 1.1rem', fontSize: '0.85rem' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submittingOpp}
+                  className="btn btn-primary"
+                  style={{ padding: '0.45rem 1.25rem', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+                >
+                  {submittingOpp ? (
+                    <>
+                      <RefreshCw size={14} className="spin" />
+                      <span>Creating...</span>
+                    </>
+                  ) : (
+                    <span>Create Opportunity</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

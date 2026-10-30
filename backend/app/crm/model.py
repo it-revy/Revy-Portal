@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date as py_date
 from sqlalchemy import (
     Column,
     String,
@@ -11,6 +11,7 @@ from sqlalchemy import (
     Integer,
     Numeric,
     UniqueConstraint,
+    CheckConstraint,
     Index,
     Table,
     text
@@ -104,11 +105,25 @@ lead_additional_contacts = Table(
 
 class Opportunity(Base):
     __tablename__ = "crm_opportunities"
+    __table_args__ = (
+        CheckConstraint(
+            "account_id IS NOT NULL OR contact_id IS NOT NULL",
+            name="ck_crm_opportunities_account_or_contact"
+        ),
+        CheckConstraint(
+            "estimated_value IS NULL OR estimated_value >= 0",
+            name="ck_crm_opportunities_amount_non_negative"
+        ),
+        CheckConstraint(
+            "(status = 'Open' AND stage != 'Close') OR (status IN ('Won', 'Lost') AND stage = 'Close')",
+            name="ck_crm_opportunities_stage_status"
+        ),
+    )
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     opportunity_id = Column(String(50), unique=True, index=True, nullable=False)  # OPP-00001
     name = Column(String(255), nullable=False, index=True)
-    account_id = Column(String(36), ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=False, index=True)
+    account_id = Column(String(36), ForeignKey("accounts.id", ondelete="RESTRICT"), nullable=True, index=True)
     contact_id = Column(String(36), ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True, index=True)
     originating_lead_id = Column(String(36), ForeignKey("leads.id", ondelete="SET NULL"), nullable=True, index=True)
 
@@ -118,6 +133,7 @@ class Opportunity(Base):
     business_area = Column(String(50), nullable=True, default="Biogas")  # Biogas, Wastewater Treatment (WWT), R&D Lab, Other
     expected_close_date = Column(Date, nullable=True, index=True)
     actual_close_date = Column(DateTime, nullable=True)
+    sub_status = Column(String(255), nullable=True)
 
     currency = Column(String(10), nullable=False, default="INR")
     estimated_value = Column(Numeric(12, 2), nullable=True)
@@ -143,6 +159,7 @@ class Opportunity(Base):
     sample_submissions = relationship("SampleSubmission", back_populates="opportunity")
     product_transactions = relationship("ProductTransaction", back_populates="opportunity")
     milestones = relationship("Milestone", back_populates="opportunity", cascade="all, delete-orphan")
+    quotations = relationship("OpportunityQuotation", back_populates="opportunity", cascade="all, delete-orphan", order_by="desc(OpportunityQuotation.created_at)")
 
 
 class Lead(Base):
@@ -193,8 +210,9 @@ class Lead(Base):
     contact_id = Column(String(36), ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True, index=True)  # Primary Contact (Optional)
     assigned_to_user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)  # Lead Owner
 
-    # Lead Lifecycle Status (Open, Qualified, Disqualified)
-    lifecycle_status = Column(String(50), nullable=False, default="Open", index=True)
+    # Lead Lifecycle Status (Enquiry, Offer, Negotiation, Supply, Payment, Dormant)
+    lifecycle_status = Column(String(50), nullable=False, default="Enquiry", index=True)
+    legacy_lifecycle_status = Column(String(50), nullable=True)
     remarks = Column(Text, nullable=True)
 
     # Lead Qualification Links
@@ -519,5 +537,55 @@ class Milestone(Base):
 
     opportunity = relationship("Opportunity", back_populates="milestones")
     assigned_to = relationship("User", foreign_keys=[assigned_to_user_id])
+    created_by = relationship("User", foreign_keys=[created_by_id])
+    updated_by = relationship("User", foreign_keys=[updated_by_id])
+
+
+class OpportunityQuotation(Base):
+    __tablename__ = "crm_opportunity_quotations"
+    __table_args__ = (
+        UniqueConstraint("quotation_number", "revision_number", name="uq_crm_opportunity_quotations_num_rev"),
+    )
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    quotation_number = Column(String(50), index=True, nullable=False)  # QT-00001
+    opportunity_id = Column(String(36), ForeignKey("crm_opportunities.id", ondelete="CASCADE"), nullable=False, index=True)
+    revision_number = Column(Integer, nullable=False, default=1)
+    version = Column(String(10), nullable=False, default="v1")
+    is_active = Column(Boolean, nullable=False, default=True, index=True)
+
+    title = Column(String(255), nullable=True)
+    status = Column(String(50), nullable=False, default="Draft", index=True)
+    # Statuses: Draft, Internal Review, Approved, Shared with Client, Accepted, Superseded, Rejected
+
+    amount = Column(Numeric(12, 2), nullable=False, default=0.0)
+    currency = Column(String(10), nullable=False, default="INR")
+    quotation_date = Column(Date, nullable=False, default=lambda: py_date.today())
+    valid_until_date = Column(Date, nullable=True)
+
+    terms_and_conditions = Column(Text, nullable=True)
+    notes = Column(Text, nullable=True)
+    rejection_reason = Column(Text, nullable=True)
+
+    file_id = Column(String(100), nullable=True, index=True)
+    document_name = Column(String(255), nullable=True)
+
+    approved_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+
+    sent_method = Column(String(50), nullable=True)
+    sent_to = Column(String(255), nullable=True)
+    sent_at = Column(DateTime, nullable=True)
+    sent_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    sending_evidence = Column(Text, nullable=True)
+
+    created_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    opportunity = relationship("Opportunity", back_populates="quotations")
+    approved_by = relationship("User", foreign_keys=[approved_by_id])
+    sent_by = relationship("User", foreign_keys=[sent_by_id])
     created_by = relationship("User", foreign_keys=[created_by_id])
     updated_by = relationship("User", foreign_keys=[updated_by_id])

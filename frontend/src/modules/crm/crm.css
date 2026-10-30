@@ -791,3 +791,59 @@ textarea.form-control,
   gap: 0.75rem;
   flex-shrink: 0;
 }
+
+/* ==========================================================================
+   KANBAN BOARD & RESPONSIVE WORKSPACE CONTAINER
+   ========================================================================== */
+.crm-kanban-board-wrapper {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: 0.75rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.crm-kanban-board-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(270px, 1fr));
+  gap: 1rem;
+  min-height: 520px;
+  align-items: start;
+  width: max-content;
+  min-width: 100%;
+}
+
+.crm-kanban-column {
+  background: var(--crm-surface-subtle);
+  border-radius: 10px;
+  border: 1px solid var(--crm-border);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 280px);
+  overflow: hidden;
+  transition: var(--crm-transition);
+}
+
+.crm-kanban-column.drag-over {
+  background: #f0f9ff;
+  border: 2px dashed var(--crm-primary);
+}
+
+.crm-kanban-card {
+  border-radius: 8px;
+  padding: 0.85rem;
+  box-shadow: var(--card-shadow);
+  cursor: grab;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  user-select: none;
+}
+
+.crm-kanban-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.crm-kanban-card:active {
+  cursor: grabbing;
+}

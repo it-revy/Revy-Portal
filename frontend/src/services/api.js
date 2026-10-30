@@ -24,7 +24,7 @@ const getBaseURL = () => {
 
 const API = axios.create({
   baseURL: getBaseURL(),
-  timeout: 30000
+  timeout: 60000
 });
 
 // Attach JWT bearer token and role headers

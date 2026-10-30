@@ -27,7 +27,7 @@ export default function LeadStatusModal({
   if (!isOpen || !lead) return null;
 
   const currentStatus = lead.lifecycleStatus;
-  const isReopening = newStatus === 'Open' && currentStatus !== 'Open';
+  const isReactivating = newStatus !== 'Dormant' && currentStatus === 'Dormant';
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -51,7 +51,7 @@ export default function LeadStatusModal({
       }
     } catch (err) {
       if (err.response?.status === 409) {
-        setError(err.response.data?.message || 'Cannot reopen: another open lead already exists for this client with this requirement.');
+        setError(err.response.data?.message || 'Cannot transition: duplicate conflict detected for this client.');
       } else {
         setError(err.response?.data?.message || 'Failed to update lead status. Please try again.');
       }
@@ -66,7 +66,7 @@ export default function LeadStatusModal({
         <div className="modal-header">
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <RefreshCw size={20} color="var(--accent-primary)" />
-            <h3 style={{ margin: 0, fontSize: '1.15rem' }}>Change Lead Lifecycle Status</h3>
+            <h3 style={{ margin: 0, fontSize: '1.15rem' }}>Change Lead Business Status</h3>
           </div>
         </div>
 
@@ -108,20 +108,23 @@ export default function LeadStatusModal({
 
             <div className="form-group">
               <label className="form-label" style={{ fontWeight: 600 }}>
-                Select New Status <span style={{ color: 'var(--danger)' }}>*</span>
+                Select Approved Status <span style={{ color: 'var(--danger)' }}>*</span>
               </label>
               <select
                 className="form-control"
                 value={newStatus}
                 onChange={e => setNewStatus(e.target.value)}
               >
-                <option value="Open">Open (Active Investigation / Enquiry)</option>
-                <option value="Qualified">Qualified (Client verified & project confirmed)</option>
-                <option value="Disqualified">Disqualified (Budget mismatch, lost, or irrelevant)</option>
+                <option value="Enquiry">Enquiry (New enquiry / requirement received)</option>
+                <option value="Offer">Offer (Preparing or submitted commercial offer)</option>
+                <option value="Negotiation">Negotiation (Commercial scope, price & terms discussion)</option>
+                <option value="Supply">Supply (Delivery / service execution phase)</option>
+                <option value="Payment">Payment (Payment-related follow-up underway)</option>
+                <option value="Dormant">Dormant (Temporarily inactive / preserved)</option>
               </select>
             </div>
 
-            {isReopening && (
+            {isReactivating && (
               <div style={{
                 padding: '0.75rem',
                 background: '#fffbeb',
@@ -134,7 +137,7 @@ export default function LeadStatusModal({
                 gap: '0.5rem'
               }}>
                 <AlertTriangle size={15} style={{ flexShrink: 0 }} />
-                <span>Reopening this lead will enforce duplicate checks against any existing open leads for this client.</span>
+                <span>Reactivating this lead from Dormant status resumes active sales follow-ups.</span>
               </div>
             )}
 

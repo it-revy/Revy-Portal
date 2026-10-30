@@ -272,37 +272,39 @@ export default function CrmAccountsPage() {
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   return (
-    <div className="crm-leads-container">
+    <div className="page-body">
       {/* Page Header */}
       <div className="crm-page-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <div style={{
-            width: '42px',
-            height: '42px',
-            borderRadius: '10px',
-            background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'white',
-            boxShadow: '0 4px 12px rgba(37, 99, 235, 0.25)'
-          }}>
+        <div className="crm-page-header-title-group">
+          <div className="crm-page-header-icon" style={{ background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)' }}>
             <Building2 size={22} />
           </div>
           <div>
-            <h1 className="crm-page-title" style={{ margin: 0 }}>Accounts Directory</h1>
-            <p className="crm-page-subtitle" style={{ margin: 0 }}>
+            <h1 className="crm-page-header-title">Accounts Directory</h1>
+            <p className="crm-page-header-subtitle">
               Enterprise clients, industries, contacts, and linked enquiry leads
             </p>
           </div>
         </div>
 
-        {canCreate && (
-          <button onClick={openCreateModal} className="crm-btn crm-btn-primary">
-            <Plus size={16} />
-            <span>New Account</span>
+        <div className="crm-page-header-actions">
+          <button
+            onClick={fetchAccounts}
+            className="crm-btn crm-btn-secondary"
+            title="Refresh Accounts"
+            disabled={loading}
+          >
+            <RefreshCw size={15} className={loading ? 'spin' : ''} />
+            <span>Refresh</span>
           </button>
-        )}
+
+          {canCreate && (
+            <button onClick={openCreateModal} className="crm-btn crm-btn-primary">
+              <Plus size={16} />
+              <span>New Account</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Toolbar & Search */}
@@ -333,8 +335,10 @@ export default function CrmAccountsPage() {
           </button>
         </form>
 
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '0.5rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-          <span>Total: <strong>{totalCount}</strong> Accounts</span>
+        <div className="crm-toolbar-filters">
+          <span style={{ fontSize: '0.85rem', color: 'var(--crm-text-muted)' }}>
+            Total: <strong>{totalCount}</strong> Accounts
+          </span>
         </div>
       </div>
 
@@ -357,9 +361,10 @@ export default function CrmAccountsPage() {
         </div>
       )}
 
-      {/* Table Container */}
-      <div className="crm-table-container">
-        <table className="crm-table">
+      {/* Table Card */}
+      <div className="crm-table-card">
+        <div className="crm-table-container">
+          <table className="crm-table">
           <thead>
             <tr>
               <th style={{ width: '130px' }}>Account ID</th>
@@ -526,30 +531,34 @@ export default function CrmAccountsPage() {
         </table>
       </div>
 
-      {/* Pagination Footer */}
-      {totalPages > 1 && (
-        <div className="crm-pagination-wrap" style={{ marginTop: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            Page {page} of {totalPages}
-          </span>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+        {/* Standard Pagination Footer inside Table Card */}
+        <div className="crm-pagination-footer">
+          <div>
+            Showing <strong>{accounts.length}</strong> of <strong>{totalCount}</strong> accounts
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <button
               onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page <= 1}
+              disabled={page <= 1 || loading}
               className="crm-btn crm-btn-secondary crm-btn-sm"
+              aria-label="Previous page"
             >
-              <ChevronLeft size={14} /> Previous
+              <ChevronLeft size={16} />
             </button>
+            <span style={{ fontWeight: 600 }}>
+              {page} / {totalPages}
+            </span>
             <button
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages}
+              disabled={page >= totalPages || loading}
               className="crm-btn crm-btn-secondary crm-btn-sm"
+              aria-label="Next page"
             >
-              Next <ChevronRight size={14} />
+              <ChevronRight size={16} />
             </button>
           </div>
         </div>
-      )}
+      </div>
 
       {/* Create / Edit Account Modal */}
       {isCreateModalOpen && (

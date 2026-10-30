@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import crmService from '../../../services/crmService';
 
-const STAGES = ['Qualify', 'Develop', 'Propose', 'Close'];
+const STAGES = ['Enquiry', 'Qualify', 'Develop', 'Propose/Offer', 'Negotiate', 'Close'];
 
 const QUICK_LOSS_REASONS = [
   'Competitor Chosen',
@@ -32,7 +32,8 @@ export default function OpportunityStageModal({ isOpen, onClose, opportunity, on
 
   useEffect(() => {
     if (!isOpen || !opportunity) return;
-    setTargetStage(opportunity.stage || 'Qualify');
+    const currentStage = opportunity.stage === 'Propose' ? 'Propose/Offer' : (opportunity.stage || 'Qualify');
+    setTargetStage(currentStage);
     setTargetStatus(opportunity.status || 'Open');
     setLossReason(opportunity.lossReason || '');
     setActualCloseDate(
@@ -242,7 +243,7 @@ export default function OpportunityStageModal({ isOpen, onClose, opportunity, on
             <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '0.35rem' }}>
               Pipeline Stage:
             </label>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.4rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem' }}>
               {STAGES.map((stg) => {
                 const isSelected = targetStage === stg;
                 const isDisabled = targetStatus === 'Won' && stg !== 'Close';

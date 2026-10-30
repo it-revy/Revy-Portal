@@ -50,12 +50,23 @@ def setup_test_database():
                 conn.commit()
 
             opp_cols = conn.exec_driver_sql("PRAGMA table_info(crm_opportunities)").fetchall()
-            if opp_cols and not any(c[1] == 'stage' for c in opp_cols):
+            opp_acc_col = next((c for c in opp_cols if c[1] == 'account_id'), None)
+            if opp_cols and (not any(c[1] == 'stage' for c in opp_cols) or (opp_acc_col and opp_acc_col[3] == 1)):
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_opportunity_quotations")
                 conn.exec_driver_sql("DROP TABLE IF EXISTS crm_milestones")
                 conn.exec_driver_sql("DROP TABLE IF EXISTS crm_product_transactions")
                 conn.exec_driver_sql("DROP TABLE IF EXISTS crm_sample_submissions")
                 conn.exec_driver_sql("DROP TABLE IF EXISTS crm_consulting_engagements")
                 conn.exec_driver_sql("DROP TABLE IF EXISTS crm_opportunities")
+                conn.commit()
+
+            if opp_cols and not any(c[1] == 'sub_status' for c in opp_cols):
+                conn.exec_driver_sql("ALTER TABLE crm_opportunities ADD COLUMN sub_status VARCHAR(255)")
+                conn.commit()
+
+            lead_cols = conn.exec_driver_sql("PRAGMA table_info(leads)").fetchall()
+            if lead_cols and not any(c[1] == 'legacy_lifecycle_status' for c in lead_cols):
+                conn.exec_driver_sql("ALTER TABLE leads ADD COLUMN legacy_lifecycle_status VARCHAR(50)")
                 conn.commit()
 
             acc_cols = conn.exec_driver_sql("PRAGMA table_info(accounts)").fetchall()

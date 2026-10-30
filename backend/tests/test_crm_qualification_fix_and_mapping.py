@@ -436,7 +436,7 @@ def test_qualification_transaction_rollback_on_failure(auth_headers):
     # Verify rollback in database
     with SessionLocal() as db:
         reloaded_lead = db.query(Lead).filter(Lead.id == lead["id"]).first()
-        assert reloaded_lead.lifecycle_status == "Open"
+        assert reloaded_lead.lifecycle_status in ("Enquiry", "Open")
         assert reloaded_lead.opportunity_id is None
         opp_count = db.query(Opportunity).filter(Opportunity.originating_lead_id == lead["id"]).count()
         assert opp_count == 0
@@ -476,70 +476,94 @@ def test_postgresql_qualification_without_outer_join_error():
             actor = db.query(User).first()
         assert actor is not None, "No user found in PostgreSQL for qualification test"
 
-        # Create a fresh Lead with relationships
-        new_lead = Lead(
-            lead_id=lead_id,
-            lead_name=f"PostgreSQL Outer Join Test Lead {uid}",
-            company_name=f"PG Industries {uid}",
-            site_name=f"PG Chemical Plant {uid}",
-            business_phone="+91 22 4433 2211",
-            company_email=f"corp_{uid}@pgindustries.com",
-            mobile_phone="+91 99887 76655",
-            contact_email=f"vp_{uid}@pgindustries.com",
-            lifecycle_status="Open",
-            business_area="Biogas"
-        )
-        db.add(new_lead)
-        db.commit()
-        db.refresh(new_lead)
+        created_acc_id = None
+        created_con_id = None
+        created_opp_id = None
+        try:
+            # Create a fresh Lead with relationships
+            new_lead = Lead(
+                lead_id=lead_id,
+                lead_name=f"PostgreSQL Outer Join Test Lead {uid}",
+                company_name=f"PG Industries {uid}",
+                site_name=f"PG Chemical Plant {uid}",
+                business_phone="+91 22 4433 2211",
+                company_email=f"corp_{uid}@pgindustries.com",
+                mobile_phone="+91 99887 76655",
+                contact_email=f"vp_{uid}@pgindustries.com",
+                lifecycle_status="Enquiry",
+                business_area="Biogas"
+            )
+            db.add(new_lead)
+            db.commit()
+            db.refresh(new_lead)
 
-        service = CrmService(db)
+            service = CrmService(db)
 
-        # Qualify the lead
-        qual_req = LeadQualifyRequest(
-            account=LeadQualifyAccountChoice(
-                action="create",
-                name=f"PG Industries {uid}",
-                siteName=f"PG Chemical Plant {uid}",
-                phone="+91 22 4433 2211",
-                email=f"corp_{uid}@pgindustries.com"
-            ),
-            contact=LeadQualifyContactChoice(
-                action="create",
-                name=f"VP Operations {uid}",
-                email=f"vp_{uid}@pgindustries.com",
-                mobileNumber="+91 99887 76655"
-            ),
-            opportunityName=f"PG Opportunity {uid}",
-            estimatedValue=500000.0,
-            opportunityDescription="PostgreSQL verification of outer-join row-locking fix"
-        )
+            # Qualify the lead
+            qual_req = LeadQualifyRequest(
+                account=LeadQualifyAccountChoice(
+                    action="create",
+                    name=f"PG Industries {uid}",
+                    siteName=f"PG Chemical Plant {uid}",
+                    phone="+91 22 4433 2211",
+                    email=f"corp_{uid}@pgindustries.com"
+                ),
+                contact=LeadQualifyContactChoice(
+                    action="create",
+                    name=f"VP Operations {uid}",
+                    email=f"vp_{uid}@pgindustries.com",
+                    mobileNumber="+91 99887 76655"
+                ),
+                opportunityName=f"PG Opportunity {uid}",
+                estimatedValue=500000.0,
+                opportunityDescription="PostgreSQL verification of outer-join row-locking fix"
+            )
 
-        # THIS IS THE CRITICAL LINE THAT PREVIOUSLY FAILED WITH psycopg2.errors.FeatureNotSupported
-        result = service.qualify_lead(
-            actor=actor,
-            lead_id=new_lead.id,
-            payload=qual_req
-        )
+            # THIS IS THE CRITICAL LINE THAT PREVIOUSLY FAILED WITH psycopg2.errors.FeatureNotSupported
+            result = service.qualify_lead(
+                actor=actor,
+                lead_id=new_lead.id,
+                payload=qual_req
+            )
 
-        assert result["success"] is True
-        assert result["account"]["siteName"] == f"PG Chemical Plant {uid}"
-        assert result["account"]["phone"] == "+91 22 4433 2211"
-        assert result["opportunity"]["name"] == f"PG Opportunity {uid}"
+            assert result["success"] is True
+            assert result["account"]["siteName"] == f"PG Chemical Plant {uid}"
+            assert result["account"]["phone"] == "+91 22 4433 2211"
+            assert result["opportunity"]["name"] == f"PG Opportunity {uid}"
 
-        # Re-check database state
-        db.expire_all()
-        reloaded_lead = db.query(Lead).filter(Lead.id == new_lead.id).first()
-        assert reloaded_lead.lifecycle_status == "Qualified"
-        assert reloaded_lead.account_id is not None
-        assert reloaded_lead.opportunity_id is not None
+            created_acc_id = result["account"]["id"]
+            created_con_id = result["contact"]["id"] if result.get("contact") else None
+            created_opp_id = result["opportunity"]["id"]
 
-        # Verify idempotency retry on PostgreSQL
-        retry_result = service.qualify_lead(
-            actor=actor,
-            lead_id=new_lead.id,
-            payload=qual_req
-        )
-        assert retry_result["success"] is True
-        assert "already qualified" in retry_result["message"]
-        assert retry_result["opportunity"]["id"] == result["opportunity"]["id"]
+            # Re-check database state
+            db.expire_all()
+            reloaded_lead = db.query(Lead).filter(Lead.id == new_lead.id).first()
+            assert reloaded_lead.lifecycle_status != "Qualified"
+            assert reloaded_lead.qualified_at is not None
+            assert reloaded_lead.account_id is not None
+            assert reloaded_lead.opportunity_id is not None
+
+            # Verify idempotency retry on PostgreSQL
+            retry_result = service.qualify_lead(
+                actor=actor,
+                lead_id=new_lead.id,
+                payload=qual_req
+            )
+            assert retry_result["success"] is True
+            assert "already qualified" in retry_result["message"]
+            assert retry_result["opportunity"]["id"] == result["opportunity"]["id"]
+        finally:
+            try:
+                # Isolate live DB from test residue
+                if created_opp_id:
+                    db.query(Opportunity).filter(Opportunity.id == created_opp_id).delete(synchronize_session=False)
+                if new_lead and new_lead.id:
+                    db.query(Lead).filter(Lead.id == new_lead.id).delete(synchronize_session=False)
+                if created_con_id:
+                    db.query(Contact).filter(Contact.id == created_con_id).delete(synchronize_session=False)
+                if created_acc_id:
+                    db.query(Account).filter(Account.id == created_acc_id).delete(synchronize_session=False)
+                db.commit()
+            except Exception:
+                db.rollback()
+

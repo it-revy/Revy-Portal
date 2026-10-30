@@ -16,13 +16,21 @@ import {
   RefreshCw,
   GitBranch,
   ShieldCheck,
-  Check
+  Check,
+  FileText,
+  Send,
+  CheckSquare,
+  RotateCcw,
+  FileCheck,
+  AlertTriangle
 } from 'lucide-react';
+import { useAuth } from '../../../context/AuthContext';
 import crmService from '../../../services/crmService';
 import OpportunityStageModal from './OpportunityStageModal';
 
-const STAGES = ['Qualify', 'Develop', 'Propose', 'Close'];
+const STAGES = ['Enquiry', 'Qualify', 'Develop', 'Propose/Offer', 'Negotiate', 'Close'];
 const BUSINESS_AREAS = ['Biogas', 'Wastewater Treatment (WWT)', 'R&D Lab', 'Other'];
+const APPROVED_CURRENCIES = ['INR', 'USD', 'EUR', 'GBP', 'AED', 'SGD'];
 
 export default function OpportunityDetailModal({
   isOpen,
@@ -30,7 +38,15 @@ export default function OpportunityDetailModal({
   opportunityId,
   onOpportunityUpdated
 }) {
-  const [activeTab, setActiveTab] = useState('overview'); // overview, routing, milestones
+  const { user, activeRole } = useAuth();
+  const userRoles = [
+    ...(user?.roles || []),
+    activeRole
+  ].filter(Boolean);
+  const isSalesManager = userRoles.some(r => ['CRM_SALES_MANAGER', 'CRM_ADMIN', 'Admin', 'SuperAdmin', 'IT_ADMIN'].includes(r));
+  const canReopenDeal = userRoles.some(r => ['CRM_ADMIN', 'Admin', 'SuperAdmin', 'IT_ADMIN', 'DIRECTOR', 'Director'].includes(r));
+
+  const [activeTab, setActiveTab] = useState('overview'); // overview, quotations, routing, milestones
   const [opportunity, setOpportunity] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -42,12 +58,55 @@ export default function OpportunityDetailModal({
   const [isEditing, setIsEditing] = useState(false);
   const [editFormData, setEditFormData] = useState({
     name: '',
+    currency: 'INR',
     estimatedValue: '',
+    estimatedValueChangeReason: '',
     expectedCloseDate: '',
     businessArea: '',
-    description: ''
+    description: '',
+    subStatus: ''
   });
   const [savingOverview, setSavingOverview] = useState(false);
+
+  // Quotations State (Phase 5A)
+  const [quotations, setQuotations] = useState([]);
+  const [activeQuotation, setActiveQuotation] = useState(null);
+  const [loadingQuotations, setLoadingQuotations] = useState(false);
+  const [quotationModalOpen, setQuotationModalOpen] = useState(false);
+  const [quotationModalMode, setQuotationModalMode] = useState('create'); // 'create', 'edit', 'revise'
+  const [selectedQuotation, setSelectedQuotation] = useState(null);
+  const [quotationFormData, setQuotationFormData] = useState({
+    title: '',
+    amount: '',
+    currency: 'INR',
+    quotationDate: new Date().toISOString().split('T')[0],
+    validUntilDate: '',
+    termsAndConditions: '',
+    notes: '',
+    documentName: ''
+  });
+  const [savingQuotation, setSavingQuotation] = useState(false);
+
+  // Approval Modal State
+  const [approvalModalOpen, setApprovalModalOpen] = useState(false);
+  const [approvalAction, setApprovalAction] = useState('approve');
+  const [rejectionReason, setRejectionReason] = useState('');
+  const [processingApproval, setProcessingApproval] = useState(false);
+
+  // Share Modal State
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareFormData, setShareFormData] = useState({
+    sentMethod: 'Email',
+    sentTo: '',
+    sendingEvidence: ''
+  });
+  const [processingShare, setProcessingShare] = useState(false);
+
+  // Reopen Modal State
+  const [reopenModalOpen, setReopenModalOpen] = useState(false);
+  const [reopenReason, setReopenReason] = useState('');
+  const [reopenStage, setReopenStage] = useState('Close');
+  const [processingReopen, setProcessingReopen] = useState(false);
 
   // Workstreams (Phase 4B)
   const [workstreams, setWorkstreams] = useState([]);
@@ -82,16 +141,36 @@ export default function OpportunityDetailModal({
         setOpportunity(opp);
         setEditFormData({
           name: opp.name || '',
+          currency: opp.currency || 'INR',
           estimatedValue: opp.estimatedValue !== null && opp.estimatedValue !== undefined ? opp.estimatedValue : '',
+          estimatedValueChangeReason: '',
           expectedCloseDate: opp.expectedCloseDate ? opp.expectedCloseDate.split('T')[0] : '',
           businessArea: opp.businessArea || 'Biogas',
-          description: opp.description || ''
+          description: opp.description || '',
+          subStatus: opp.subStatus || opp.sub_status || ''
         });
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to load opportunity.');
     } finally {
       setLoading(false);
+    }
+  }, [opportunityId]);
+
+  // Fetch quotations (Phase 5A)
+  const fetchQuotations = useCallback(async () => {
+    if (!opportunityId) return;
+    setLoadingQuotations(true);
+    try {
+      const res = await crmService.getOpportunityQuotations(opportunityId);
+      if (res.data?.success) {
+        setQuotations(res.data.quotations || []);
+        setActiveQuotation(res.data.activeQuotation || null);
+      }
+    } catch (err) {
+      console.error('Failed to load quotations:', err);
+    } finally {
+      setLoadingQuotations(false);
     }
   }, [opportunityId]);
 
@@ -141,13 +220,14 @@ export default function OpportunityDetailModal({
   useEffect(() => {
     if (isOpen && opportunityId) {
       fetchOpportunityDetails();
+      fetchQuotations();
       fetchWorkstreams();
       fetchMilestones();
       setActiveTab('overview');
       setIsEditing(false);
       setRoutingSuccessMsg(null);
     }
-  }, [isOpen, opportunityId, fetchOpportunityDetails, fetchWorkstreams, fetchMilestones]);
+  }, [isOpen, opportunityId, fetchOpportunityDetails, fetchQuotations, fetchWorkstreams, fetchMilestones]);
 
   if (!isOpen) return null;
 
@@ -159,10 +239,13 @@ export default function OpportunityDetailModal({
     try {
       const payload = {
         name: editFormData.name.trim(),
+        currency: editFormData.currency || 'INR',
         estimatedValue: editFormData.estimatedValue ? Number(editFormData.estimatedValue) : null,
+        estimatedValueChangeReason: editFormData.estimatedValueChangeReason ? editFormData.estimatedValueChangeReason.trim() : undefined,
         expectedCloseDate: editFormData.expectedCloseDate || null,
         businessArea: editFormData.businessArea || null,
-        description: editFormData.description ? editFormData.description.trim() : null
+        description: editFormData.description ? editFormData.description.trim() : null,
+        subStatus: editFormData.subStatus !== undefined ? (editFormData.subStatus.trim() || null) : null
       };
 
       const res = await crmService.updateOpportunity(opportunity.id, payload);
@@ -175,6 +258,163 @@ export default function OpportunityDetailModal({
       setError(err.response?.data?.message || 'Failed to update opportunity details.');
     } finally {
       setSavingOverview(false);
+    }
+  };
+
+  // Quotation Management Handlers (Phase 5A)
+  const handleOpenQuotationModal = (mode = 'create', quote = null) => {
+    setQuotationModalMode(mode);
+    setSelectedQuotation(quote);
+    if (mode === 'create') {
+      setQuotationFormData({
+        title: `Quotation for ${opportunity?.name || ''}`,
+        amount: opportunity?.estimatedValue !== null && opportunity?.estimatedValue !== undefined ? opportunity.estimatedValue : '',
+        currency: opportunity?.currency || 'INR',
+        quotationDate: new Date().toISOString().split('T')[0],
+        validUntilDate: '',
+        termsAndConditions: 'Standard REVY commercial delivery and payment terms apply.',
+        notes: '',
+        documentName: ''
+      });
+    } else if (mode === 'edit' && quote) {
+      setQuotationFormData({
+        title: quote.title || '',
+        amount: quote.amount || '',
+        currency: quote.currency || 'INR',
+        quotationDate: quote.quotationDate ? quote.quotationDate.split('T')[0] : '',
+        validUntilDate: quote.validUntilDate ? quote.validUntilDate.split('T')[0] : '',
+        termsAndConditions: quote.termsAndConditions || '',
+        notes: quote.notes || '',
+        documentName: quote.documentName || ''
+      });
+    } else if (mode === 'revise' && quote) {
+      setQuotationFormData({
+        title: quote.title || '',
+        amount: quote.amount || '',
+        currency: quote.currency || 'INR',
+        quotationDate: new Date().toISOString().split('T')[0],
+        validUntilDate: quote.validUntilDate ? quote.validUntilDate.split('T')[0] : '',
+        termsAndConditions: quote.termsAndConditions || '',
+        notes: `Revised from ${quote.version}`,
+        documentName: ''
+      });
+    }
+    setQuotationModalOpen(true);
+  };
+
+  const handleSaveQuotation = async (e) => {
+    e.preventDefault();
+    setSavingQuotation(true);
+    setError(null);
+    try {
+      const payload = {
+        title: quotationFormData.title.trim(),
+        amount: Number(quotationFormData.amount) || 0,
+        currency: quotationFormData.currency,
+        quotationDate: quotationFormData.quotationDate || undefined,
+        validUntilDate: quotationFormData.validUntilDate || undefined,
+        termsAndConditions: quotationFormData.termsAndConditions?.trim() || undefined,
+        notes: quotationFormData.notes?.trim() || undefined,
+        documentName: quotationFormData.documentName?.trim() || undefined
+      };
+
+      if (quotationModalMode === 'create') {
+        await crmService.createOpportunityQuotation(opportunity.id, payload);
+      } else if (quotationModalMode === 'revise' && selectedQuotation) {
+        await crmService.reviseOpportunityQuotation(opportunity.id, selectedQuotation.id, payload);
+      } else if (quotationModalMode === 'edit' && selectedQuotation) {
+        await crmService.updateOpportunityQuotation(opportunity.id, selectedQuotation.id, payload);
+      }
+
+      setQuotationModalOpen(false);
+      fetchQuotations();
+      fetchOpportunityDetails();
+      if (onOpportunityUpdated) onOpportunityUpdated(opportunity);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to save quotation.');
+    } finally {
+      setSavingQuotation(false);
+    }
+  };
+
+  const handleSubmitQuotationForReview = async (quoteId) => {
+    try {
+      await crmService.submitQuotationForReview(opportunity.id, quoteId);
+      fetchQuotations();
+      fetchOpportunityDetails();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to submit quotation for review.');
+    }
+  };
+
+  const handleApproveOrRejectQuotation = async (e) => {
+    e.preventDefault();
+    if (approvalAction === 'reject' && !rejectionReason.trim()) {
+      setError('Please provide a rejection reason.');
+      return;
+    }
+    setProcessingApproval(true);
+    try {
+      await crmService.approveQuotation(opportunity.id, activeQuotation.id, {
+        action: approvalAction,
+        reason: rejectionReason.trim() || undefined
+      });
+      setApprovalModalOpen(false);
+      setRejectionReason('');
+      fetchQuotations();
+      fetchOpportunityDetails();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to process quotation approval.');
+    } finally {
+      setProcessingApproval(false);
+    }
+  };
+
+  const handleShareQuotation = async (e) => {
+    e.preventDefault();
+    if (!shareFormData.sentTo.trim()) {
+      setError('Please provide a recipient (sentTo).');
+      return;
+    }
+    setProcessingShare(true);
+    try {
+      await crmService.markQuotationShared(opportunity.id, activeQuotation.id, {
+        sentMethod: shareFormData.sentMethod,
+        sentTo: shareFormData.sentTo.trim(),
+        sendingEvidence: shareFormData.sendingEvidence?.trim() || undefined
+      });
+      setShareModalOpen(false);
+      fetchQuotations();
+      fetchOpportunityDetails();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to record quotation sharing.');
+    } finally {
+      setProcessingShare(false);
+    }
+  };
+
+  const handleReopenOpportunity = async (e) => {
+    e.preventDefault();
+    if (!reopenReason.trim()) {
+      setError('Please provide a mandatory justification reason to reopen this opportunity.');
+      return;
+    }
+    setProcessingReopen(true);
+    try {
+      const res = await crmService.reopenOpportunity(opportunity.id, {
+        reason: reopenReason.trim(),
+        reopenStage: reopenStage
+      });
+      if (res.data?.success) {
+        setOpportunity(res.data.opportunity);
+        setReopenModalOpen(false);
+        setReopenReason('');
+        if (onOpportunityUpdated) onOpportunityUpdated(res.data.opportunity);
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to reopen opportunity.');
+    } finally {
+      setProcessingReopen(false);
     }
   };
 
@@ -373,6 +613,29 @@ export default function OpportunityDetailModal({
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            {opportunity && canReopenDeal && (opportunity.status === 'Won' || opportunity.status === 'Lost') && (
+              <button
+                type="button"
+                className="crm-btn crm-btn-secondary crm-btn-sm"
+                onClick={() => setReopenModalOpen(true)}
+                style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: '#b45309', borderColor: '#fde68a', background: '#fffbeb' }}
+                title="Reopen closed opportunity to active funnel"
+              >
+                <RotateCcw size={15} />
+                <span>Reopen Opportunity</span>
+              </button>
+            )}
+            {opportunity && (
+              <Link
+                to={`/crm/opportunities/${opportunity.id}/edit`}
+                className="crm-btn crm-btn-secondary crm-btn-sm"
+                style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', textDecoration: 'none' }}
+                title="Open dedicated opportunity edit page"
+              >
+                <Edit3 size={15} />
+                <span>Edit</span>
+              </Link>
+            )}
             <button
               type="button"
               className="crm-btn crm-btn-secondary crm-btn-sm"
@@ -448,6 +711,36 @@ export default function OpportunityDetailModal({
             }}
           >
             Overview & Details
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('quotations')}
+            style={{
+              padding: '0.75rem 1rem',
+              border: 'none',
+              background: 'none',
+              borderBottom: activeTab === 'quotations' ? '2px solid var(--accent-primary)' : '2px solid transparent',
+              color: activeTab === 'quotations' ? 'var(--accent-primary)' : 'var(--text-secondary)',
+              fontWeight: 600,
+              fontSize: '0.875rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem'
+            }}
+          >
+            <FileText size={15} />
+            <span>Quotations</span>
+            {quotations.length > 0 && (
+              <span style={{ background: '#e0e7ff', color: '#4338ca', fontSize: '0.7rem', padding: '1px 6px', borderRadius: '10px' }}>
+                {quotations.length}
+              </span>
+            )}
+            {opportunity?.hasQuotationMismatch && (
+              <span title="Active quotation amount differs from opportunity estimated value" style={{ display: 'inline-flex', alignItems: 'center', color: '#b45309' }}>
+                <AlertTriangle size={13} />
+              </span>
+            )}
           </button>
           <button
             type="button"
@@ -589,10 +882,25 @@ export default function OpportunityDetailModal({
                         />
                       </div>
 
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 1fr', gap: '1rem' }}>
                         <div>
                           <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                            Estimated Value (INR)
+                            Currency
+                          </label>
+                          <select
+                            className="form-control"
+                            value={editFormData.currency}
+                            onChange={(e) => setEditFormData({ ...editFormData, currency: e.target.value })}
+                          >
+                            {APPROVED_CURRENCIES.map(curr => (
+                              <option key={curr} value={curr}>{curr}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                            Estimated Value
                           </label>
                           <input
                             type="number"
@@ -618,6 +926,19 @@ export default function OpportunityDetailModal({
 
                       <div>
                         <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                          Reason for Value Change (Audit Track)
+                        </label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          placeholder="e.g. Scope revised after customer technical review"
+                          value={editFormData.estimatedValueChangeReason}
+                          onChange={(e) => setEditFormData({ ...editFormData, estimatedValueChangeReason: e.target.value })}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
                           Business Area
                         </label>
                         <select
@@ -629,6 +950,23 @@ export default function OpportunityDetailModal({
                             <option key={ba} value={ba}>{ba}</option>
                           ))}
                         </select>
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
+                          Operational Sub-status (Free Text)
+                        </label>
+                        <input
+                          type="text"
+                          maxLength={255}
+                          placeholder="e.g. Waiting for revised quotation, Sample collection to be scheduled..."
+                          className="form-control"
+                          value={editFormData.subStatus}
+                          onChange={(e) => setEditFormData({ ...editFormData, subStatus: e.target.value })}
+                        />
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                          Free-text operational progress note (max 255 chars).
+                        </span>
                       </div>
 
                       <div>
@@ -657,8 +995,32 @@ export default function OpportunityDetailModal({
                         </button>
                       </div>
 
+                      {/* Commercial Mismatch Warning Banner */}
+                      {opportunity.hasQuotationMismatch && (
+                        <div style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.65rem',
+                          padding: '0.75rem 1rem',
+                          background: '#fffbeb',
+                          border: '1px solid #fde68a',
+                          borderRadius: '8px',
+                          color: '#92400e',
+                          fontSize: '0.85rem'
+                        }}>
+                          <AlertTriangle size={18} style={{ flexShrink: 0, color: '#d97706' }} />
+                          <div>
+                            <strong>Commercial Value Mismatch:</strong> Active quotation amount (
+                            {opportunity.activeQuotationCurrency} {Number(opportunity.activeQuotationAmount).toLocaleString()}
+                            ) differs from the opportunity estimated value (
+                            {opportunity.currency || 'INR'} {Number(opportunity.estimatedValue).toLocaleString()}
+                            ). Check the <strong>Quotations</strong> tab to review or synchronize.
+                          </div>
+                        </div>
+                      )}
+
                       {/* Top Metric Cards */}
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '1rem' }}>
                         <div style={{ background: '#f8fafc', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
                           <span style={{ fontSize: '0.725rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
                             Estimated Value
@@ -678,6 +1040,15 @@ export default function OpportunityDetailModal({
                           </span>
                           <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--accent-primary)', marginTop: '0.2rem' }}>
                             {opportunity.stage}
+                          </div>
+                        </div>
+
+                        <div style={{ background: '#f8fafc', padding: '0.85rem 1rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                          <span style={{ fontSize: '0.725rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
+                            Sub-status
+                          </span>
+                          <div style={{ fontSize: '0.95rem', fontWeight: 600, color: (opportunity.subStatus || opportunity.sub_status) ? '#0f172a' : 'var(--text-muted)', marginTop: '0.2rem', fontStyle: (opportunity.subStatus || opportunity.sub_status) ? 'normal' : 'italic' }}>
+                            {opportunity.subStatus || opportunity.sub_status || 'None'}
                           </div>
                         </div>
 
@@ -777,7 +1148,410 @@ export default function OpportunityDetailModal({
                 </div>
               )}
 
-              {/* TAB 2: REQUIREMENT ROUTING (PHASE 4B) */}
+              {/* TAB 2: QUOTATIONS (PHASE 5A) */}
+              {activeTab === 'quotations' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem' }}>
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        Opportunity Quotations & Commercial Governance
+                      </h4>
+                      <p style={{ margin: '0.25rem 0 0', fontSize: '0.825rem', color: 'var(--text-secondary)' }}>
+                        Manage formal commercial offers, multi-revision versions, manager approvals, and client sharing records.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="crm-btn crm-btn-primary"
+                      onClick={() => handleOpenQuotationModal('create')}
+                      style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                    >
+                      <Plus size={16} />
+                      <span>New Quotation</span>
+                    </button>
+                  </div>
+
+                  {/* Commercial Value Mismatch Notice */}
+                  {opportunity.hasQuotationMismatch && (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.65rem',
+                      padding: '0.75rem 1rem',
+                      background: '#fffbeb',
+                      border: '1px solid #fde68a',
+                      borderRadius: '8px',
+                      color: '#92400e',
+                      fontSize: '0.85rem'
+                    }}>
+                      <AlertTriangle size={18} style={{ flexShrink: 0, color: '#d97706' }} />
+                      <div>
+                        <strong>Commercial Value Mismatch Alert:</strong> Active quotation value is{' '}
+                        <strong>{activeQuotation?.currency} {Number(activeQuotation?.amount).toLocaleString()}</strong>, which differs from this opportunity's estimated value of{' '}
+                        <strong>{opportunity.currency || 'INR'} {Number(opportunity.estimatedValue).toLocaleString()}</strong>.
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Active Quotation Section */}
+                  {loadingQuotations ? (
+                    <div style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                      <RefreshCw size={20} className="spin" style={{ margin: '0 auto 0.5rem', display: 'block' }} />
+                      <span>Loading quotations...</span>
+                    </div>
+                  ) : activeQuotation ? (
+                    <div style={{
+                      padding: '1.25rem',
+                      background: '#ffffff',
+                      borderRadius: '10px',
+                      border: '2px solid var(--accent-light)',
+                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                            <span style={{
+                              background: 'var(--accent-primary)',
+                              color: '#ffffff',
+                              fontSize: '0.725rem',
+                              fontWeight: 700,
+                              padding: '2px 8px',
+                              borderRadius: '4px'
+                            }}>
+                              ACTIVE QUOTATION
+                            </span>
+                            <span style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                              {activeQuotation.quotationNumber} ({activeQuotation.version})
+                            </span>
+                            <span style={{
+                              fontSize: '0.725rem',
+                              padding: '2px 8px',
+                              borderRadius: '4px',
+                              fontWeight: 700,
+                              background: activeQuotation.status === 'Approved' ? '#dcfce7' : (
+                                activeQuotation.status === 'Shared' ? '#eff6ff' : (
+                                  activeQuotation.status === 'Under Review' ? '#fef3c7' : (
+                                    activeQuotation.status === 'Rejected' ? '#fee2e2' : '#f1f5f9'
+                                  )
+                                )
+                              ),
+                              color: activeQuotation.status === 'Approved' ? '#166534' : (
+                                activeQuotation.status === 'Shared' ? '#1d4ed8' : (
+                                  activeQuotation.status === 'Under Review' ? '#92400e' : (
+                                    activeQuotation.status === 'Rejected' ? '#b91c1c' : '#475569'
+                                  )
+                                )
+                              )
+                            }}>
+                              {activeQuotation.status}
+                            </span>
+                          </div>
+                          <h4 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                            {activeQuotation.title}
+                          </h4>
+                        </div>
+
+                        <div style={{ textAlign: 'right' }}>
+                          <span style={{ fontSize: '0.725rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
+                            Quotation Total
+                          </span>
+                          <div style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--accent-primary)' }}>
+                            {activeQuotation.currency} {Number(activeQuotation.amount).toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '0.75rem', padding: '0.75rem 0', borderTop: '1px solid #f1f5f9', borderBottom: '1px solid #f1f5f9' }}>
+                        <div>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Quotation Date</span>
+                          <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{activeQuotation.quotationDate ? new Date(activeQuotation.quotationDate).toLocaleDateString() : '—'}</div>
+                        </div>
+                        <div>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Valid Until</span>
+                          <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{activeQuotation.validUntilDate ? new Date(activeQuotation.validUntilDate).toLocaleDateString() : '—'}</div>
+                        </div>
+                        <div>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Document Reference</span>
+                          <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{activeQuotation.documentName || 'No document attached'}</div>
+                        </div>
+                        <div>
+                          <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Created By</span>
+                          <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{activeQuotation.createdByName || 'System'}</div>
+                        </div>
+                      </div>
+
+                      {activeQuotation.termsAndConditions && (
+                        <div style={{ marginTop: '0.75rem' }}>
+                          <span style={{ fontSize: '0.725rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 600 }}>Commercial Terms</span>
+                          <div style={{ fontSize: '0.825rem', color: 'var(--text-secondary)', background: '#f8fafc', padding: '0.5rem', borderRadius: '4px', marginTop: '0.25rem', whiteSpace: 'pre-wrap' }}>
+                            {activeQuotation.termsAndConditions}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Approval / Rejection Metadata */}
+                      {activeQuotation.approvedAt && (
+                        <div style={{ marginTop: '0.75rem', padding: '0.65rem 0.85rem', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: '6px', fontSize: '0.8rem', color: '#166534', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <ShieldCheck size={16} />
+                          <span>Approved by <strong>{activeQuotation.approvedByName || 'Sales Manager'}</strong> on {new Date(activeQuotation.approvedAt).toLocaleString()}</span>
+                        </div>
+                      )}
+
+                      {activeQuotation.rejectionReason && (
+                        <div style={{ marginTop: '0.75rem', padding: '0.65rem 0.85rem', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', fontSize: '0.8rem', color: '#b91c1c' }}>
+                          <strong>Rejection Reason:</strong> {activeQuotation.rejectionReason}
+                        </div>
+                      )}
+
+                      {/* Sharing Metadata */}
+                      {activeQuotation.sentAt && (
+                        <div style={{ marginTop: '0.75rem', padding: '0.65rem 0.85rem', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: '6px', fontSize: '0.8rem', color: '#1e40af' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginBottom: '0.2rem' }}>
+                            <Send size={14} />
+                            <span>Shared via <strong>{activeQuotation.sentMethod}</strong> to <strong>{activeQuotation.sentTo}</strong> on {new Date(activeQuotation.sentAt).toLocaleString()} by <strong>{activeQuotation.sentByName || 'User'}</strong></span>
+                          </div>
+                          {activeQuotation.sendingEvidence && (
+                            <div style={{ fontSize: '0.75rem', color: '#3b82f6', marginTop: '0.2rem' }}>
+                              Evidence / Ref: {activeQuotation.sendingEvidence}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Action Bar for Active Quotation */}
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
+                        {activeQuotation.status === 'Draft' && (
+                          <>
+                            <button
+                              type="button"
+                              className="crm-btn crm-btn-secondary crm-btn-sm"
+                              onClick={() => handleOpenQuotationModal('edit', activeQuotation)}
+                              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                            >
+                              <Edit3 size={14} />
+                              <span>Edit Draft</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="crm-btn crm-btn-primary crm-btn-sm"
+                              onClick={() => handleSubmitQuotationForReview(activeQuotation.id)}
+                              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                            >
+                              <Send size={14} />
+                              <span>Submit for Review</span>
+                            </button>
+                          </>
+                        )}
+
+                        {activeQuotation.status === 'Under Review' && (
+                          <>
+                            {isSalesManager ? (
+                              <button
+                                type="button"
+                                className="crm-btn crm-btn-primary crm-btn-sm"
+                                onClick={() => {
+                                  setApprovalAction('approve');
+                                  setRejectionReason('');
+                                  setApprovalModalOpen(true);
+                                }}
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', background: '#16a34a', borderColor: '#16a34a' }}
+                              >
+                                <CheckSquare size={14} />
+                                <span>Review & Approve / Reject</span>
+                              </button>
+                            ) : (
+                              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontStyle: 'italic', alignSelf: 'center' }}>
+                                Awaiting Sales Manager Review
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              className="crm-btn crm-btn-secondary crm-btn-sm"
+                              onClick={() => handleOpenQuotationModal('edit', activeQuotation)}
+                              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                            >
+                              <Edit3 size={14} />
+                              <span>Edit</span>
+                            </button>
+                          </>
+                        )}
+
+                        {(activeQuotation.status === 'Approved' || activeQuotation.status === 'Shared') && (
+                          <>
+                            {activeQuotation.status === 'Approved' && (
+                              <button
+                                type="button"
+                                className="crm-btn crm-btn-primary crm-btn-sm"
+                                onClick={() => {
+                                  setShareFormData({
+                                    sentMethod: 'Email',
+                                    sentTo: opportunity?.contactEmail || '',
+                                    sendingEvidence: ''
+                                  });
+                                  setShareModalOpen(true);
+                                }}
+                                style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', background: '#2563eb', borderColor: '#2563eb' }}
+                              >
+                                <Send size={14} />
+                                <span>Mark Shared with Client</span>
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              className="crm-btn crm-btn-secondary crm-btn-sm"
+                              onClick={() => handleOpenQuotationModal('revise', activeQuotation)}
+                              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                              title="Create a new revision based on this quotation"
+                            >
+                              <Plus size={14} />
+                              <span>New Revision</span>
+                            </button>
+                            <button
+                              type="button"
+                              className="crm-btn crm-btn-secondary crm-btn-sm"
+                              onClick={() => handleOpenQuotationModal('edit', activeQuotation)}
+                              style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                              title="Editing an approved quote will reset status to Draft"
+                            >
+                              <Edit3 size={14} />
+                              <span>Edit Quote</span>
+                            </button>
+                          </>
+                        )}
+
+                        {activeQuotation.status === 'Rejected' && (
+                          <button
+                            type="button"
+                            className="crm-btn crm-btn-primary crm-btn-sm"
+                            onClick={() => handleOpenQuotationModal('revise', activeQuotation)}
+                            style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+                          >
+                            <Plus size={14} />
+                            <span>Create Revised Quotation</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{
+                      textAlign: 'center',
+                      padding: '2.5rem 1rem',
+                      background: '#f8fafc',
+                      borderRadius: '8px',
+                      border: '1px dashed var(--border-color)',
+                      color: 'var(--text-muted)'
+                    }}>
+                      <FileText size={36} color="#94a3b8" style={{ margin: '0 auto 0.5rem', display: 'block' }} />
+                      <p style={{ margin: '0 0 0.75rem', fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        No quotations created yet
+                      </p>
+                      <p style={{ margin: '0 0 1rem', fontSize: '0.825rem', color: 'var(--text-muted)' }}>
+                        Prepare and record a commercial quotation to formalize pricing and terms for this opportunity.
+                      </p>
+                      <button
+                        type="button"
+                        className="crm-btn crm-btn-primary crm-btn-sm"
+                        onClick={() => handleOpenQuotationModal('create')}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
+                      >
+                        <Plus size={15} />
+                        <span>Create First Quotation</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Revision History Table */}
+                  {quotations.length > 0 && (
+                    <div style={{ marginTop: '0.5rem' }}>
+                      <h5 style={{ margin: '0 0 0.65rem', fontSize: '0.875rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                        Quotation Revision History ({quotations.length})
+                      </h5>
+                      <div style={{ overflowX: 'auto', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.825rem', textAlign: 'left' }}>
+                          <thead style={{ background: '#f8fafc', borderBottom: '1px solid var(--border-color)' }}>
+                            <tr>
+                              <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Quote #</th>
+                              <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Rev</th>
+                              <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Status</th>
+                              <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Amount</th>
+                              <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Date</th>
+                              <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Valid Until</th>
+                              <th style={{ padding: '0.65rem 0.75rem', fontWeight: 700, color: 'var(--text-muted)' }}>Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {quotations.map(q => (
+                              <tr
+                                key={q.id}
+                                style={{
+                                  borderBottom: '1px solid #f1f5f9',
+                                  background: q.isActive ? '#f0fdf4' : '#ffffff'
+                                }}
+                              >
+                                <td style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>
+                                  {q.quotationNumber}
+                                  {q.isActive && (
+                                    <span style={{ marginLeft: '0.35rem', fontSize: '0.65rem', background: '#16a34a', color: '#ffffff', padding: '1px 4px', borderRadius: '3px' }}>
+                                      Active
+                                    </span>
+                                  )}
+                                </td>
+                                <td style={{ padding: '0.65rem 0.75rem' }}>{q.version}</td>
+                                <td style={{ padding: '0.65rem 0.75rem' }}>
+                                  <span style={{
+                                    fontSize: '0.725rem',
+                                    padding: '1px 6px',
+                                    borderRadius: '4px',
+                                    fontWeight: 600,
+                                    background: q.status === 'Approved' ? '#dcfce7' : (
+                                      q.status === 'Shared' ? '#eff6ff' : (
+                                        q.status === 'Under Review' ? '#fef3c7' : (
+                                          q.status === 'Rejected' ? '#fee2e2' : '#f1f5f9'
+                                        )
+                                      )
+                                    ),
+                                    color: q.status === 'Approved' ? '#166534' : (
+                                      q.status === 'Shared' ? '#1d4ed8' : (
+                                        q.status === 'Under Review' ? '#92400e' : (
+                                          q.status === 'Rejected' ? '#b91c1c' : '#475569'
+                                        )
+                                      )
+                                    )
+                                  }}>
+                                    {q.status}
+                                  </span>
+                                </td>
+                                <td style={{ padding: '0.65rem 0.75rem', fontWeight: 600 }}>
+                                  {q.currency} {Number(q.amount).toLocaleString()}
+                                </td>
+                                <td style={{ padding: '0.65rem 0.75rem', color: 'var(--text-secondary)' }}>
+                                  {q.quotationDate ? new Date(q.quotationDate).toLocaleDateString() : '—'}
+                                </td>
+                                <td style={{ padding: '0.65rem 0.75rem', color: 'var(--text-secondary)' }}>
+                                  {q.validUntilDate ? new Date(q.validUntilDate).toLocaleDateString() : '—'}
+                                </td>
+                                <td style={{ padding: '0.65rem 0.75rem' }}>
+                                  <button
+                                    type="button"
+                                    className="crm-btn crm-btn-secondary crm-btn-sm"
+                                    onClick={() => handleOpenQuotationModal('edit', q)}
+                                    style={{ padding: '2px 8px', fontSize: '0.75rem' }}
+                                  >
+                                    View
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 3: REQUIREMENT ROUTING (PHASE 4B) */}
               {activeTab === 'routing' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.75rem' }}>
@@ -1215,6 +1989,417 @@ export default function OpportunityDetailModal({
             if (onOpportunityUpdated) onOpportunityUpdated(updated);
           }}
         />
+      )}
+
+      {/* Sub-Modal 1: Quotation Modal (Create / Edit / Revise) */}
+      {quotationModalOpen && (
+        <div className="modal-backdrop" style={{ zIndex: 1300 }} onClick={() => setQuotationModalOpen(false)}>
+          <div
+            className="modal-content"
+            style={{ maxWidth: '580px', width: '92%', borderRadius: '12px', padding: '1.5rem', background: '#ffffff', boxShadow: 'var(--modal-shadow)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <FileText size={20} color="var(--accent-primary)" />
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>
+                  {quotationModalMode === 'create' ? 'Create New Quotation' : (quotationModalMode === 'revise' ? `Revise Quotation (${selectedQuotation?.version} → v${(selectedQuotation?.revisionNumber || 1) + 1})` : `Edit Quotation (${selectedQuotation?.version})`)}
+                </h3>
+              </div>
+              <button type="button" onClick={() => setQuotationModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '1.25rem', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveQuotation} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+                  Quotation Title *
+                </label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="e.g. Commercial Proposal for Biogas Upgrade Plant"
+                  value={quotationFormData.title}
+                  onChange={(e) => setQuotationFormData({ ...quotationFormData, title: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+                    Currency *
+                  </label>
+                  <select
+                    className="form-control"
+                    value={quotationFormData.currency}
+                    onChange={(e) => setQuotationFormData({ ...quotationFormData, currency: e.target.value })}
+                    required
+                  >
+                    {APPROVED_CURRENCIES.map(curr => (
+                      <option key={curr} value={curr}>{curr}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+                    Total Commercial Amount *
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    className="form-control"
+                    placeholder="0.00"
+                    value={quotationFormData.amount}
+                    onChange={(e) => setQuotationFormData({ ...quotationFormData, amount: e.target.value })}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+                    Quotation Date
+                  </label>
+                  <input
+                    type="date"
+                    className="form-control"
+                    value={quotationFormData.quotationDate}
+                    onChange={(e) => setQuotationFormData({ ...quotationFormData, quotationDate: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+                    Valid Until Date
+                  </label>
+                  <input
+                    type="date"
+                    className="form-control"
+                    value={quotationFormData.validUntilDate}
+                    onChange={(e) => setQuotationFormData({ ...quotationFormData, validUntilDate: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+                  Document / Proposal Reference
+                </label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="e.g. REVY_Proposal_Biogas_2026_v1.pdf"
+                  value={quotationFormData.documentName}
+                  onChange={(e) => setQuotationFormData({ ...quotationFormData, documentName: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+                  Commercial Terms & Conditions
+                </label>
+                <textarea
+                  rows={2}
+                  className="form-control"
+                  placeholder="Payment milestones, validity, warranty..."
+                  value={quotationFormData.termsAndConditions}
+                  onChange={(e) => setQuotationFormData({ ...quotationFormData, termsAndConditions: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+                  Internal Notes
+                </label>
+                <textarea
+                  rows={2}
+                  className="form-control"
+                  placeholder="Internal review notes or pricing assumptions..."
+                  value={quotationFormData.notes}
+                  onChange={(e) => setQuotationFormData({ ...quotationFormData, notes: e.target.value })}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
+                <button
+                  type="button"
+                  className="crm-btn crm-btn-secondary crm-btn-sm"
+                  onClick={() => setQuotationModalOpen(false)}
+                  disabled={savingQuotation}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="crm-btn crm-btn-primary crm-btn-sm"
+                  disabled={savingQuotation}
+                >
+                  {savingQuotation ? 'Saving...' : (quotationModalMode === 'create' ? 'Create Quotation' : (quotationModalMode === 'revise' ? 'Create Revision' : 'Update Quotation'))}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Sub-Modal 2: Approval Modal (Approve / Reject) */}
+      {approvalModalOpen && (
+        <div className="modal-backdrop" style={{ zIndex: 1300 }} onClick={() => setApprovalModalOpen(false)}>
+          <div
+            className="modal-content"
+            style={{ maxWidth: '480px', width: '90%', borderRadius: '12px', padding: '1.5rem', background: '#ffffff', boxShadow: 'var(--modal-shadow)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <CheckSquare size={20} color="var(--accent-primary)" />
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>
+                  Review Quotation ({activeQuotation?.quotationNumber} {activeQuotation?.version})
+                </h3>
+              </div>
+              <button type="button" onClick={() => setApprovalModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '1.25rem', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleApproveOrRejectQuotation} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+                  Manager Decision *
+                </label>
+                <div style={{ display: 'flex', gap: '1rem' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontWeight: 600, color: '#166534' }}>
+                    <input
+                      type="radio"
+                      name="approvalAction"
+                      value="approve"
+                      checked={approvalAction === 'approve'}
+                      onChange={() => setApprovalAction('approve')}
+                    />
+                    Approve Quotation
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontWeight: 600, color: '#b91c1c' }}>
+                    <input
+                      type="radio"
+                      name="approvalAction"
+                      value="reject"
+                      checked={approvalAction === 'reject'}
+                      onChange={() => setApprovalAction('reject')}
+                    />
+                    Reject Quotation
+                  </label>
+                </div>
+              </div>
+
+              {approvalAction === 'reject' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--danger-text)', marginBottom: '0.25rem' }}>
+                    Rejection Reason *
+                  </label>
+                  <textarea
+                    rows={3}
+                    className="form-control"
+                    placeholder="Specify the reason for rejection (pricing adjustment needed, incorrect terms, etc.)..."
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    required
+                  />
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
+                <button
+                  type="button"
+                  className="crm-btn crm-btn-secondary crm-btn-sm"
+                  onClick={() => setApprovalModalOpen(false)}
+                  disabled={processingApproval}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className={`crm-btn crm-btn-sm ${approvalAction === 'approve' ? 'crm-btn-primary' : 'crm-btn-secondary'}`}
+                  style={approvalAction === 'approve' ? { background: '#16a34a', borderColor: '#16a34a' } : { color: '#b91c1c', borderColor: '#fca5a5', background: '#fee2e2' }}
+                  disabled={processingApproval}
+                >
+                  {processingApproval ? 'Processing...' : (approvalAction === 'approve' ? 'Confirm Approval' : 'Confirm Rejection')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Sub-Modal 3: Share Modal (Mark Quotation Shared) */}
+      {shareModalOpen && (
+        <div className="modal-backdrop" style={{ zIndex: 1300 }} onClick={() => setShareModalOpen(false)}>
+          <div
+            className="modal-content"
+            style={{ maxWidth: '480px', width: '90%', borderRadius: '12px', padding: '1.5rem', background: '#ffffff', boxShadow: 'var(--modal-shadow)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Send size={20} color="var(--accent-primary)" />
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700 }}>
+                  Record External Quotation Sharing
+                </h3>
+              </div>
+              <button type="button" onClick={() => setShareModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '1.25rem', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleShareQuotation} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+                  Delivery / Sharing Method *
+                </label>
+                <select
+                  className="form-control"
+                  value={shareFormData.sentMethod}
+                  onChange={(e) => setShareFormData({ ...shareFormData, sentMethod: e.target.value })}
+                  required
+                >
+                  <option value="Email">Email</option>
+                  <option value="WhatsApp">WhatsApp</option>
+                  <option value="Courier">Courier / Physical Delivery</option>
+                  <option value="Hand Delivery">Hand Delivery</option>
+                  <option value="Client Portal">Client Portal</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+                  Recipient (Email / Phone / Contact Name) *
+                </label>
+                <input
+                  type="text"
+                  className="form-control"
+                  placeholder="e.g. client@example.com or procurement manager"
+                  value={shareFormData.sentTo}
+                  onChange={(e) => setShareFormData({ ...shareFormData, sentTo: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+                  Sharing Evidence / Audit Reference
+                </label>
+                <textarea
+                  rows={2}
+                  className="form-control"
+                  placeholder="e.g. Sent via Gmail from sales@revy.com with subject 'REVY Proposal QT-00001'"
+                  value={shareFormData.sendingEvidence}
+                  onChange={(e) => setShareFormData({ ...shareFormData, sendingEvidence: e.target.value })}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
+                <button
+                  type="button"
+                  className="crm-btn crm-btn-secondary crm-btn-sm"
+                  onClick={() => setShareModalOpen(false)}
+                  disabled={processingShare}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="crm-btn crm-btn-primary crm-btn-sm"
+                  disabled={processingShare}
+                >
+                  {processingShare ? 'Recording...' : 'Mark as Shared'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Sub-Modal 4: Reopen Deal Modal */}
+      {reopenModalOpen && (
+        <div className="modal-backdrop" style={{ zIndex: 1300 }} onClick={() => setReopenModalOpen(false)}>
+          <div
+            className="modal-content"
+            style={{ maxWidth: '480px', width: '90%', borderRadius: '12px', padding: '1.5rem', background: '#ffffff', boxShadow: 'var(--modal-shadow)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <RotateCcw size={20} color="#b45309" />
+                <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 700, color: '#92400e' }}>
+                  Reopen Opportunity
+                </h3>
+              </div>
+              <button type="button" onClick={() => setReopenModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '1.25rem', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleReopenOpportunity} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+              <div style={{ padding: '0.65rem 0.85rem', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '6px', fontSize: '0.8rem', color: '#92400e' }}>
+                <strong>Reopening Controls:</strong> Reopening resets the opportunity outcome to <strong>Open</strong>, clears the close date and loss reason, and logs an immutable audit event.
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+                  Return Opportunity to Stage *
+                </label>
+                <select
+                  className="form-control"
+                  value={reopenStage}
+                  onChange={(e) => setReopenStage(e.target.value)}
+                  required
+                >
+                  {STAGES.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.2rem' }}>
+                  Mandatory Reopening Justification *
+                </label>
+                <textarea
+                  rows={3}
+                  className="form-control"
+                  placeholder="Provide explicit business rationale for reopening this closed deal (e.g. Client requested revised scope and budget)..."
+                  value={reopenReason}
+                  onChange={(e) => setReopenReason(e.target.value)}
+                  required
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem', borderTop: '1px solid var(--border-color)', paddingTop: '0.75rem' }}>
+                <button
+                  type="button"
+                  className="crm-btn crm-btn-secondary crm-btn-sm"
+                  onClick={() => setReopenModalOpen(false)}
+                  disabled={processingReopen}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="crm-btn crm-btn-primary crm-btn-sm"
+                  style={{ background: '#b45309', borderColor: '#b45309' }}
+                  disabled={processingReopen}
+                >
+                  {processingReopen ? 'Reopening...' : 'Confirm Reopen'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

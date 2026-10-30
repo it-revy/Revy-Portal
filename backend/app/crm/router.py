@@ -35,6 +35,7 @@ from app.crm.schema import (
     LeadQualificationMatchesResponse,
     LeadQualifyRequest,
     LeadQualifyResponse,
+    OpportunityCreate,
     OpportunityListResponse,
     OpportunityDetailResponse,
     OpportunityStageTransitionRequest,
@@ -52,7 +53,15 @@ from app.crm.schema import (
     MilestoneDetailResponse,
     CommunicationCreate,
     CommunicationListResponse,
-    DashboardMetricsResponse
+    DashboardMetricsResponse,
+    OpportunityQuotationCreate,
+    OpportunityQuotationUpdate,
+    OpportunityQuotationApprovalRequest,
+    OpportunityQuotationShareRequest,
+    OpportunityQuotationDetailResponse,
+    OpportunityQuotationListResponse,
+    OpportunityReopenRequest,
+    RevenueMetricsResponse
 )
 
 router = APIRouter(prefix="/crm", tags=["CRM Module"])
@@ -581,6 +590,27 @@ def qualify_lead(
     )
 
 
+@router.post("/leads/{lead_id}/opportunities", response_model=OpportunityDetailResponse, status_code=status.HTTP_201_CREATED)
+def create_lead_opportunity(
+    lead_id: str,
+    payload: OpportunityCreate,
+    request: Request,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.edit")),
+    db: Session = Depends(get_db)
+):
+    """
+    Create an additional Opportunity for an existing Lead (supports 1 Lead to Many Opportunities).
+    """
+    service = CrmService(db)
+    opp = service.create_lead_opportunity(
+        actor=current_user,
+        lead_id=lead_id,
+        payload=payload,
+        request=request
+    )
+    return {"success": True, "opportunity": opp}
+
+
 # =========================================================================
 # 5. LEAD COMMUNICATION HISTORY ENDPOINTS
 # =========================================================================
@@ -654,14 +684,35 @@ def list_crm_assignees(
 # 7. OPPORTUNITIES ENDPOINTS
 # =========================================================================
 
+@router.post("/opportunities", response_model=OpportunityDetailResponse, status_code=status.HTTP_201_CREATED)
+def create_opportunity(
+    payload: OpportunityCreate,
+    request: Request,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.edit")),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new standalone Opportunity linked to an Account, optional Contact, and optional Lead.
+    """
+    service = CrmService(db)
+    opp = service.create_opportunity(
+        actor=current_user,
+        payload=payload,
+        request=request
+    )
+    return {"success": True, "opportunity": opp}
+
+
 @router.get("/opportunities", response_model=OpportunityListResponse)
 def list_opportunities(
     search: Optional[str] = Query(None, description="Search by name, code, or account"),
     accountId: Optional[str] = Query(None, description="Filter by account ID"),
     status: Optional[str] = Query(None, description="Filter by opportunity status (Open, Won, Lost, ALL)"),
-    stage: Optional[str] = Query(None, description="Filter by stage (Qualify, Develop, Propose, Close, ALL)"),
+    outcome: Optional[str] = Query(None, description="Filter by outcome (Open Pipeline, Closed Won, Closed Lost)"),
+    stage: Optional[str] = Query(None, description="Filter by stage (Enquiry, Qualify, Develop, Propose/Offer, Negotiate, Close, ALL)"),
     businessArea: Optional[str] = Query(None, description="Filter by business area"),
     assignedToUserId: Optional[str] = Query(None, description="Filter by assigned user ID"),
+    owner: Optional[str] = Query(None, description="Filter by owner/assigned user ID"),
     view: Optional[str] = Query(None, description="Preset view: all, open, my, won, lost"),
     limit: int = Query(50, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -670,16 +721,19 @@ def list_opportunities(
 ):
     """
     List Opportunities with advanced filters, pagination, and total count.
+    Supports outcome and owner query aliases for Kanban and Table view consistency.
     """
+    effective_status = outcome or status
+    effective_assigned_user = owner or assignedToUserId
     service = CrmService(db)
     opps, total_count = service.list_opportunities(
         actor=current_user,
         search=search,
         account_id=accountId,
-        status=status,
+        status=effective_status,
         stage=stage,
         business_area=businessArea,
-        assigned_to_user_id=assignedToUserId,
+        assigned_to_user_id=effective_assigned_user,
         view=view,
         limit=limit,
         offset=offset
@@ -736,6 +790,7 @@ def transition_opportunity_stage(
 
 
 @router.put("/opportunities/{opportunity_id}", response_model=OpportunityDetailResponse)
+@router.patch("/opportunities/{opportunity_id}", response_model=OpportunityDetailResponse)
 def update_opportunity(
     opportunity_id: str,
     payload: OpportunityUpdateRequest,
@@ -754,6 +809,199 @@ def update_opportunity(
         request=request
     )
     return {"success": True, "opportunity": opp}
+
+
+# =========================================================================
+# 7B. PHASE 5A: OPPORTUNITY REOPENING, REVENUE & QUOTATIONS
+# =========================================================================
+
+@router.post("/opportunities/{opportunity_id}/reopen", response_model=OpportunityDetailResponse)
+def reopen_opportunity(
+    opportunity_id: str,
+    payload: OpportunityReopenRequest,
+    request: Request,
+    current_user: CurrentUser = Depends(require_any_permission(["crm.lead.edit", "crm.admin.manage"])),
+    db: Session = Depends(get_db)
+):
+    """
+    Reopen a closed (Won or Lost) Opportunity with mandatory business reason.
+    Restricted to CRM Admin and CRM Sales Manager roles.
+    """
+    service = CrmService(db)
+    opp = service.reopen_opportunity(
+        actor=current_user,
+        opp_id=opportunity_id,
+        payload=payload,
+        request=request
+    )
+    return {"success": True, "opportunity": opp}
+
+
+@router.get("/analytics/revenue-metrics", response_model=RevenueMetricsResponse)
+def get_revenue_metrics(
+    current_user: CurrentUser = Depends(require_permission("crm.lead.view")),
+    db: Session = Depends(get_db)
+):
+    """
+    Get currency-grouped commercial revenue metrics and pipeline stage summaries.
+    """
+    service = CrmService(db)
+    return service.get_sales_hub_revenue_metrics(actor=current_user)
+
+
+@router.get("/opportunities/{opportunity_id}/quotations", response_model=OpportunityQuotationListResponse)
+def list_opportunity_quotations(
+    opportunity_id: str,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.view")),
+    db: Session = Depends(get_db)
+):
+    """
+    List all quotation revisions for an Opportunity, identifying the active quotation.
+    """
+    service = CrmService(db)
+    return service.list_opportunity_quotations(opp_id=opportunity_id)
+
+
+@router.post("/opportunities/{opportunity_id}/quotations", response_model=OpportunityQuotationDetailResponse, status_code=status.HTTP_201_CREATED)
+def create_opportunity_quotation(
+    opportunity_id: str,
+    payload: OpportunityQuotationCreate,
+    request: Request,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.edit")),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new active quotation for an Opportunity. Supersedes any existing active quotation.
+    """
+    service = CrmService(db)
+    return service.create_opportunity_quotation(
+        actor=current_user,
+        opp_id=opportunity_id,
+        payload=payload,
+        request=request
+    )
+
+
+@router.get("/opportunities/{opportunity_id}/quotations/{quotation_id}", response_model=OpportunityQuotationDetailResponse)
+def get_opportunity_quotation(
+    opportunity_id: str,
+    quotation_id: str,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.view")),
+    db: Session = Depends(get_db)
+):
+    """
+    Get detailed information for a specific quotation revision.
+    """
+    service = CrmService(db)
+    return service.get_quotation(opp_id=opportunity_id, quotation_id=quotation_id)
+
+
+@router.put("/opportunities/{opportunity_id}/quotations/{quotation_id}", response_model=OpportunityQuotationDetailResponse)
+def update_opportunity_quotation(
+    opportunity_id: str,
+    quotation_id: str,
+    payload: OpportunityQuotationUpdate,
+    request: Request,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.edit")),
+    db: Session = Depends(get_db)
+):
+    """
+    Update a draft or review quotation. Material edits on approved quotations invalidate approval.
+    """
+    service = CrmService(db)
+    return service.update_opportunity_quotation(
+        actor=current_user,
+        opp_id=opportunity_id,
+        quotation_id=quotation_id,
+        payload=payload,
+        request=request
+    )
+
+
+@router.post("/opportunities/{opportunity_id}/quotations/{quotation_id}/submit", response_model=OpportunityQuotationDetailResponse)
+def submit_quotation_for_review(
+    opportunity_id: str,
+    quotation_id: str,
+    request: Request,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.edit")),
+    db: Session = Depends(get_db)
+):
+    """
+    Submit a draft quotation for internal review.
+    """
+    service = CrmService(db)
+    return service.submit_quotation_for_review(
+        actor=current_user,
+        opp_id=opportunity_id,
+        quotation_id=quotation_id,
+        request=request
+    )
+
+
+@router.post("/opportunities/{opportunity_id}/quotations/{quotation_id}/approve", response_model=OpportunityQuotationDetailResponse)
+def approve_quotation(
+    opportunity_id: str,
+    quotation_id: str,
+    payload: OpportunityQuotationApprovalRequest,
+    request: Request,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.edit")),
+    db: Session = Depends(get_db)
+):
+    """
+    Approve or reject a quotation. Restricted to CRM Sales Manager role.
+    """
+    service = CrmService(db)
+    return service.approve_quotation(
+        actor=current_user,
+        opp_id=opportunity_id,
+        quotation_id=quotation_id,
+        payload=payload,
+        request=request
+    )
+
+
+@router.post("/opportunities/{opportunity_id}/quotations/{quotation_id}/share", response_model=OpportunityQuotationDetailResponse)
+def mark_quotation_shared(
+    opportunity_id: str,
+    quotation_id: str,
+    payload: OpportunityQuotationShareRequest,
+    request: Request,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.edit")),
+    db: Session = Depends(get_db)
+):
+    """
+    Mark an approved quotation as shared with the client, capturing manual delivery evidence.
+    """
+    service = CrmService(db)
+    return service.mark_quotation_shared(
+        actor=current_user,
+        opp_id=opportunity_id,
+        quotation_id=quotation_id,
+        payload=payload,
+        request=request
+    )
+
+
+@router.post("/opportunities/{opportunity_id}/quotations/{quotation_id}/revise", response_model=OpportunityQuotationDetailResponse, status_code=status.HTTP_201_CREATED)
+def revise_opportunity_quotation(
+    opportunity_id: str,
+    quotation_id: str,
+    payload: OpportunityQuotationCreate,
+    request: Request,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.edit")),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a new revision of an existing quotation (v1 -> v2), superseding the previous version.
+    """
+    service = CrmService(db)
+    return service.revise_opportunity_quotation(
+        actor=current_user,
+        opp_id=opportunity_id,
+        quotation_id=quotation_id,
+        payload=payload,
+        request=request
+    )
 
 
 # =========================================================================

@@ -359,9 +359,12 @@ export default function CrmLeadsPage() {
                 onChange={e => { setLifecycleStatus(e.target.value); setPage(1); }}
               >
                 <option value="ALL">All Statuses</option>
-                <option value="Open">Open</option>
-                <option value="Qualified">Qualified</option>
-                <option value="Disqualified">Disqualified</option>
+                <option value="Enquiry">Enquiry</option>
+                <option value="Offer">Offer</option>
+                <option value="Negotiation">Negotiation</option>
+                <option value="Supply">Supply</option>
+                <option value="Payment">Payment</option>
+                <option value="Dormant">Dormant</option>
               </select>
             </div>
           )}
@@ -551,8 +554,8 @@ export default function CrmLeadsPage() {
                 </tr>
               ) : (
                 leads.map(lead => {
-                  const overdue = lead.lifecycleStatus === 'Open' && isOverdue(lead.nextFollowUpDate);
-                  const dueToday = lead.lifecycleStatus === 'Open' && isDueToday(lead.nextFollowUpDate);
+                  const overdue = lead.lifecycleStatus !== 'Dormant' && isOverdue(lead.nextFollowUpDate);
+                  const dueToday = lead.lifecycleStatus !== 'Dormant' && isDueToday(lead.nextFollowUpDate);
 
                   if (currentView === 'open') {
                     /* OPEN LEADS VIEW: Lead ID + 4 information groups + Actions */
@@ -765,11 +768,7 @@ export default function CrmLeadsPage() {
 
                       {/* 5. Status */}
                       <td>
-                        <span className={`crm-badge ${
-                          lead.lifecycleStatus === 'Open' ? 'crm-badge-status-open' :
-                          lead.lifecycleStatus === 'Qualified' ? 'crm-badge-status-qualified' :
-                          'crm-badge-status-disqualified'
-                        }`}>
+                        <span className={`crm-badge crm-badge-status-${(lead.lifecycleStatus || 'enquiry').toLowerCase()}`}>
                           {lead.lifecycleStatus}
                         </span>
                       </td>

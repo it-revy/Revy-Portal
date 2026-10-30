@@ -60,9 +60,11 @@ export const crmService = {
     if (params.search) query.append('search', params.search);
     if (params.accountId) query.append('accountId', params.accountId);
     if (params.status) query.append('status', params.status);
+    if (params.outcome) query.append('outcome', params.outcome);
     if (params.stage) query.append('stage', params.stage);
     if (params.businessArea) query.append('businessArea', params.businessArea);
     if (params.assignedToUserId) query.append('assignedToUserId', params.assignedToUserId);
+    if (params.owner) query.append('owner', params.owner);
     if (params.view) query.append('view', params.view);
     if (params.limit) query.append('limit', params.limit);
     if (params.offset) query.append('offset', params.offset);
@@ -77,12 +79,63 @@ export const crmService = {
     return API.get(`/crm/opportunities/${id}`);
   },
 
+  createOpportunity: async (data) => {
+    return API.post('/crm/opportunities', data);
+  },
+
+  createLeadOpportunity: async (leadId, data) => {
+    return API.post(`/crm/leads/${leadId}/opportunities`, data);
+  },
+
   updateOpportunity: async (id, data) => {
     return API.put(`/crm/opportunities/${id}`, data);
   },
 
   transitionOpportunityStage: async (id, data) => {
     return API.post(`/crm/opportunities/${id}/stage`, data);
+  },
+
+  reopenOpportunity: async (id, data) => {
+    return API.post(`/crm/opportunities/${id}/reopen`, data);
+  },
+
+  getRevenueMetrics: async () => {
+    return API.get('/crm/analytics/revenue-metrics');
+  },
+
+  // =========================================================================
+  // QUOTATION MANAGEMENT (PHASE 5A)
+  // =========================================================================
+  getOpportunityQuotations: async (opportunityId) => {
+    return API.get(`/crm/opportunities/${opportunityId}/quotations`);
+  },
+
+  createOpportunityQuotation: async (opportunityId, data) => {
+    return API.post(`/crm/opportunities/${opportunityId}/quotations`, data);
+  },
+
+  getOpportunityQuotation: async (opportunityId, quotationId) => {
+    return API.get(`/crm/opportunities/${opportunityId}/quotations/${quotationId}`);
+  },
+
+  updateOpportunityQuotation: async (opportunityId, quotationId, data) => {
+    return API.put(`/crm/opportunities/${opportunityId}/quotations/${quotationId}`, data);
+  },
+
+  submitQuotationForReview: async (opportunityId, quotationId) => {
+    return API.post(`/crm/opportunities/${opportunityId}/quotations/${quotationId}/submit`);
+  },
+
+  approveQuotation: async (opportunityId, quotationId, data) => {
+    return API.post(`/crm/opportunities/${opportunityId}/quotations/${quotationId}/approve`, data);
+  },
+
+  markQuotationShared: async (opportunityId, quotationId, data) => {
+    return API.post(`/crm/opportunities/${opportunityId}/quotations/${quotationId}/share`, data);
+  },
+
+  reviseOpportunityQuotation: async (opportunityId, quotationId, data) => {
+    return API.post(`/crm/opportunities/${opportunityId}/quotations/${quotationId}/revise`, data);
   },
 
   // =========================================================================

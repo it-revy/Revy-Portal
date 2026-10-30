@@ -16,6 +16,7 @@ import CrmLeadCreatePage from './pages/CrmLeadCreatePage';
 import CrmLeadDetailPage from './pages/CrmLeadDetailPage';
 import CrmAccountsPage from './pages/CrmAccountsPage';
 import CrmOpportunitiesPage from './pages/CrmOpportunitiesPage';
+import CrmOpportunityEditPage from './pages/CrmOpportunityEditPage';
 import CrmContactsPage from './pages/CrmContactsPage';
 import CrmUserHubPage from './pages/CrmUserHubPage';
 
@@ -184,6 +185,14 @@ function AppRoutes() {
         element={
           <CrmLayout>
             <CrmOpportunitiesPage />
+          </CrmLayout>
+        }
+      />
+      <Route
+        path="/crm/opportunities/:id/edit"
+        element={
+          <CrmLayout>
+            <CrmOpportunityEditPage />
           </CrmLayout>
         }
       />

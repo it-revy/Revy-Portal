@@ -33,8 +33,10 @@ from app.crm.model import (
     SampleTestRequest,
     TestingChargeRecord,
     ProductTransaction,
-    Milestone
+    Milestone,
+    OpportunityQuotation
 )
+from app.files.model import FileMetadata
 from app.crm.schema import (
     AccountCreate,
     AccountUpdate,
@@ -63,6 +65,13 @@ from app.crm.schema import (
     MilestoneItem,
     MilestoneListResponse,
     MilestoneDetailResponse,
+    OpportunityQuotationCreate,
+    OpportunityQuotationUpdate,
+    OpportunityQuotationApprovalRequest,
+    OpportunityQuotationShareRequest,
+    OpportunityReopenRequest,
+    APPROVED_CURRENCIES,
+    OPPORTUNITY_STAGES,
     ALLOWED_BUSINESS_AREAS,
     ALLOWED_REQUIREMENT_TYPES,
     ALLOWED_LEAD_SOURCES,
@@ -1624,7 +1633,7 @@ class CrmService:
                 account_id=acc_id,
                 contact_id=con_id,
                 assigned_to_user_id=assignee.id if assignee else None,
-                lifecycle_status="Open",
+                lifecycle_status=payload.lifecycleStatus or "Enquiry",
                 communication_channel=payload.communicationChannel or "Email",
                 remarks=payload.remarks.strip() if payload.remarks else None,
                 next_follow_up_date=payload.nextFollowUpDate,
@@ -2038,6 +2047,7 @@ class CrmService:
                 joinedload(Lead.created_by),
                 joinedload(Lead.qualified_by),
                 joinedload(Lead.opportunity),
+                selectinload(Lead.opportunities),
                 joinedload(Lead.requirement_types),
                 joinedload(Lead.contact_methods)
             )
@@ -2047,17 +2057,17 @@ class CrmService:
         clean_view = (view or "open").strip().lower()
 
         if clean_view == "open":
-            query = query.filter(Lead.lifecycle_status == "Open")
+            query = query.filter(Lead.lifecycle_status.in_(["Enquiry", "Offer", "Negotiation", "Supply", "Payment", "Open"]))
         elif clean_view == "all":
             pass
-        elif clean_view == "unqualified":
-            query = query.filter(Lead.lifecycle_status == "Disqualified")
+        elif clean_view in ("unqualified", "dormant"):
+            query = query.filter(Lead.lifecycle_status.in_(["Dormant", "Disqualified"]))
         elif clean_view == "my_leads":
             query = query.filter(Lead.assigned_to_user_id == str(actor.id))
         elif clean_view == "follow_ups_due":
             due_window = date.today() + timedelta(days=1)
             query = query.filter(
-                Lead.lifecycle_status == "Open",
+                Lead.lifecycle_status.notin_(["Dormant", "Disqualified"]),
                 Lead.next_follow_up_date.isnot(None),
                 Lead.next_follow_up_date <= due_window
             )
@@ -2154,6 +2164,8 @@ class CrmService:
                 joinedload(Lead.qualified_by),
                 joinedload(Lead.opportunity).joinedload(Opportunity.account),
                 joinedload(Lead.opportunity).joinedload(Opportunity.contact),
+                selectinload(Lead.opportunities).joinedload(Opportunity.account),
+                selectinload(Lead.opportunities).joinedload(Opportunity.contact),
                 joinedload(Lead.requirement_types),
                 joinedload(Lead.contact_methods)
             )
@@ -2262,6 +2274,9 @@ class CrmService:
                 "opportunityId": opp.opportunity_id,
                 "name": opp.name,
                 "status": opp.status,
+                "stage": opp.stage,
+                "subStatus": opp.sub_status,
+                "sub_status": opp.sub_status,
                 "currency": opp.currency,
                 "estimatedValue": float(opp.estimated_value) if opp.estimated_value is not None else None,
                 "description": opp.description,
@@ -2270,6 +2285,28 @@ class CrmService:
                 "contactId": opp.contact_id,
                 "contactName": opp.contact.name if opp.contact else None
             }
+
+        opps_list = []
+        if getattr(lead, "opportunities", None):
+            for opp_item in lead.opportunities:
+                opps_list.append({
+                    "id": opp_item.id,
+                    "opportunityId": opp_item.opportunity_id,
+                    "name": opp_item.name,
+                    "status": opp_item.status or "Open",
+                    "stage": opp_item.stage or "Qualify",
+                    "subStatus": opp_item.sub_status,
+                    "sub_status": opp_item.sub_status,
+                    "currency": opp_item.currency or "INR",
+                    "estimatedValue": float(opp_item.estimated_value) if opp_item.estimated_value is not None else None,
+                    "expectedCloseDate": opp_item.expected_close_date.isoformat() if opp_item.expected_close_date else None,
+                    "accountId": opp_item.account_id,
+                    "accountName": opp_item.account.name if opp_item.account else None,
+                    "contactId": opp_item.contact_id,
+                    "contactName": opp_item.contact.name if opp_item.contact else None
+                })
+        elif opp_obj:
+            opps_list.append(opp_obj)
 
         return {
             "id": lead.id,
@@ -2342,9 +2379,45 @@ class CrmService:
             "opportunityId": lead.opportunity_id,
             "opportunityName": lead.opportunity.name if getattr(lead, "opportunity", None) else None,
             "opportunity": opp_obj,
+            "opportunities": opps_list,
+            "isQualified": bool(lead.qualified_at or lead.lifecycle_status == "Qualified"),
             "qualifiedAt": lead.qualified_at.isoformat() if lead.qualified_at else None,
             "qualifiedById": lead.qualified_by_id,
             "qualifiedByName": lead.qualified_by.name if getattr(lead, "qualified_by", None) else None,
+        }
+
+    def _format_quotation(self, q: OpportunityQuotation) -> Dict[str, Any]:
+        return {
+            "id": q.id,
+            "quotationNumber": q.quotation_number,
+            "opportunityId": q.opportunity_id,
+            "revisionNumber": q.revision_number,
+            "version": q.version,
+            "isActive": q.is_active,
+            "title": q.title,
+            "status": q.status,
+            "amount": float(q.amount) if q.amount is not None else 0.0,
+            "currency": q.currency or "INR",
+            "quotationDate": q.quotation_date.isoformat() if q.quotation_date else None,
+            "validUntilDate": q.valid_until_date.isoformat() if q.valid_until_date else None,
+            "termsAndConditions": q.terms_and_conditions,
+            "notes": q.notes,
+            "rejectionReason": q.rejection_reason,
+            "fileId": q.file_id,
+            "documentName": q.document_name,
+            "approvedById": q.approved_by_id,
+            "approvedByName": q.approved_by.name if getattr(q, "approved_by", None) else None,
+            "approvedAt": q.approved_at.isoformat() if q.approved_at else None,
+            "sentMethod": q.sent_method,
+            "sentTo": q.sent_to,
+            "sentAt": q.sent_at.isoformat() if q.sent_at else None,
+            "sentById": q.sent_by_id,
+            "sentByName": q.sent_by.name if getattr(q, "sent_by", None) else None,
+            "sendingEvidence": q.sending_evidence,
+            "createdById": q.created_by_id,
+            "createdByName": q.created_by.name if getattr(q, "created_by", None) else None,
+            "createdAt": q.created_at.isoformat() if q.created_at else None,
+            "updatedAt": q.updated_at.isoformat() if q.updated_at else None,
         }
 
     def _format_opportunity(self, opp: Opportunity) -> Dict[str, Any]:
@@ -2354,6 +2427,33 @@ class CrmService:
         ss_count = len(opp.sample_submissions) if getattr(opp, "sample_submissions", None) else 0
         pt_count = len(opp.product_transactions) if getattr(opp, "product_transactions", None) else 0
         workstream_count = ce_count + ss_count + pt_count
+
+        # Quotation metrics
+        active_quote = None
+        quote_count = 0
+        if getattr(opp, "quotations", None) is not None:
+            quotes = list(opp.quotations)
+            quote_count = len(quotes)
+            active_quotes = [q for q in quotes if q.is_active]
+            if active_quotes:
+                active_quote = active_quotes[0]
+        else:
+            quotes = self.db.query(OpportunityQuotation).filter(OpportunityQuotation.opportunity_id == opp.id).all()
+            quote_count = len(quotes)
+            active_quotes = [q for q in quotes if q.is_active]
+            if active_quotes:
+                active_quote = active_quotes[0]
+
+        has_mismatch = False
+        active_quote_amount = None
+        active_quote_currency = None
+        formatted_active_quote = None
+        if active_quote:
+            formatted_active_quote = self._format_quotation(active_quote)
+            active_quote_amount = float(active_quote.amount) if active_quote.amount is not None else 0.0
+            active_quote_currency = active_quote.currency
+            if opp.estimated_value is not None:
+                has_mismatch = bool(round(float(opp.estimated_value), 2) != round(active_quote_amount, 2))
 
         return {
             "id": opp.id,
@@ -2368,6 +2468,8 @@ class CrmService:
             "status": opp.status or "Open",
             "stage": opp.stage or "Qualify",
             "lossReason": opp.loss_reason,
+            "subStatus": opp.sub_status,
+            "sub_status": opp.sub_status,
             "businessArea": opp.business_area or "Biogas",
             "expectedCloseDate": opp.expected_close_date.isoformat() if opp.expected_close_date else None,
             "actualCloseDate": opp.actual_close_date.isoformat() if opp.actual_close_date else None,
@@ -2383,7 +2485,13 @@ class CrmService:
             "createdAt": opp.created_at.isoformat() if opp.created_at else None,
             "updatedAt": opp.updated_at.isoformat() if opp.updated_at else None,
             "milestoneCount": milestone_count,
-            "workstreamCount": workstream_count
+            "workstreamCount": workstream_count,
+            "quotationCount": quote_count,
+            "activeQuotation": formatted_active_quote,
+            "hasQuotationMismatch": has_mismatch,
+            "activeQuotationAmount": active_quote_amount,
+            "activeQuotationCurrency": active_quote_currency,
+            "canReopen": bool(opp.status in ("Won", "Lost"))
         }
 
     def _format_milestone(self, m: Milestone) -> Dict[str, Any]:
@@ -2622,15 +2730,15 @@ class CrmService:
             Lead.id == lead_id_row[0]
         ).first()
 
-        # Lifecycle check: Disqualified leads cannot be qualified directly
-        if lead.lifecycle_status == "Disqualified":
+        # Lifecycle check: Dormant leads cannot be qualified directly
+        if lead.lifecycle_status in ("Dormant", "Disqualified"):
             raise ValidationError(
-                f"Cannot qualify disqualified Lead '{lead.lead_id}'. Disqualified leads must be reopened to 'Open' before qualification."
+                f"Cannot qualify dormant Lead '{lead.lead_id}'. Dormant leads must be reactivated before qualification."
             )
 
         # Idempotency / Retry-Safety:
         # If the lead is already qualified and linked to an opportunity, return existing linked records safely without creating duplicates
-        if lead.lifecycle_status == "Qualified" and lead.opportunity_id:
+        if lead.qualified_at and lead.opportunity_id:
             opp = self.db.query(Opportunity).options(
                 joinedload(Opportunity.account),
                 joinedload(Opportunity.contact)
@@ -2657,12 +2765,6 @@ class CrmService:
                     } if opp.contact else None,
                     "opportunity": self._format_opportunity(opp)
                 }
-
-        # Lifecycle check: Only Open leads are eligible for qualification
-        if lead.lifecycle_status != "Open":
-            raise ValidationError(
-                f"Lead '{lead.lead_id}' is in status '{lead.lifecycle_status}' and cannot be qualified. Only Open leads can be qualified."
-            )
 
         try:
             # 1. Resolve Account
@@ -2829,7 +2931,7 @@ class CrmService:
                 "contactId": lead.contact_id
             }
 
-            lead.lifecycle_status = "Qualified"
+            # In approved 6-status model, qualification is decoupled from lifecycle_status
             lead.account_id = account.id
             lead.contact_id = contact.id
             lead.opportunity_id = opportunity.id
@@ -2847,7 +2949,7 @@ class CrmService:
             self.db.rollback()
             self.db.expire_all()
             recheck_lead = self.db.query(Lead).filter(or_(Lead.id == lead_id, Lead.lead_id == lead_id)).first()
-            if recheck_lead and recheck_lead.lifecycle_status == "Qualified" and recheck_lead.opportunity_id:
+            if recheck_lead and recheck_lead.opportunity_id:
                 opp = self.db.query(Opportunity).options(
                     joinedload(Opportunity.account),
                     joinedload(Opportunity.contact)
@@ -2931,8 +3033,8 @@ class CrmService:
                 action="CRM_LEAD_QUALIFIED",
                 request=request,
                 performed_by_employee_id=str(actor.id) if actor.id else None,
-                performed_by_name=actor.name or actor.username,
-                role_used=actor.active_role,
+                performed_by_name=getattr(actor, "name", None) or getattr(actor, "username", "Unknown"),
+                role_used=getattr(actor, "active_role", None),
                 target_info={
                     "recordId": lead.id,
                     "leadNumber": lead.lead_id,
@@ -3008,14 +3110,28 @@ class CrmService:
                 base_query = base_query.filter(Opportunity.assigned_to_user_id == str(actor.id))
 
         if status and status.strip().upper() != "ALL":
-            base_query = base_query.filter(Opportunity.status == status.strip())
+            raw_s = status.strip()
+            if raw_s in ("Open Pipeline", "open_pipeline", "Open", "OPEN"):
+                base_query = base_query.filter(Opportunity.status == "Open")
+            elif raw_s in ("Closed Won", "closed_won", "Won", "WON"):
+                base_query = base_query.filter(Opportunity.status == "Won")
+            elif raw_s in ("Closed Lost", "closed_lost", "Lost", "LOST"):
+                base_query = base_query.filter(Opportunity.status == "Lost")
+            else:
+                base_query = base_query.filter(Opportunity.status == raw_s)
+
         if stage and stage.strip().upper() != "ALL":
-            base_query = base_query.filter(Opportunity.stage == stage.strip())
+            raw_stg = stage.strip()
+            if raw_stg in ("Propose", "Propose/Offer"):
+                base_query = base_query.filter(Opportunity.stage.in_(["Propose/Offer", "Propose"]))
+            else:
+                base_query = base_query.filter(Opportunity.stage == raw_stg)
+
         if business_area and business_area.strip().upper() != "ALL":
             base_query = base_query.filter(Opportunity.business_area == business_area.strip())
-        if assigned_to_user_id:
+        if assigned_to_user_id and assigned_to_user_id.strip().upper() != "ALL":
             base_query = base_query.filter(Opportunity.assigned_to_user_id == assigned_to_user_id.strip())
-        if account_id:
+        if account_id and account_id.strip().upper() != "ALL":
             base_query = base_query.filter(Opportunity.account_id == account_id.strip())
         if search:
             s = f"%{search.strip().lower()}%"
@@ -3039,7 +3155,8 @@ class CrmService:
                 selectinload(Opportunity.milestones),
                 selectinload(Opportunity.consulting_engagements),
                 selectinload(Opportunity.sample_submissions),
-                selectinload(Opportunity.product_transactions)
+                selectinload(Opportunity.product_transactions),
+                selectinload(Opportunity.quotations)
             )
             .order_by(Opportunity.created_at.desc())
             .offset(offset)
@@ -3058,7 +3175,8 @@ class CrmService:
             joinedload(Opportunity.milestones),
             joinedload(Opportunity.consulting_engagements),
             joinedload(Opportunity.sample_submissions),
-            joinedload(Opportunity.product_transactions)
+            joinedload(Opportunity.product_transactions),
+            selectinload(Opportunity.quotations)
         ).filter(
             or_(Opportunity.id == opp_id, Opportunity.opportunity_id == opp_id)
         ).first()
@@ -3066,15 +3184,187 @@ class CrmService:
             raise NotFoundError(f"Opportunity '{opp_id}' not found.")
         return self._format_opportunity(opp)
 
+    def create_opportunity(
+        self,
+        actor: CurrentUser,
+        payload: OpportunityCreate,
+        request: Optional[Request] = None
+    ) -> Dict[str, Any]:
+        account = None
+        if payload.accountId and str(payload.accountId).strip():
+            account = self.db.query(Account).filter(
+                or_(Account.id == payload.accountId.strip(), Account.account_id == payload.accountId.strip()),
+                Account.is_active == True
+            ).first()
+            if not account:
+                raise NotFoundError(f"Account '{payload.accountId}' not found.")
+
+        contact = None
+        if payload.contactId and str(payload.contactId).strip():
+            contact = self.db.query(Contact).filter(
+                or_(Contact.id == payload.contactId.strip(), Contact.contact_id == payload.contactId.strip()),
+                Contact.is_active == True
+            ).first()
+            if not contact:
+                raise NotFoundError(f"Contact '{payload.contactId}' not found.")
+            if account and contact.account_id and contact.account_id != account.id:
+                raise ValidationError("Selected Contact belongs to a different Account.")
+
+        if not account and not contact:
+            raise ValidationError("At least one primary relationship (Primary Account or Primary Contact) is required.")
+
+        lead = None
+        if payload.originatingLeadId:
+            lead = self.db.query(Lead).filter(
+                or_(Lead.id == payload.originatingLeadId, Lead.lead_id == payload.originatingLeadId)
+            ).first()
+            if not lead:
+                raise NotFoundError(f"Lead '{payload.originatingLeadId}' not found.")
+
+        if payload.estimatedValue is not None and payload.estimatedValue < 0:
+            raise ValidationError("Estimated value cannot be negative.")
+
+        raw_stage = (payload.stage or "Qualify").strip()
+        if raw_stage == "Propose":
+            raw_stage = "Propose/Offer"
+        if raw_stage not in OPPORTUNITY_STAGES:
+            raise ValidationError(f"Invalid stage '{raw_stage}'. Permitted stages are: {', '.join(OPPORTUNITY_STAGES)}")
+
+        raw_status = (payload.status or "Open").strip()
+        if raw_status not in ("Open", "Won", "Lost"):
+            raise ValidationError(f"Invalid status '{raw_status}'. Permitted statuses are Open, Won, Lost.")
+
+        if raw_stage == "Close" and raw_status == "Open":
+            raise ValidationError("An opportunity in the 'Close' stage must have an outcome of Closed Won or Closed Lost.")
+        if raw_status in ("Won", "Lost") and raw_stage != "Close":
+            raise ValidationError(f"Closed opportunities ({raw_status}) must be saved in the 'Close' stage.")
+        if raw_status == "Lost" and not (payload.lossReason and str(payload.lossReason).strip()):
+            raise ValidationError("Loss reason is mandatory when marking an opportunity as Lost.")
+
+        opp_code = get_next_sequence_id(self.db, "OPPORTUNITY", "OPP")
+        req_types_str = ", ".join(payload.requirementTypes) if payload.requirementTypes else None
+        sub_status_val = (payload.subStatus or payload.sub_status or "").strip() or None
+
+        opp = Opportunity(
+            opportunity_id=opp_code,
+            name=payload.name.strip(),
+            account_id=account.id if account else None,
+            contact_id=contact.id if contact else None,
+            originating_lead_id=lead.id if lead else None,
+            status=raw_status,
+            stage=raw_stage,
+            loss_reason=payload.lossReason.strip() if (raw_status == "Lost" and payload.lossReason) else None,
+            sub_status=sub_status_val,
+            currency=payload.currency or "INR",
+            estimated_value=payload.estimatedValue,
+            description=payload.description,
+            requirement_summary=payload.requirementSummary,
+            requirement_types=req_types_str,
+            assigned_to_user_id=payload.assignedToUserId,
+            created_by_id=str(actor.id) if actor.id else None,
+            updated_by_id=str(actor.id) if actor.id else None
+        )
+        self.db.add(opp)
+        self.db.commit()
+        self.db.refresh(opp)
+
+        self.audit_service.log(
+            action="CRM_OPPORTUNITY_CREATED",
+            request=request,
+            performed_by_employee_id=str(actor.id) if actor.id else None,
+            performed_by_name=actor.name or actor.username,
+            role_used=actor.active_role,
+            target_info={
+                "recordId": opp.id,
+                "opportunityNumber": opp.opportunity_id,
+                "name": opp.name,
+                "originatingLeadId": opp.originating_lead_id,
+                "accountId": opp.account_id,
+                "contactId": opp.contact_id,
+                "stage": opp.stage,
+                "status": opp.status
+            },
+            after_state={"opportunityId": opp.opportunity_id, "name": opp.name, "stage": opp.stage, "status": opp.status}
+        )
+
+        return self.get_opportunity(opp.id)
+
+    def create_lead_opportunity(
+        self,
+        actor: CurrentUser,
+        lead_id: str,
+        payload: OpportunityCreate,
+        request: Optional[Request] = None
+    ) -> Dict[str, Any]:
+        lead = self.db.query(Lead).options(
+            joinedload(Lead.account),
+            joinedload(Lead.contact)
+        ).filter(
+            or_(Lead.id == lead_id, Lead.lead_id == lead_id)
+        ).first()
+        if not lead:
+            raise NotFoundError(f"Lead '{lead_id}' not found.")
+
+        if lead.lifecycle_status in ("Dormant", "Disqualified"):
+            raise ValidationError(f"Cannot create opportunity for Dormant Lead '{lead.lead_id}'. Please reactivate first.")
+
+        account_id = payload.accountId or lead.account_id
+        if not account_id:
+            account_name = lead.company_name or lead.lead_name or f"Account for {lead.lead_id}"
+            acc = self.db.query(Account).filter(func.lower(Account.name) == account_name.lower().strip()).first()
+            if not acc:
+                acc_code = get_next_sequence_id(self.db, "ACCOUNT", "ACC")
+                acc = Account(
+                    account_id=acc_code,
+                    name=account_name.strip(),
+                    site_name=lead.site_name,
+                    email=lead.company_email,
+                    phone=lead.business_phone,
+                    address=lead.location,
+                    is_active=True
+                )
+                self.db.add(acc)
+                self.db.flush()
+            account_id = acc.id
+            lead.account_id = acc.id
+
+        if not payload.contactId and not lead.contact_id:
+            contact_name = f"{lead.first_name or ''} {lead.last_name or ''}".strip() or (lead.contact.name if lead.contact else None)
+            if contact_name or lead.contact_email or lead.mobile_phone:
+                c_name = contact_name or f"Contact for {lead.lead_id}"
+                con_code = get_next_sequence_id(self.db, "CONTACT", "CON")
+                con = Contact(
+                    contact_id=con_code,
+                    account_id=account_id,
+                    name=c_name,
+                    email=lead.contact_email,
+                    mobile_number=lead.mobile_phone,
+                    designation=lead.job_title,
+                    is_active=True
+                )
+                self.db.add(con)
+                self.db.flush()
+                lead.contact_id = con.id
+
+        payload.accountId = account_id
+        if not payload.contactId and lead.contact_id:
+            payload.contactId = lead.contact_id
+        payload.originatingLeadId = lead.id
+
+        return self.create_opportunity(actor, payload, request)
+
     def get_pipeline_summary(self, actor: CurrentUser) -> Dict[str, Any]:
-        stages = ["Qualify", "Develop", "Propose", "Close"]
+        stages = ["Enquiry", "Qualify", "Develop", "Propose/Offer", "Negotiate", "Close"]
         stage_metrics = []
         for stg in stages:
+            filter_stages = [stg]
+            if stg == "Propose/Offer":
+                filter_stages = ["Propose/Offer", "Propose"]
             row = self.db.query(
                 func.count(Opportunity.id),
                 func.coalesce(func.sum(Opportunity.estimated_value), 0.0)
             ).filter(
-                Opportunity.stage == stg,
+                Opportunity.stage.in_(filter_stages),
                 Opportunity.status == "Open"
             ).first()
             cnt = row[0] or 0
@@ -3088,6 +3378,31 @@ class CrmService:
         ).first()
         total_open_value = float(open_val_row[0] or 0.0)
 
+        # Currency-grouped values
+        open_currencies = self.db.query(
+            Opportunity.currency,
+            func.coalesce(func.sum(Opportunity.estimated_value), 0.0)
+        ).filter(
+            Opportunity.status == "Open"
+        ).group_by(Opportunity.currency).all()
+        open_by_currency = {c or "INR": float(v or 0.0) for c, v in open_currencies}
+
+        won_currencies = self.db.query(
+            Opportunity.currency,
+            func.coalesce(func.sum(Opportunity.estimated_value), 0.0)
+        ).filter(
+            Opportunity.status == "Won"
+        ).group_by(Opportunity.currency).all()
+        won_by_currency = {c or "INR": float(v or 0.0) for c, v in won_currencies}
+
+        lost_currencies = self.db.query(
+            Opportunity.currency,
+            func.coalesce(func.sum(Opportunity.estimated_value), 0.0)
+        ).filter(
+            Opportunity.status == "Lost"
+        ).group_by(Opportunity.currency).all()
+        lost_by_currency = {c or "INR": float(v or 0.0) for c, v in lost_currencies}
+
         status_counts = {}
         for st in ["Open", "Won", "Lost"]:
             c = self.db.query(func.count(Opportunity.id)).filter(Opportunity.status == st).scalar() or 0
@@ -3099,6 +3414,9 @@ class CrmService:
             "success": True,
             "totalCount": total_count,
             "totalOpenValue": total_open_value,
+            "openPipelineValueByCurrency": open_by_currency,
+            "wonOpportunityValueByCurrency": won_by_currency,
+            "lostOpportunityValueByCurrency": lost_by_currency,
             "byStage": stage_metrics,
             "byStatus": status_counts
         }
@@ -3119,30 +3437,59 @@ class CrmService:
             joinedload(Opportunity.milestones),
             joinedload(Opportunity.consulting_engagements),
             joinedload(Opportunity.sample_submissions),
-            joinedload(Opportunity.product_transactions)
+            joinedload(Opportunity.product_transactions),
+            selectinload(Opportunity.quotations)
         ).filter(
             or_(Opportunity.id == opp_id, Opportunity.opportunity_id == opp_id)
         ).with_for_update(of=Opportunity).first()
         if not opp:
             raise NotFoundError(f"Opportunity '{opp_id}' not found.")
 
-        valid_stages = ["Qualify", "Develop", "Propose", "Close"]
+        valid_stages = ["Enquiry", "Qualify", "Develop", "Propose/Offer", "Negotiate", "Close"]
         new_stage = (payload.newStage or "").strip()
+        if new_stage == "Propose":
+            new_stage = "Propose/Offer"
         if new_stage not in valid_stages:
             raise ValidationError(f"Invalid stage '{new_stage}'. Permitted stages are: {', '.join(valid_stages)}")
 
-        old_stage = opp.stage
+        STAGE_INDEX = {s: i for i, s in enumerate(valid_stages)}
+        old_stage = opp.stage or "Qualify"
+        if old_stage == "Propose":
+            old_stage = "Propose/Offer"
+        old_idx = STAGE_INDEX.get(old_stage, 0)
+        new_idx = STAGE_INDEX.get(new_stage, 0)
+
+        # Backward stage movement permission: only authorized managers
+        if new_idx < old_idx:
+            user_roles = set(actor.roles or [])
+            if actor.active_role:
+                user_roles.add(actor.active_role)
+            crm_roles = set(actor.module_roles.get("CRM", [])) if actor.module_roles else set()
+            all_user_roles = user_roles.union(crm_roles)
+            is_manager = bool(
+                actor.is_global_admin or
+                "Admin" in all_user_roles or
+                "SuperAdmin" in all_user_roles or
+                "IT_ADMIN" in all_user_roles or
+                "DIRECTOR" in all_user_roles or
+                "CRM_SALES_MANAGER" in all_user_roles or
+                "CRM_ADMIN" in all_user_roles
+            )
+            if not is_manager:
+                raise PermissionDeniedError("Only authorized sales managers or CRM administrators can move an opportunity backward through the pipeline.")
+
         old_status = opp.status
         target_status = payload.status.strip() if payload.status else None
 
         if target_status and target_status not in ["Open", "Won", "Lost"]:
             raise ValidationError(f"Invalid status '{target_status}'. Permitted statuses are Open, Won, Lost.")
 
+        # Stage and outcome combined business rules
         if target_status == "Lost":
             if not payload.lossReason or not payload.lossReason.strip():
                 raise ValidationError("Loss reason is mandatory when marking an opportunity as Lost.")
             opp.status = "Lost"
-            opp.stage = new_stage
+            opp.stage = "Close"
             opp.loss_reason = payload.lossReason.strip()
             close_dt = payload.actualCloseDate or datetime.now(timezone.utc)
             opp.actual_close_date = close_dt if isinstance(close_dt, datetime) else datetime.combine(close_dt, datetime.min.time(), tzinfo=timezone.utc)
@@ -3155,6 +3502,8 @@ class CrmService:
             close_dt = payload.actualCloseDate or datetime.now(timezone.utc)
             opp.actual_close_date = close_dt if isinstance(close_dt, datetime) else datetime.combine(close_dt, datetime.min.time(), tzinfo=timezone.utc)
         else:
+            if new_stage == "Close":
+                raise ValidationError("Opportunities moving to the 'Close' stage must be marked as Closed Won or Closed Lost.")
             opp.stage = new_stage
             opp.status = "Open"
             opp.loss_reason = None
@@ -3202,14 +3551,18 @@ class CrmService:
             joinedload(Opportunity.milestones),
             joinedload(Opportunity.consulting_engagements),
             joinedload(Opportunity.sample_submissions),
-            joinedload(Opportunity.product_transactions)
+            joinedload(Opportunity.product_transactions),
+            selectinload(Opportunity.quotations)
         ).filter(
             or_(Opportunity.id == opp_id, Opportunity.opportunity_id == opp_id)
         ).with_for_update(of=Opportunity).first()
         if not opp:
             raise NotFoundError(f"Opportunity '{opp_id}' not found.")
 
+        valid_stages = ["Enquiry", "Qualify", "Develop", "Propose/Offer", "Negotiate", "Close"]
+        STAGE_INDEX = {s: i for i, s in enumerate(valid_stages)}
         changes = {}
+
         if payload.name is not None:
             clean_name = payload.name.strip()
             if not clean_name:
@@ -3217,8 +3570,21 @@ class CrmService:
             changes["name"] = {"old": opp.name, "new": clean_name}
             opp.name = clean_name
 
+        if payload.currency is not None:
+            clean_curr = payload.currency.strip().upper()
+            if clean_curr not in APPROVED_CURRENCIES:
+                raise ValidationError(f"Invalid currency '{clean_curr}'. Approved currencies are: {', '.join(APPROVED_CURRENCIES)}")
+            if clean_curr != opp.currency:
+                changes["currency"] = {"old": opp.currency, "new": clean_curr}
+                opp.currency = clean_curr
+
         if payload.estimatedValue is not None:
-            changes["estimated_value"] = {"old": float(opp.estimated_value) if opp.estimated_value else None, "new": payload.estimatedValue}
+            if payload.estimatedValue < 0:
+                raise ValidationError("Estimated value cannot be negative.")
+            old_val = float(opp.estimated_value) if opp.estimated_value is not None else None
+            changes["estimated_value"] = {"old": old_val, "new": payload.estimatedValue}
+            if payload.estimatedValueChangeReason:
+                changes["estimated_value_change_reason"] = payload.estimatedValueChangeReason.strip()
             opp.estimated_value = payload.estimatedValue
 
         if payload.expectedCloseDate is not None:
@@ -3248,16 +3614,139 @@ class CrmService:
             else:
                 opp.assigned_to_user_id = None
 
-        if payload.contactId is not None:
-            if payload.contactId.strip():
-                contact = self.db.query(Contact).filter(Contact.id == payload.contactId.strip()).first()
-                if not contact:
-                    raise ValidationError(f"Contact '{payload.contactId}' does not exist.")
-                if contact.account_id and contact.account_id != opp.account_id:
-                    raise ValidationError(f"Contact '{contact.name}' belongs to a different account.")
-                opp.contact_id = contact.id
+        # Relationships: account_id and contact_id
+        new_account_id = opp.account_id
+        if "accountId" in payload.model_fields_set:
+            if payload.accountId and payload.accountId.strip():
+                acc = self.db.query(Account).filter(or_(Account.id == payload.accountId.strip(), Account.account_id == payload.accountId.strip()), Account.is_active == True).first()
+                if not acc:
+                    raise NotFoundError(f"Account '{payload.accountId}' not found.")
+                new_account_id = acc.id
             else:
-                raise ValidationError("Opportunity primary contact cannot be unassigned.")
+                new_account_id = None
+
+        new_contact_id = opp.contact_id
+        if "contactId" in payload.model_fields_set:
+            if payload.contactId and payload.contactId.strip():
+                con = self.db.query(Contact).filter(or_(Contact.id == payload.contactId.strip(), Contact.contact_id == payload.contactId.strip()), Contact.is_active == True).first()
+                if not con:
+                    raise NotFoundError(f"Contact '{payload.contactId}' not found.")
+                new_contact_id = con.id
+            else:
+                new_contact_id = None
+
+        if not new_account_id and not new_contact_id:
+            raise ValidationError("At least one primary relationship (Primary Account or Primary Contact) is required.")
+
+        if new_account_id and new_contact_id:
+            con_obj = self.db.query(Contact).filter(Contact.id == new_contact_id).first()
+            if con_obj and con_obj.account_id and con_obj.account_id != new_account_id:
+                raise ValidationError("Selected Contact belongs to a different Account.")
+
+        if new_account_id != opp.account_id:
+            changes["account_id"] = {"old": opp.account_id, "new": new_account_id}
+            opp.account_id = new_account_id
+
+        if new_contact_id != opp.contact_id:
+            changes["contact_id"] = {"old": opp.contact_id, "new": new_contact_id}
+            opp.contact_id = new_contact_id
+
+        # Stage and Status validation & updates
+        proposed_stage = opp.stage or "Qualify"
+        if proposed_stage == "Propose":
+            proposed_stage = "Propose/Offer"
+
+        if payload.stage is not None:
+            clean_stg = payload.stage.strip()
+            if clean_stg == "Propose":
+                clean_stg = "Propose/Offer"
+            if clean_stg not in valid_stages:
+                raise ValidationError(f"Invalid stage '{clean_stg}'. Permitted stages are: {', '.join(valid_stages)}")
+            proposed_stage = clean_stg
+
+        proposed_status = opp.status or "Open"
+        if payload.status is not None:
+            clean_stat = payload.status.strip()
+            if clean_stat not in ("Open", "Won", "Lost"):
+                raise ValidationError(f"Invalid status '{clean_stat}'. Permitted statuses are Open, Won, Lost.")
+            proposed_status = clean_stat
+
+        # Check backward transition permission
+        if proposed_stage != opp.stage:
+            old_idx = STAGE_INDEX.get(opp.stage, 0)
+            new_idx = STAGE_INDEX.get(proposed_stage, 0)
+            if new_idx < old_idx:
+                user_roles = set(actor.roles or [])
+                if actor.active_role:
+                    user_roles.add(actor.active_role)
+                crm_roles = set(actor.module_roles.get("CRM", [])) if actor.module_roles else set()
+                all_user_roles = user_roles.union(crm_roles)
+                is_manager = bool(
+                    actor.is_global_admin or
+                    "Admin" in all_user_roles or
+                    "SuperAdmin" in all_user_roles or
+                    "IT_ADMIN" in all_user_roles or
+                    "DIRECTOR" in all_user_roles or
+                    "CRM_SALES_MANAGER" in all_user_roles or
+                    "CRM_ADMIN" in all_user_roles
+                )
+                if not is_manager:
+                    raise PermissionDeniedError("Only authorized sales managers or CRM administrators can move an opportunity backward through the pipeline.")
+
+        # Combined stage and outcome validation
+        if proposed_status in ("Won", "Lost") and proposed_stage != "Close":
+            raise ValidationError(f"Closed opportunities ({proposed_status}) must be saved in the 'Close' stage.")
+        if proposed_status == "Open" and proposed_stage == "Close":
+            raise ValidationError("An opportunity in the 'Close' stage must have an outcome of Closed Won or Closed Lost.")
+        if proposed_status == "Lost":
+            loss_r = payload.lossReason or opp.loss_reason
+            if not loss_r or not str(loss_r).strip():
+                raise ValidationError("Loss reason is mandatory when marking an opportunity as Lost.")
+
+        # Reopening guard: if moving from Closed to Open
+        if opp.status in ("Won", "Lost") and proposed_status == "Open":
+            user_roles = set(actor.roles or [])
+            if actor.active_role:
+                user_roles.add(actor.active_role)
+            crm_roles = set(actor.module_roles.get("CRM", [])) if actor.module_roles else set()
+            all_user_roles = user_roles.union(crm_roles)
+            can_reopen = bool(
+                actor.is_global_admin or
+                "Admin" in all_user_roles or
+                "SuperAdmin" in all_user_roles or
+                "CRM_ADMIN" in all_user_roles or
+                "IT_ADMIN" in all_user_roles or
+                "DIRECTOR" in all_user_roles
+            )
+            if not can_reopen:
+                raise PermissionDeniedError("Reopening a closed Opportunity requires CRM Administrator authorization.")
+
+        if proposed_stage != opp.stage:
+            changes["stage"] = {"old": opp.stage, "new": proposed_stage}
+            opp.stage = proposed_stage
+
+        if proposed_status != opp.status:
+            changes["status"] = {"old": opp.status, "new": proposed_status}
+            opp.status = proposed_status
+
+        if proposed_status == "Lost":
+            loss_r = payload.lossReason or opp.loss_reason
+            opp.loss_reason = loss_r.strip() if loss_r else None
+            close_dt = payload.actualCloseDate or opp.actual_close_date or datetime.now(timezone.utc)
+            opp.actual_close_date = close_dt if isinstance(close_dt, datetime) else datetime.combine(close_dt, datetime.min.time(), tzinfo=timezone.utc)
+        elif proposed_status == "Won":
+            opp.loss_reason = None
+            close_dt = payload.actualCloseDate or opp.actual_close_date or datetime.now(timezone.utc)
+            opp.actual_close_date = close_dt if isinstance(close_dt, datetime) else datetime.combine(close_dt, datetime.min.time(), tzinfo=timezone.utc)
+        else:
+            opp.loss_reason = None
+            opp.actual_close_date = None
+
+        if "subStatus" in payload.model_fields_set or "sub_status" in payload.model_fields_set:
+            val = payload.subStatus if "subStatus" in payload.model_fields_set else payload.sub_status
+            clean_sub = str(val).strip() if (val is not None and str(val).strip()) else None
+            changes["sub_status"] = {"old": opp.sub_status, "new": clean_sub}
+            opp.sub_status = clean_sub
 
         opp.updated_by_id = str(actor.id) if actor.id else None
         opp.updated_at = datetime.now(timezone.utc)
@@ -3656,6 +4145,648 @@ class CrmService:
         return [self._format_milestone(m) for m in milestones]
 
     # =========================================================================
+    # 4B. PHASE 5A: OPPORTUNITY REOPENING, REVENUE & QUOTATION SERVICES
+    # =========================================================================
+
+    def reopen_opportunity(
+        self,
+        actor: CurrentUser,
+        opp_id: str,
+        payload: OpportunityReopenRequest,
+        request: Optional[Request] = None
+    ) -> Dict[str, Any]:
+        user_roles = set(actor.roles or [])
+        if actor.active_role:
+            user_roles.add(actor.active_role)
+        crm_roles = set(actor.module_roles.get("CRM", [])) if actor.module_roles else set()
+        all_user_roles = user_roles.union(crm_roles)
+
+        can_reopen = bool(
+            actor.is_global_admin or
+            "Admin" in all_user_roles or
+            "SuperAdmin" in all_user_roles or
+            "CRM_ADMIN" in all_user_roles or
+            "IT_ADMIN" in all_user_roles or
+            "DIRECTOR" in all_user_roles
+        )
+        if not can_reopen:
+            raise PermissionDeniedError("Reopening a closed Opportunity requires CRM Administrator authorization.")
+
+        opp = self.db.query(Opportunity).options(
+            joinedload(Opportunity.account),
+            joinedload(Opportunity.contact),
+            joinedload(Opportunity.originating_lead),
+            joinedload(Opportunity.assigned_to),
+            joinedload(Opportunity.created_by),
+            selectinload(Opportunity.milestones),
+            selectinload(Opportunity.consulting_engagements),
+            selectinload(Opportunity.sample_submissions),
+            selectinload(Opportunity.product_transactions),
+            selectinload(Opportunity.quotations)
+        ).filter(
+            or_(Opportunity.id == opp_id, Opportunity.opportunity_id == opp_id)
+        ).with_for_update(of=Opportunity).first()
+        if not opp:
+            raise NotFoundError(f"Opportunity '{opp_id}' not found.")
+
+        if opp.status not in ("Won", "Lost"):
+            raise ValidationError(f"Opportunity '{opp.opportunity_id}' is currently '{opp.status}'. Only Won or Lost opportunities can be reopened.")
+
+        reason = (payload.reason or "").strip()
+        if not reason:
+            raise ValidationError("Mandatory justification reason must be provided to reopen a closed Opportunity.")
+
+        target_stage = (payload.reopenStage or "").strip()
+        if target_stage == "Propose":
+            target_stage = "Propose/Offer"
+        open_stages = ["Enquiry", "Qualify", "Develop", "Propose/Offer", "Negotiate"]
+        if target_stage == "Close":
+            raise ValidationError("A reopened opportunity cannot remain in the 'Close' stage. Select an active pipeline stage.")
+        if target_stage not in open_stages:
+            raise ValidationError(f"Invalid reopen stage '{target_stage}'. Permitted stages are: {', '.join(open_stages)}")
+
+        old_status = opp.status
+        old_stage = opp.stage
+        old_close_date = opp.actual_close_date.isoformat() if opp.actual_close_date else None
+        old_loss_reason = opp.loss_reason
+
+        opp.status = "Open"
+        opp.stage = target_stage
+        opp.actual_close_date = None
+        opp.loss_reason = None
+        opp.updated_by_id = str(actor.id) if actor.id else None
+        opp.updated_at = datetime.now(timezone.utc)
+        self.db.commit()
+        self.db.refresh(opp)
+
+        try:
+            self.audit_service.log(
+                action="CRM_OPPORTUNITY_REOPENED",
+                request=request,
+                performed_by_employee_id=str(actor.id) if actor.id else None,
+                performed_by_name=actor.name or actor.username,
+                role_used=actor.active_role,
+                target_info={
+                    "opportunity_id": opp.opportunity_id,
+                    "previous_status": old_status,
+                    "previous_stage": old_stage,
+                    "new_status": "Open",
+                    "new_stage": opp.stage,
+                    "previous_actual_close_date": old_close_date,
+                    "previous_loss_reason": old_loss_reason,
+                    "reason": reason
+                }
+            )
+        except Exception as audit_err:
+            logger.warning(f"Audit log failed for opportunity reopen {opp.opportunity_id}: {audit_err}")
+
+        return self._format_opportunity(opp)
+
+    def get_sales_hub_revenue_metrics(self, actor: CurrentUser) -> Dict[str, Any]:
+        stages = OPPORTUNITY_STAGES
+        stage_metrics = []
+        for stg in stages:
+            filter_stages = [stg]
+            if stg == "Propose/Offer":
+                filter_stages = ["Propose/Offer", "Propose"]
+            row = self.db.query(
+                func.count(Opportunity.id),
+                func.coalesce(func.sum(Opportunity.estimated_value), 0.0)
+            ).filter(
+                Opportunity.stage.in_(filter_stages),
+                Opportunity.status == "Open"
+            ).first()
+            cnt = row[0] or 0
+            val = float(row[1] or 0.0)
+            stage_metrics.append({"stage": stg, "count": cnt, "totalValue": val})
+
+        # Totals by currency
+        open_currencies = self.db.query(
+            Opportunity.currency,
+            func.coalesce(func.sum(Opportunity.estimated_value), 0.0)
+        ).filter(
+            Opportunity.status == "Open"
+        ).group_by(Opportunity.currency).all()
+        open_by_currency = {c or "INR": float(v or 0.0) for c, v in open_currencies}
+
+        won_currencies = self.db.query(
+            Opportunity.currency,
+            func.coalesce(func.sum(Opportunity.estimated_value), 0.0)
+        ).filter(
+            Opportunity.status == "Won"
+        ).group_by(Opportunity.currency).all()
+        won_by_currency = {c or "INR": float(v or 0.0) for c, v in won_currencies}
+
+        lost_currencies = self.db.query(
+            Opportunity.currency,
+            func.coalesce(func.sum(Opportunity.estimated_value), 0.0)
+        ).filter(
+            Opportunity.status == "Lost"
+        ).group_by(Opportunity.currency).all()
+        lost_by_currency = {c or "INR": float(v or 0.0) for c, v in lost_currencies}
+
+        open_count = self.db.query(func.count(Opportunity.id)).filter(Opportunity.status == "Open").scalar() or 0
+        won_count = self.db.query(func.count(Opportunity.id)).filter(Opportunity.status == "Won").scalar() or 0
+        lost_count = self.db.query(func.count(Opportunity.id)).filter(Opportunity.status == "Lost").scalar() or 0
+        total_count = open_count + won_count + lost_count
+
+        return {
+            "success": True,
+            "totalCount": total_count,
+            "openCount": open_count,
+            "wonCount": won_count,
+            "lostCount": lost_count,
+            "openPipelineValueByCurrency": open_by_currency,
+            "wonOpportunityValueByCurrency": won_by_currency,
+            "lostOpportunityValueByCurrency": lost_by_currency,
+            "byStage": stage_metrics,
+            "labelingNotice": "Won Opportunity Value represents signed commercial commitments and does not represent collected cash or recognized accounting revenue."
+        }
+
+    def _get_opportunity_or_404(self, opp_id: str, for_update: bool = False) -> Opportunity:
+        q = self.db.query(Opportunity).filter(
+            or_(Opportunity.id == opp_id, Opportunity.opportunity_id == opp_id)
+        )
+        if for_update:
+            q = q.with_for_update(of=Opportunity)
+        opp = q.first()
+        if not opp:
+            raise NotFoundError(f"Opportunity '{opp_id}' not found.")
+        return opp
+
+    def list_opportunity_quotations(self, opp_id: str) -> Dict[str, Any]:
+        opp = self._get_opportunity_or_404(opp_id)
+        quotes = (
+            self.db.query(OpportunityQuotation)
+            .options(
+                joinedload(OpportunityQuotation.approved_by),
+                joinedload(OpportunityQuotation.sent_by),
+                joinedload(OpportunityQuotation.created_by),
+                joinedload(OpportunityQuotation.updated_by)
+            )
+            .filter(OpportunityQuotation.opportunity_id == opp.id)
+            .order_by(OpportunityQuotation.created_at.desc())
+            .all()
+        )
+        formatted = [self._format_quotation(q) for q in quotes]
+        active = next((f for f in formatted if f["isActive"]), None)
+        return {
+            "success": True,
+            "count": len(formatted),
+            "activeQuotation": active,
+            "quotations": formatted
+        }
+
+    def get_quotation(self, opp_id: str, quotation_id: str) -> Dict[str, Any]:
+        opp = self._get_opportunity_or_404(opp_id)
+        q = self.db.query(OpportunityQuotation).options(
+            joinedload(OpportunityQuotation.approved_by),
+            joinedload(OpportunityQuotation.sent_by),
+            joinedload(OpportunityQuotation.created_by),
+            joinedload(OpportunityQuotation.updated_by)
+        ).filter(
+            OpportunityQuotation.opportunity_id == opp.id,
+            or_(OpportunityQuotation.id == quotation_id, OpportunityQuotation.quotation_number == quotation_id)
+        ).first()
+        if not q:
+            raise NotFoundError(f"Quotation '{quotation_id}' not found for Opportunity '{opp.opportunity_id}'.")
+        return {"success": True, "quotation": self._format_quotation(q)}
+
+    def create_opportunity_quotation(
+        self,
+        actor: CurrentUser,
+        opp_id: str,
+        payload: OpportunityQuotationCreate,
+        request: Optional[Request] = None
+    ) -> Dict[str, Any]:
+        opp = self._get_opportunity_or_404(opp_id, for_update=True)
+
+        currency_val = (payload.currency or opp.currency or "INR").strip().upper()
+        if currency_val not in APPROVED_CURRENCIES:
+            raise ValidationError(f"Invalid currency '{currency_val}'. Approved currencies are: {', '.join(APPROVED_CURRENCIES)}")
+
+        if payload.amount < 0:
+            raise ValidationError("Quotation amount cannot be negative.")
+
+        # Deactivate any existing active quotations for this opportunity
+        existing_active = self.db.query(OpportunityQuotation).filter(
+            OpportunityQuotation.opportunity_id == opp.id,
+            OpportunityQuotation.is_active == True
+        ).all()
+        for eq in existing_active:
+            eq.is_active = False
+            if eq.status not in ("Superseded", "Accepted", "Rejected"):
+                eq.status = "Superseded"
+
+        quotation_num = get_next_sequence_id(self.db, "QUOTATION", "QT", padding=5, commit=False)
+
+        q = OpportunityQuotation(
+            quotation_number=quotation_num,
+            opportunity_id=opp.id,
+            revision_number=1,
+            version="v1",
+            is_active=True,
+            title=(payload.title or f"Quotation for {opp.name}").strip(),
+            status="Draft",
+            amount=payload.amount,
+            currency=currency_val,
+            quotation_date=payload.quotationDate or date.today(),
+            valid_until_date=payload.validUntilDate,
+            terms_and_conditions=payload.termsAndConditions,
+            notes=payload.notes,
+            file_id=payload.fileId,
+            document_name=payload.documentName,
+            created_by_id=str(actor.id) if actor.id else None,
+            updated_by_id=str(actor.id) if actor.id else None
+        )
+        self.db.add(q)
+        self.db.commit()
+        self.db.refresh(q)
+
+        try:
+            self.audit_service.log(
+                action="CRM_QUOTATION_CREATED",
+                request=request,
+                performed_by_employee_id=str(actor.id) if actor.id else None,
+                performed_by_name=actor.name or actor.username,
+                role_used=actor.active_role,
+                target_info={
+                    "quotation_id": q.id,
+                    "quotation_number": q.quotation_number,
+                    "opportunity_id": opp.opportunity_id,
+                    "version": q.version,
+                    "amount": float(q.amount),
+                    "currency": q.currency
+                }
+            )
+        except Exception as audit_err:
+            logger.warning(f"Audit log failed for quotation creation {q.quotation_number}: {audit_err}")
+
+        return self.get_quotation(opp.id, q.id)
+
+    def update_opportunity_quotation(
+        self,
+        actor: CurrentUser,
+        opp_id: str,
+        quotation_id: str,
+        payload: OpportunityQuotationUpdate,
+        request: Optional[Request] = None
+    ) -> Dict[str, Any]:
+        opp = self._get_opportunity_or_404(opp_id)
+        q = self.db.query(OpportunityQuotation).filter(
+            OpportunityQuotation.opportunity_id == opp.id,
+            or_(OpportunityQuotation.id == quotation_id, OpportunityQuotation.quotation_number == quotation_id)
+        ).with_for_update(of=OpportunityQuotation).first()
+        if not q:
+            raise NotFoundError(f"Quotation '{quotation_id}' not found for Opportunity '{opp.opportunity_id}'.")
+
+        if q.status in ("Superseded", "Accepted"):
+            raise ValidationError(f"Quotation '{q.quotation_number}' is '{q.status}' and cannot be edited. Please create a new revision instead.")
+
+        changes = {}
+        approval_invalidated = False
+
+        if payload.title is not None:
+            clean_title = payload.title.strip()
+            if clean_title != q.title:
+                changes["title"] = {"old": q.title, "new": clean_title}
+                q.title = clean_title
+
+        if payload.amount is not None:
+            if payload.amount < 0:
+                raise ValidationError("Quotation amount cannot be negative.")
+            if float(q.amount) != float(payload.amount):
+                changes["amount"] = {"old": float(q.amount), "new": float(payload.amount)}
+                q.amount = payload.amount
+                if q.status == "Approved":
+                    approval_invalidated = True
+
+        if payload.currency is not None:
+            clean_curr = payload.currency.strip().upper()
+            if clean_curr not in APPROVED_CURRENCIES:
+                raise ValidationError(f"Invalid currency '{clean_curr}'. Approved currencies are: {', '.join(APPROVED_CURRENCIES)}")
+            if clean_curr != q.currency:
+                changes["currency"] = {"old": q.currency, "new": clean_curr}
+                q.currency = clean_curr
+                if q.status == "Approved":
+                    approval_invalidated = True
+
+        if payload.quotationDate is not None and payload.quotationDate != q.quotation_date:
+            changes["quotation_date"] = {"old": q.quotation_date.isoformat() if q.quotation_date else None, "new": payload.quotationDate.isoformat()}
+            q.quotation_date = payload.quotationDate
+
+        if payload.validUntilDate is not None and payload.validUntilDate != q.valid_until_date:
+            changes["valid_until_date"] = {"old": q.valid_until_date.isoformat() if q.valid_until_date else None, "new": payload.validUntilDate.isoformat()}
+            q.valid_until_date = payload.validUntilDate
+
+        if payload.termsAndConditions is not None and payload.termsAndConditions != q.terms_and_conditions:
+            changes["terms_and_conditions"] = {"old": q.terms_and_conditions, "new": payload.termsAndConditions}
+            q.terms_and_conditions = payload.termsAndConditions
+            if q.status == "Approved":
+                approval_invalidated = True
+
+        if payload.notes is not None and payload.notes != q.notes:
+            changes["notes"] = {"old": q.notes, "new": payload.notes}
+            q.notes = payload.notes
+
+        if payload.fileId is not None and payload.fileId != q.file_id:
+            changes["file_id"] = {"old": q.file_id, "new": payload.fileId}
+            q.file_id = payload.fileId
+
+        if payload.documentName is not None and payload.documentName != q.document_name:
+            changes["document_name"] = {"old": q.document_name, "new": payload.documentName}
+            q.document_name = payload.documentName
+
+        if approval_invalidated:
+            changes["status"] = {"old": "Approved", "new": "Draft", "reason": "Approval invalidated due to material edit"}
+            q.status = "Draft"
+            q.approved_by_id = None
+            q.approved_at = None
+
+        q.updated_by_id = str(actor.id) if actor.id else None
+        q.updated_at = datetime.now(timezone.utc)
+        self.db.commit()
+        self.db.refresh(q)
+
+        try:
+            self.audit_service.log(
+                action="CRM_QUOTATION_UPDATED",
+                request=request,
+                performed_by_employee_id=str(actor.id) if actor.id else None,
+                performed_by_name=actor.name or actor.username,
+                role_used=actor.active_role,
+                target_info={
+                    "quotation_id": q.id,
+                    "quotation_number": q.quotation_number,
+                    "opportunity_id": opp.opportunity_id,
+                    "changes": changes,
+                    "approval_invalidated": approval_invalidated
+                }
+            )
+        except Exception as audit_err:
+            logger.warning(f"Audit log failed for quotation update {q.quotation_number}: {audit_err}")
+
+        return self.get_quotation(opp.id, q.id)
+
+    def submit_quotation_for_review(
+        self,
+        actor: CurrentUser,
+        opp_id: str,
+        quotation_id: str,
+        request: Optional[Request] = None
+    ) -> Dict[str, Any]:
+        opp = self._get_opportunity_or_404(opp_id)
+        q = self.db.query(OpportunityQuotation).filter(
+            OpportunityQuotation.opportunity_id == opp.id,
+            or_(OpportunityQuotation.id == quotation_id, OpportunityQuotation.quotation_number == quotation_id)
+        ).with_for_update(of=OpportunityQuotation).first()
+        if not q:
+            raise NotFoundError(f"Quotation '{quotation_id}' not found for Opportunity '{opp.opportunity_id}'.")
+
+        if q.status not in ("Draft", "Rejected"):
+            raise ValidationError(f"Quotation '{q.quotation_number}' is in '{q.status}' status and cannot be submitted for internal review.")
+
+        q.status = "Under Review"
+        q.rejection_reason = None
+        q.updated_by_id = str(actor.id) if actor.id else None
+        q.updated_at = datetime.now(timezone.utc)
+        self.db.commit()
+        self.db.refresh(q)
+
+        try:
+            self.audit_service.log(
+                action="CRM_QUOTATION_SUBMITTED",
+                request=request,
+                performed_by_employee_id=str(actor.id) if actor.id else None,
+                performed_by_name=actor.name or actor.username,
+                role_used=actor.active_role,
+                target_info={
+                    "quotation_id": q.id,
+                    "quotation_number": q.quotation_number,
+                    "opportunity_id": opp.opportunity_id,
+                    "status": q.status
+                }
+            )
+        except Exception as audit_err:
+            logger.warning(f"Audit log failed for quotation submission {q.quotation_number}: {audit_err}")
+
+        return self.get_quotation(opp.id, q.id)
+
+    def approve_quotation(
+        self,
+        actor: CurrentUser,
+        opp_id: str,
+        quotation_id: str,
+        payload: OpportunityQuotationApprovalRequest,
+        request: Optional[Request] = None
+    ) -> Dict[str, Any]:
+        user_roles = set(actor.roles or [])
+        if actor.active_role:
+            user_roles.add(actor.active_role)
+        crm_roles = set(actor.module_roles.get("CRM", [])) if actor.module_roles else set()
+        all_user_roles = user_roles.union(crm_roles)
+
+        is_sales_manager = bool(
+            actor.is_global_admin or
+            "Admin" in all_user_roles or
+            "SuperAdmin" in all_user_roles or
+            "CRM_SALES_MANAGER" in all_user_roles
+        )
+        if not is_sales_manager:
+            raise PermissionDeniedError("Only users with the CRM Sales Manager role are authorized to approve quotations.")
+
+        opp = self._get_opportunity_or_404(opp_id)
+        q = self.db.query(OpportunityQuotation).filter(
+            OpportunityQuotation.opportunity_id == opp.id,
+            or_(OpportunityQuotation.id == quotation_id, OpportunityQuotation.quotation_number == quotation_id)
+        ).with_for_update(of=OpportunityQuotation).first()
+        if not q:
+            raise NotFoundError(f"Quotation '{quotation_id}' not found for Opportunity '{opp.opportunity_id}'.")
+
+        action_type = payload.action.strip().lower()
+        if action_type == "approve":
+            if q.status not in ("Draft", "Internal Review", "Under Review"):
+                raise ValidationError(f"Quotation '{q.quotation_number}' cannot be approved from '{q.status}' status.")
+            q.status = "Approved"
+            q.approved_by_id = str(actor.id) if actor.id else None
+            q.approved_at = datetime.now(timezone.utc)
+            q.rejection_reason = None
+            audit_action = "CRM_QUOTATION_APPROVED"
+        elif action_type == "reject":
+            if not payload.reason or not payload.reason.strip():
+                raise ValidationError("Rejection reason is mandatory when rejecting a quotation.")
+            q.status = "Rejected"
+            q.rejection_reason = payload.reason.strip()
+            q.approved_by_id = None
+            q.approved_at = None
+            audit_action = "CRM_QUOTATION_REJECTED"
+        else:
+            raise ValidationError(f"Invalid approval action '{payload.action}'. Expected 'approve' or 'reject'.")
+
+        q.updated_by_id = str(actor.id) if actor.id else None
+        q.updated_at = datetime.now(timezone.utc)
+        self.db.commit()
+        self.db.refresh(q)
+
+        try:
+            self.audit_service.log(
+                action=audit_action,
+                request=request,
+                performed_by_employee_id=str(actor.id) if actor.id else None,
+                performed_by_name=actor.name or actor.username,
+                role_used=actor.active_role,
+                target_info={
+                    "quotation_id": q.id,
+                    "quotation_number": q.quotation_number,
+                    "opportunity_id": opp.opportunity_id,
+                    "action": action_type,
+                    "rejection_reason": q.rejection_reason
+                }
+            )
+        except Exception as audit_err:
+            logger.warning(f"Audit log failed for quotation approval {q.quotation_number}: {audit_err}")
+
+        return self.get_quotation(opp.id, q.id)
+
+    def mark_quotation_shared(
+        self,
+        actor: CurrentUser,
+        opp_id: str,
+        quotation_id: str,
+        payload: OpportunityQuotationShareRequest,
+        request: Optional[Request] = None
+    ) -> Dict[str, Any]:
+        opp = self._get_opportunity_or_404(opp_id)
+        q = self.db.query(OpportunityQuotation).filter(
+            OpportunityQuotation.opportunity_id == opp.id,
+            or_(OpportunityQuotation.id == quotation_id, OpportunityQuotation.quotation_number == quotation_id)
+        ).with_for_update(of=OpportunityQuotation).first()
+        if not q:
+            raise NotFoundError(f"Quotation '{quotation_id}' not found for Opportunity '{opp.opportunity_id}'.")
+
+        if q.status != "Approved":
+            raise ValidationError(f"Quotation '{q.quotation_number}' is in '{q.status}' status. Only Approved quotations may be shared externally with clients.")
+
+        sent_method = payload.sentMethod.strip()
+        sent_to = payload.sentTo.strip()
+        if not sent_to:
+            raise ValidationError("Recipient (sentTo) is mandatory when marking a quotation as shared.")
+
+        q.status = "Shared"
+        q.sent_method = sent_method
+        q.sent_to = sent_to
+        q.sent_at = datetime.now(timezone.utc)
+        q.sent_by_id = str(actor.id) if actor.id else None
+        q.sending_evidence = payload.sendingEvidence.strip() if payload.sendingEvidence else None
+        q.updated_by_id = str(actor.id) if actor.id else None
+        q.updated_at = datetime.now(timezone.utc)
+        self.db.commit()
+        self.db.refresh(q)
+
+        try:
+            self.audit_service.log(
+                action="CRM_QUOTATION_SHARED",
+                request=request,
+                performed_by_employee_id=str(actor.id) if actor.id else None,
+                performed_by_name=actor.name or actor.username,
+                role_used=actor.active_role,
+                target_info={
+                    "quotation_id": q.id,
+                    "quotation_number": q.quotation_number,
+                    "opportunity_id": opp.opportunity_id,
+                    "sent_method": q.sent_method,
+                    "sent_to": q.sent_to,
+                    "sending_evidence": q.sending_evidence
+                }
+            )
+        except Exception as audit_err:
+            logger.warning(f"Audit log failed for quotation shared {q.quotation_number}: {audit_err}")
+
+        return self.get_quotation(opp.id, q.id)
+
+    def revise_opportunity_quotation(
+        self,
+        actor: CurrentUser,
+        opp_id: str,
+        quotation_id: str,
+        payload: OpportunityQuotationCreate,
+        request: Optional[Request] = None
+    ) -> Dict[str, Any]:
+        opp = self._get_opportunity_or_404(opp_id, for_update=True)
+        base_q = self.db.query(OpportunityQuotation).filter(
+            OpportunityQuotation.opportunity_id == opp.id,
+            or_(OpportunityQuotation.id == quotation_id, OpportunityQuotation.quotation_number == quotation_id)
+        ).with_for_update(of=OpportunityQuotation).first()
+        if not base_q:
+            raise NotFoundError(f"Quotation '{quotation_id}' not found for Opportunity '{opp.opportunity_id}'.")
+
+        currency_val = (payload.currency or base_q.currency or opp.currency or "INR").strip().upper()
+        if currency_val not in APPROVED_CURRENCIES:
+            raise ValidationError(f"Invalid currency '{currency_val}'. Approved currencies are: {', '.join(APPROVED_CURRENCIES)}")
+
+        if payload.amount < 0:
+            raise ValidationError("Quotation amount cannot be negative.")
+
+        # Supersede base quotation and deactivate all existing active quotations
+        existing_active = self.db.query(OpportunityQuotation).filter(
+            OpportunityQuotation.opportunity_id == opp.id,
+            OpportunityQuotation.is_active == True
+        ).all()
+        for eq in existing_active:
+            eq.is_active = False
+            if eq.status not in ("Superseded", "Accepted", "Rejected"):
+                eq.status = "Superseded"
+
+        next_rev_num = base_q.revision_number + 1
+        ver_label = f"v{next_rev_num}"
+
+        revised_q = OpportunityQuotation(
+            quotation_number=base_q.quotation_number,
+            opportunity_id=opp.id,
+            revision_number=next_rev_num,
+            version=ver_label,
+            is_active=True,
+            title=(payload.title or base_q.title or f"Quotation for {opp.name}").strip(),
+            status="Draft",
+            amount=payload.amount,
+            currency=currency_val,
+            quotation_date=payload.quotationDate or date.today(),
+            valid_until_date=payload.validUntilDate or base_q.valid_until_date,
+            terms_and_conditions=payload.termsAndConditions if payload.termsAndConditions is not None else base_q.terms_and_conditions,
+            notes=payload.notes if payload.notes is not None else base_q.notes,
+            file_id=payload.fileId if payload.fileId is not None else base_q.file_id,
+            document_name=payload.documentName if payload.documentName is not None else base_q.document_name,
+            created_by_id=str(actor.id) if actor.id else None,
+            updated_by_id=str(actor.id) if actor.id else None
+        )
+        self.db.add(revised_q)
+        self.db.commit()
+        self.db.refresh(revised_q)
+
+        try:
+            self.audit_service.log(
+                action="CRM_QUOTATION_REVISED",
+                request=request,
+                performed_by_employee_id=str(actor.id) if actor.id else None,
+                performed_by_name=actor.name or actor.username,
+                role_used=actor.active_role,
+                target_info={
+                    "quotation_id": revised_q.id,
+                    "quotation_number": revised_q.quotation_number,
+                    "previous_revision": base_q.revision_number,
+                    "new_revision": revised_q.revision_number,
+                    "version": revised_q.version,
+                    "opportunity_id": opp.opportunity_id,
+                    "amount": float(revised_q.amount),
+                    "currency": revised_q.currency
+                }
+            )
+        except Exception as audit_err:
+            logger.warning(f"Audit log failed for quotation revision {revised_q.quotation_number}: {audit_err}")
+
+        return self.get_quotation(opp.id, revised_q.id)
+
+    # =========================================================================
     # 5. COMMUNICATION HISTORY SERVICES
     # =========================================================================
 
@@ -3772,9 +4903,15 @@ class CrmService:
 
     def get_dashboard_metrics(self, actor: CurrentUser) -> Dict[str, Any]:
         total_leads = self.db.query(func.count(Lead.id)).scalar() or 0
-        open_leads = self.db.query(func.count(Lead.id)).filter(Lead.lifecycle_status == "Open").scalar() or 0
-        qualified_leads = self.db.query(func.count(Lead.id)).filter(Lead.lifecycle_status == "Qualified").scalar() or 0
-        disqualified_leads = self.db.query(func.count(Lead.id)).filter(Lead.lifecycle_status == "Disqualified").scalar() or 0
+        open_leads = self.db.query(func.count(Lead.id)).filter(
+            Lead.lifecycle_status.in_(["Enquiry", "Offer", "Negotiation", "Supply", "Payment", "Open"])
+        ).scalar() or 0
+        qualified_leads = self.db.query(func.count(Lead.id)).filter(
+            or_(Lead.qualified_at.isnot(None), Lead.lifecycle_status == "Qualified")
+        ).scalar() or 0
+        disqualified_leads = self.db.query(func.count(Lead.id)).filter(
+            Lead.lifecycle_status.in_(["Dormant", "Disqualified"])
+        ).scalar() or 0
 
         my_leads = 0
         if actor and actor.id:
@@ -3784,13 +4921,13 @@ class CrmService:
         today_ist = datetime.now(KOLKATA_TZ).date()
         due_window = today_ist + timedelta(days=1)
         follow_ups_due = self.db.query(func.count(Lead.id)).filter(
-            Lead.lifecycle_status == "Open",
+            Lead.lifecycle_status != "Dormant",
             Lead.next_follow_up_date.isnot(None),
             Lead.next_follow_up_date <= due_window
         ).scalar() or 0
 
         overdue_follow_ups = self.db.query(func.count(Lead.id)).filter(
-            Lead.lifecycle_status == "Open",
+            Lead.lifecycle_status != "Dormant",
             Lead.next_follow_up_date.isnot(None),
             Lead.next_follow_up_date < today_ist
         ).scalar() or 0
