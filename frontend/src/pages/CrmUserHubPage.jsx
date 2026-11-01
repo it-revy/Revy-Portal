@@ -24,6 +24,7 @@ import {
   Briefcase
 } from 'lucide-react';
 import crmService from '../services/crmService';
+import { PageHeader, Button, SearchInput, Select, FilterBar, FilterField } from '../components/ui';
 
 export default function CrmUserHubPage() {
   const navigate = useNavigate();
@@ -271,46 +272,32 @@ export default function CrmUserHubPage() {
   return (
     <div className="page-body">
       {/* Top Banner */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: '1.25rem',
-        flexWrap: 'wrap',
-        gap: '1rem'
-      }}>
-        <div>
-          <h1 style={{ margin: 0, fontSize: '1.45rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Users size={22} color="var(--accent-primary)" />
-            <span>CRM User Hub</span>
-          </h1>
-          <p style={{ margin: '0.2rem 0 0 0', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-            Authoritative module membership for CRM users. Identity is managed centrally; access and roles are managed here.
-          </p>
-        </div>
+      <PageHeader
+        title="CRM User Hub"
+        subtitle="Authoritative module membership for CRM users. Identity is managed centrally; access and roles are managed here."
+        icon={Users}
+        actions={
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            <Button
+              onClick={handleOpenAddUser}
+              variant="primary"
+              icon={Plus}
+            >
+              Add User
+            </Button>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-          <button
-            onClick={handleOpenAddUser}
-            className="btn btn-primary"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', padding: '0.55rem 1rem' }}
-          >
-            <Plus size={16} />
-            <span>Add User</span>
-          </button>
-
-          <button
-            onClick={fetchData}
-            className="btn btn-secondary"
-            title="Refresh Users"
-            disabled={loading}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
-          >
-            <RefreshCw size={15} className={loading ? 'spin' : ''} />
-            <span>Refresh</span>
-          </button>
-        </div>
-      </div>
+            <Button
+              onClick={fetchData}
+              variant="secondary"
+              title="Refresh Users"
+              disabled={loading}
+              icon={RefreshCw}
+            >
+              <span className={loading ? 'spin' : ''}>Refresh</span>
+            </Button>
+          </div>
+        }
+      />
 
       {/* Success Notification */}
       {actionSuccess && (
@@ -349,52 +336,42 @@ export default function CrmUserHubPage() {
       )}
 
       {/* Filter / Search Bar */}
-      <div className="glass-panel" style={{ padding: '1rem', marginBottom: '1.25rem' }}>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ position: 'relative', flex: '1 1 260px', maxWidth: '400px' }}>
-            <input
-              type="text"
-              className="form-control"
-              placeholder="Search by user name, username, email..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              style={{ paddingLeft: '2.25rem' }}
-            />
-            <Search size={15} color="var(--text-muted)" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)' }} />
-          </div>
-
-          <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>Status:</label>
-              <select
-                className="form-control"
-                style={{ width: 'auto', fontSize: '0.85rem' }}
-                value={accessFilter}
-                onChange={e => setAccessFilter(e.target.value)}
-              >
-                <option value="ALL">All CRM Members</option>
-                <option value="ACTIVE">Active CRM Members</option>
-                <option value="INACTIVE">Inactive CRM Members</option>
-              </select>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)' }}>CRM Role:</label>
-              <select
-                className="form-control"
-                style={{ width: 'auto', fontSize: '0.85rem' }}
-                value={roleFilter}
-                onChange={e => setRoleFilter(e.target.value)}
-              >
-                <option value="ALL">All Roles</option>
-                {roles.map(r => (
-                  <option key={r.code} value={r.code}>{r.name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
+      <FilterBar>
+        <div style={{ flex: '1 1 280px', maxWidth: '420px' }}>
+          <SearchInput
+            placeholder="Search by user name, username, email..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
         </div>
-      </div>
+
+        <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap' }}>
+          <FilterField label="Status">
+            <Select
+              size="md"
+              value={accessFilter}
+              onChange={e => setAccessFilter(e.target.value)}
+              options={[
+                { value: 'ALL', label: 'All CRM Members' },
+                { value: 'ACTIVE', label: 'Active CRM Members' },
+                { value: 'INACTIVE', label: 'Inactive CRM Members' }
+              ]}
+            />
+          </FilterField>
+
+          <FilterField label="CRM Role">
+            <Select
+              size="md"
+              value={roleFilter}
+              onChange={e => setRoleFilter(e.target.value)}
+              options={[
+                { value: 'ALL', label: 'All Roles' },
+                ...roles.map(r => ({ value: r.code, label: r.name }))
+              ]}
+            />
+          </FilterField>
+        </div>
+      </FilterBar>
 
       {/* Users Table */}
       <div className="glass-panel" style={{ overflow: 'hidden' }}>

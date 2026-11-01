@@ -22,6 +22,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import crmService from '../services/crmService';
+import { PageHeader, Button } from '../components/ui';
 
 const CANONICAL_LEAD_SOURCES = [
   'Website',
@@ -411,98 +412,47 @@ export default function CrmLeadCreatePage() {
 
   return (
     <div className="page-body" style={{ maxWidth: '1200px', margin: '0 auto', paddingBottom: '3rem' }}>
-      {/* Breadcrumb & Navigation */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: '1rem',
-        paddingTop: '0.5rem'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-          <Link to="/crm/dashboard" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>CRM</Link>
-          <span>/</span>
-          <Link to="/crm/leads" style={{ color: 'var(--text-secondary)', textDecoration: 'none' }}>Leads</Link>
-          <span>/</span>
-          <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
-            {isEditMode ? 'Edit Lead' : 'New Lead'}
-          </span>
-        </div>
-      </div>
-
-      {/* Top Header Command Bar (Dynamics 365 Sales Hub Inspired) */}
-      <div className="glass-panel" style={{
-        padding: '1.25rem 1.5rem',
-        marginBottom: '1.5rem',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '1rem',
-        borderLeft: '4px solid var(--accent-primary)',
-        boxShadow: 'var(--panel-shadow)'
-      }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <button
+      {/* Top Header Command Bar */}
+      <PageHeader
+        title={isEditMode ? `Edit Lead — ${formData.topic || id}` : 'New Lead'}
+        subtitle="Enter initial enquiry details. Leads capture direct contact and company data without requiring permanent account records."
+        breadcrumbs={[
+          { label: 'CRM', to: '/crm/dashboard' },
+          { label: 'Leads', to: '/crm/leads' },
+          { label: isEditMode ? 'Edit Lead' : 'New Lead' }
+        ]}
+        actions={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <Button
+              type="button"
+              variant="secondary"
               onClick={handleCancel}
-              style={{
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                color: 'var(--text-secondary)',
-                padding: '0.25rem',
-                borderRadius: 'var(--radius-xs)'
-              }}
-              title="Go back to Leads"
+              disabled={submitting}
+              icon={X}
             >
-              <ArrowLeft size={20} />
-            </button>
-            <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-              {isEditMode ? `Edit Lead — ${formData.topic || id}` : 'New Lead'}
-            </h1>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => handleSubmit(true)}
+              disabled={submitting}
+              icon={Save}
+            >
+              Save & Close
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => handleSubmit(false)}
+              disabled={submitting}
+              icon={Check}
+            >
+              {submitting ? 'Saving...' : 'Save'}
+            </Button>
           </div>
-          <p style={{ margin: '0.25rem 0 0 2rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            Enter initial enquiry details. Leads capture direct contact and company data without requiring permanent account records.
-          </p>
-        </div>
-
-        {/* Command Buttons */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <button
-            type="button"
-            onClick={handleCancel}
-            className="btn btn-secondary"
-            disabled={submitting}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
-          >
-            <X size={16} />
-            <span>Cancel</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleSubmit(true)}
-            className="btn btn-secondary"
-            disabled={submitting}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', borderColor: 'var(--accent-primary)', color: 'var(--accent-primary)' }}
-          >
-            <Save size={16} />
-            <span>Save & Close</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleSubmit(false)}
-            className="btn btn-primary"
-            disabled={submitting}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
-          >
-            <Check size={16} />
-            <span>{submitting ? 'Saving...' : 'Save'}</span>
-          </button>
-        </div>
-      </div>
+        }
+      />
 
       {/* Notifications */}
       {error && (

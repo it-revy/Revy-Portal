@@ -2,12 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
-  ArrowLeft,
   Building,
   User,
-  Layers,
-  Calendar,
-  Clock,
   Phone,
   Mail,
   MapPin,
@@ -18,10 +14,7 @@ import {
   MessageSquare,
   AlertCircle,
   CheckCircle2,
-  XCircle,
-  Briefcase,
   ExternalLink,
-  ChevronRight,
   ShieldCheck
 } from 'lucide-react';
 import crmService from '../services/crmService';
@@ -29,6 +22,7 @@ import LeadStatusModal from '../modules/crm/components/LeadStatusModal';
 import CommunicationModal from '../modules/crm/components/CommunicationModal';
 import LeadQualifyWizard from '../modules/crm/components/LeadQualifyWizard';
 import OpportunityDetailModal from '../modules/crm/components/OpportunityDetailModal';
+import { PageHeader, Button } from '../components/ui';
 
 export default function CrmLeadDetailPage() {
   const { id } = useParams();
@@ -272,113 +266,71 @@ export default function CrmLeadDetailPage() {
       )}
 
       {/* Top Navigation & Action Bar */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: '1.5rem',
-        flexWrap: 'wrap',
-        gap: '1rem'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <button
-            onClick={() => navigate('/crm/leads')}
-            className="btn btn-secondary"
-            style={{ padding: '0.4rem 0.65rem' }}
-            title="Back to Leads Workspace"
-          >
-            <ArrowLeft size={16} />
-          </button>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span style={{ fontSize: '0.9rem', fontWeight: 700, color: 'var(--accent-primary)', background: '#eff6ff', padding: '2px 8px', borderRadius: '4px' }}>
-                {lead.leadId}
-              </span>
-              <h1 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 700 }}>
-                {lead.leadName || lead.displayName || lead.leadId}
-              </h1>
-              {getStatusBadge(lead.lifecycleStatus)}
-            </div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              Created on {formatDateTime(lead.createdAt)}
-            </div>
+      <PageHeader
+        title={lead.leadName || lead.displayName || lead.leadId}
+        subtitle={`Created on ${formatDateTime(lead.createdAt)}`}
+        breadcrumbs={[
+          { label: 'CRM', to: '/crm/dashboard' },
+          { label: 'Leads', to: '/crm/leads' },
+          { label: lead.leadId || 'Lead Details' }
+        ]}
+        actions={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+            {getStatusBadge(lead.lifecycleStatus)}
+
+            {(!lead.isQualified && !lead.qualifiedAt && lead.lifecycleStatus !== 'Qualified') && (canEdit || canUpdateStatus) && (
+              <Button
+                variant="primary"
+                onClick={() => setIsQualifyWizardOpen(true)}
+                icon={ShieldCheck}
+                style={{ background: 'var(--color-success)', borderColor: 'var(--color-success)' }}
+              >
+                Qualify Lead
+              </Button>
+            )}
+
+            {canEdit && (
+              <Button
+                variant="primary"
+                onClick={() => setIsAddOppModalOpen(true)}
+                icon={Plus}
+              >
+                Add Opportunity
+              </Button>
+            )}
+
+            {canLogComm && (
+              <Button
+                variant="secondary"
+                onClick={() => setIsCommModalOpen(true)}
+                icon={Plus}
+              >
+                Log Interaction
+              </Button>
+            )}
+
+            {canUpdateStatus && (
+              <Button
+                variant="secondary"
+                onClick={() => setIsStatusModalOpen(true)}
+                icon={RefreshCw}
+              >
+                Change Status
+              </Button>
+            )}
+
+            {canEdit && (
+              <Button
+                variant="secondary"
+                onClick={() => navigate(`/crm/leads/${lead.id}/edit`)}
+                icon={Edit}
+              >
+                Edit Details
+              </Button>
+            )}
           </div>
-        </div>
-
-        {/* Action Buttons */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-          {(!lead.isQualified && !lead.qualifiedAt && lead.lifecycleStatus !== 'Qualified') && (canEdit || canUpdateStatus) && (
-            <button
-              onClick={() => setIsQualifyWizardOpen(true)}
-              className="btn btn-primary"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                background: 'var(--success)',
-                borderColor: 'var(--success)',
-                color: '#ffffff',
-                fontWeight: 600
-              }}
-            >
-              <ShieldCheck size={16} />
-              <span>Qualify Lead</span>
-            </button>
-          )}
-
-          {canEdit && (
-            <button
-              onClick={() => setIsAddOppModalOpen(true)}
-              className="btn btn-primary"
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                background: 'var(--accent-primary)',
-                borderColor: 'var(--accent-primary)',
-                color: '#ffffff',
-                fontWeight: 600
-              }}
-            >
-              <Plus size={15} />
-              <span>Add Opportunity</span>
-            </button>
-          )}
-
-          {canLogComm && (
-            <button
-              onClick={() => setIsCommModalOpen(true)}
-              className="btn btn-secondary"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
-            >
-              <Plus size={15} />
-              <span>Log Interaction</span>
-            </button>
-          )}
-
-          {canUpdateStatus && (
-            <button
-              onClick={() => setIsStatusModalOpen(true)}
-              className="btn btn-secondary"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
-            >
-              <RefreshCw size={14} />
-              <span>Change Status</span>
-            </button>
-          )}
-
-          {canEdit && (
-            <button
-              onClick={() => navigate(`/crm/leads/${lead.id}/edit`)}
-              className="btn btn-secondary"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
-            >
-              <Edit size={14} />
-              <span>Edit Details</span>
-            </button>
-          )}
-        </div>
-      </div>
+        }
+      />
 
       {/* Commercial Opportunities (1:N) & Qualification Status */}
       {((lead.opportunities && lead.opportunities.length > 0) || lead.opportunity || lead.isQualified || lead.qualifiedAt || lead.lifecycleStatus === 'Qualified') && (

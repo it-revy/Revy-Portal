@@ -1,24 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
-  ArrowLeft,
   Save,
   Check,
   X,
   AlertCircle,
-  Building,
-  User,
-  Briefcase,
-  TrendingUp,
-  DollarSign,
-  Calendar,
   FileText,
   CheckCircle2,
   Lock,
   ArrowRight
 } from 'lucide-react';
 import crmService from '../services/crmService';
+import { PageHeader, Button } from '../components/ui';
 
 const CANONICAL_STAGES = [
   'Enquiry',
@@ -435,87 +429,47 @@ export default function CrmOpportunityEditPage() {
   return (
     <div className="page-body" style={{ maxWidth: '1100px' }}>
       {/* Top Header Command Bar */}
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '1rem',
-        marginBottom: '1.5rem',
-        paddingBottom: '1rem',
-        borderBottom: '1px solid var(--border-color)'
-      }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.825rem', color: 'var(--text-muted)', marginBottom: '0.35rem' }}>
-            <Link to="/crm/dashboard" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>CRM</Link>
-            <span>/</span>
-            <Link to="/crm/opportunities" style={{ color: 'var(--text-muted)', textDecoration: 'none' }}>Opportunities</Link>
-            <span>/</span>
-            <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>{formData.opportunityCode}</span>
-            <span>/</span>
-            <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Edit</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <button
+      <PageHeader
+        title={`Edit Opportunity — ${formData.name || formData.opportunityCode}`}
+        subtitle="Review and confirm stage progressions, commercial terms, and account relationships."
+        breadcrumbs={[
+          { label: 'CRM', to: '/crm/dashboard' },
+          { label: 'Opportunities', to: '/crm/opportunities' },
+          { label: formData.opportunityCode || 'Details' },
+          { label: 'Edit' }
+        ]}
+        actions={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <Button
               type="button"
+              variant="secondary"
               onClick={handleCancel}
-              style={{
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                color: 'var(--text-secondary)',
-                padding: '0.25rem',
-                borderRadius: 'var(--radius-xs)'
-              }}
-              title="Return to Opportunities"
+              disabled={submitting}
+              icon={X}
             >
-              <ArrowLeft size={20} />
-            </button>
-            <h1 style={{ fontSize: '1.5rem', fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>
-              Edit Opportunity — {formData.name || formData.opportunityCode}
-            </h1>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => handleSubmit(true)}
+              disabled={submitting}
+              icon={Save}
+            >
+              Save & Return
+            </Button>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => handleSubmit(false)}
+              disabled={submitting}
+              icon={Check}
+            >
+              {submitting ? 'Saving...' : 'Save Changes'}
+            </Button>
           </div>
-          <p style={{ margin: '0.25rem 0 0 2rem', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            Review and confirm stage progressions, commercial terms, and account relationships.
-          </p>
-        </div>
-
-        {/* Action Buttons */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <button
-            type="button"
-            onClick={handleCancel}
-            className="btn btn-secondary"
-            disabled={submitting}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
-          >
-            <X size={16} />
-            <span>Cancel</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleSubmit(true)}
-            className="btn btn-secondary"
-            disabled={submitting}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem', borderColor: 'var(--accent-primary)', color: 'var(--accent-primary)' }}
-          >
-            <Save size={16} />
-            <span>Save & Return</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleSubmit(false)}
-            className="btn btn-primary"
-            disabled={submitting}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
-          >
-            <Check size={16} />
-            <span>{submitting ? 'Saving...' : 'Save Changes'}</span>
-          </button>
-        </div>
-      </div>
+        }
+      />
 
       {/* Pending Drag-and-Drop Stage Transition Banner */}
       {isPendingTransition && (

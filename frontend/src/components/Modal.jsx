@@ -1,7 +1,15 @@
 import React from 'react';
 import { X } from 'lucide-react';
 
-const Modal = ({ isOpen, onClose, title, children, showCloseButton = false }) => {
+const Modal = ({
+  isOpen,
+  onClose,
+  title,
+  children,
+  showCloseButton = true,
+  maxWidth = '560px',
+  className = ''
+}) => {
   React.useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e) => {
@@ -16,23 +24,31 @@ const Modal = ({ isOpen, onClose, title, children, showCloseButton = false }) =>
   if (!isOpen) return null;
 
   return (
-    <div className="modal-backdrop modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
-          {title && <h2 style={{ fontSize: '1.15rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>{title}</h2>}
+    <div className="revy-modal-backdrop modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
+      <div
+        className={`revy-modal-card modal-content ${className}`.trim()}
+        style={{ maxWidth }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="revy-modal-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '1rem 1.25rem', borderBottom: '1px solid var(--color-border)' }}>
+          {title && (
+            <h2 style={{ fontSize: 'var(--font-size-lg)', fontWeight: 600, color: 'var(--color-text-primary)', margin: 0 }}>
+              {title}
+            </h2>
+          )}
           {showCloseButton && (
             <button
               type="button"
-              className="btn btn-secondary"
-              style={{ padding: '0.3rem 0.5rem', marginLeft: 'auto' }}
+              className="revy-btn revy-btn-secondary revy-btn-sm"
+              style={{ padding: '0.25rem 0.5rem', marginLeft: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               onClick={onClose}
-              aria-label="Close"
+              aria-label="Close dialog"
             >
-              <X size={18} />
+              <X size={16} />
             </button>
           )}
         </div>
-        <div>
+        <div className="revy-modal-body" style={{ padding: '1.25rem', overflowY: 'auto' }}>
           {children}
         </div>
       </div>

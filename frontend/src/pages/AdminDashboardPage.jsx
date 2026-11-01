@@ -12,8 +12,8 @@ import {
   AlertCircle,
   RefreshCw,
   ShoppingBag,
-  DollarSign
 } from 'lucide-react';
+import { PageHeader, Button, Select, DatePicker, SearchInput } from '../components/ui';
 
 const AdminDashboardPage = () => {
   const navigate = useNavigate();
@@ -153,39 +153,36 @@ const AdminDashboardPage = () => {
   return (
     <div className="page-body">
       {/* Header & Date/Department Controls */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.75rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '1.4rem' }}>
-            <Coffee color="var(--accent-primary)" /> Breakfast Operations Dashboard
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', marginTop: '0.2rem', fontSize: '0.85rem' }}>
-            Authoritative headcount, daily participation & financial operational dashboard
-          </p>
-        </div>
-
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap', width: 'auto' }}>
-          <input
-            type="date"
-            className="form-input"
-            value={selectedDate}
-            onChange={(e) => setSelectedDate(e.target.value)}
-            style={{ width: 'auto', minWidth: '140px', flex: '1 1 auto', padding: '0.45rem 0.75rem' }}
-          />
-          <select
-            className="form-select"
-            value={departmentFilter}
-            onChange={(e) => setDepartmentFilter(e.target.value)}
-            style={{ width: 'auto', minWidth: '160px', flex: '1 1 auto', padding: '0.45rem 0.75rem' }}
-          >
-            <option value="ALL">All Departments</option>
-            <option value="IT Infrastructure">IT Infrastructure</option>
-            <option value="Administration">Administration</option>
-            <option value="Engineering">Engineering</option>
-            <option value="Research & Development">Research & Development</option>
-            <option value="Executive Office">Executive Office</option>
-          </select>
-        </div>
-      </div>
+      <PageHeader
+        title="Breakfast Operations Dashboard"
+        subtitle="Authoritative headcount, daily participation & financial operational dashboard"
+        icon={Coffee}
+        actions={
+          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
+            <DatePicker
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              style={{ width: 'auto' }}
+            />
+            <Select
+              value={departmentFilter}
+              onChange={(e) => setDepartmentFilter(e.target.value)}
+              style={{ width: 'auto', minWidth: '160px' }}
+              options={[
+                { value: 'ALL', label: 'All Departments' },
+                { value: 'IT Infrastructure', label: 'IT Infrastructure' },
+                { value: 'Administration', label: 'Administration' },
+                { value: 'Engineering', label: 'Engineering' },
+                { value: 'Research & Development', label: 'Research & Development' },
+                { value: 'Executive Office', label: 'Executive Office' }
+              ]}
+            />
+            <Button variant="secondary" onClick={fetchDashboardData} icon={RefreshCw} title="Refresh">
+              Refresh
+            </Button>
+          </div>
+        }
+      />
 
       {/* Low Balance Alert Banner (< ₹100) */}
       {moneyMetrics && moneyMetrics.currentBalance < 100 && (
@@ -400,18 +397,17 @@ const AdminDashboardPage = () => {
             </button>
           </div>
 
-          <form onSubmit={handleSearch} style={{ display: 'flex', gap: '0.5rem', flex: '1 1 200px', maxWidth: '340px' }}>
-            <input
-              type="text"
-              className="form-input"
-              placeholder="Search employee name or ID..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              style={{ flex: 1, padding: '0.4rem 0.75rem', fontSize: '0.85rem' }}
-            />
-            <button type="submit" className="btn btn-secondary" style={{ padding: '0.4rem 0.75rem' }}>
-              <Search size={15} />
-            </button>
+          <form onSubmit={handleSearch} style={{ display: 'flex', gap: 'var(--space-2)', flex: '1 1 200px', maxWidth: '340px' }}>
+            <div style={{ flex: 1 }}>
+              <SearchInput
+                placeholder="Search employee name or ID..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <Button type="submit" variant="secondary" size="md">
+              Search
+            </Button>
           </form>
         </div>
 

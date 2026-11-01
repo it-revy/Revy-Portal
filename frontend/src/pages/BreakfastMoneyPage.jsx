@@ -19,6 +19,7 @@ import {
   HelpCircle,
   ShieldCheck
 } from 'lucide-react';
+import { PageHeader, Button, SearchInput, Select, DatePicker, FilterBar, FilterField } from '../components/ui';
 
 const BreakfastMoneyPage = () => {
   const [activeTab, setActiveTab] = useState('transactions'); // 'transactions' | 'daily' | 'monthly'
@@ -272,34 +273,31 @@ const BreakfastMoneyPage = () => {
 
   return (
     <div className="page-body">
-      {/* Page Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '1.4rem', margin: 0 }}>
-            <Wallet color="var(--accent-primary)" size={28} /> Breakfast Money & Cash Balance
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem', fontSize: '0.85rem' }}>
-            Authoritative cash management for money received from Finance (Maximum Current Balance: ₹{fundLimit.toLocaleString('en-IN')})
-          </p>
-        </div>
-
-        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <button
-            className="btn btn-primary"
-            onClick={handleOpenRequestModal}
-            style={{ padding: '0.65rem 1.25rem' }}
-          >
-            <Send size={18} /> Request Money
-          </button>
-          <button
-            className="btn btn-secondary"
-            onClick={() => { setModalError(null); setShowExpenseModal(true); }}
-            style={{ padding: '0.65rem 1.25rem', color: 'var(--danger)', borderColor: '#fca5a5' }}
-          >
-            <MinusCircle size={18} /> Record Expense
-          </button>
-        </div>
-      </div>
+      {/* Standard Enterprise Page Header */}
+      <PageHeader
+        title="Breakfast Money & Cash Balance"
+        subtitle={`Authoritative cash management for money received from Finance (Maximum Current Balance: ₹${fundLimit.toLocaleString('en-IN')})`}
+        icon={Wallet}
+        iconBg="linear-gradient(135deg, #10b981, #059669)"
+        actions={
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <Button
+              variant="primary"
+              icon={Send}
+              onClick={handleOpenRequestModal}
+            >
+              Request Money
+            </Button>
+            <Button
+              variant="secondary"
+              icon={MinusCircle}
+              onClick={() => { setModalError(null); setShowExpenseModal(true); }}
+            >
+              Record Expense
+            </Button>
+          </div>
+        }
+      />
 
       {/* Low Balance Alert Banner (< ₹100) */}
       {isLowBalance && (
@@ -465,54 +463,58 @@ const BreakfastMoneyPage = () => {
       {/* TAB 1: Transaction History */}
       {activeTab === 'transactions' && (
         <div>
-          {/* Filter Bar */}
-          <div className="panel-card" style={{ padding: '1rem', marginBottom: '1.25rem', display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
-            <form onSubmit={(e) => { e.preventDefault(); fetchTransactions(); }} style={{ flex: 1, display: 'flex', gap: '0.5rem', minWidth: '240px' }}>
-              <input
-                type="text"
-                className="form-input"
+          {/* Standard Enterprise Filter Bar */}
+          <FilterBar
+            onReset={search || typeFilter !== 'ALL' || startDate || endDate ? () => {
+              setSearch('');
+              setTypeFilter('ALL');
+              setStartDate('');
+              setEndDate('');
+            } : null}
+          >
+            <form onSubmit={(e) => { e.preventDefault(); fetchTransactions(); }} style={{ flex: '1 1 240px', display: 'flex', gap: 'var(--space-2)' }}>
+              <SearchInput
                 placeholder="Search transaction ID, source, note..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
+                onSearch={fetchTransactions}
               />
-              <button type="submit" className="btn btn-secondary">
-                <Search size={15} /> Search
-              </button>
+              <Button type="submit" variant="secondary">
+                Search
+              </Button>
             </form>
 
-            <select
-              className="form-select"
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              style={{ width: '180px' }}
-            >
-              <option value="ALL">All Types</option>
-              <option value="MONEY_RECEIVED">Money Received</option>
-              <option value="BREAKFAST_EXPENSE">Breakfast Expense</option>
-              <option value="ADJUSTMENT">Adjustments</option>
-              <option value="REVERSAL">Reversals</option>
-            </select>
+            <FilterField label="Type:">
+              <Select
+                size="md"
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                style={{ width: 'auto', minWidth: '160px' }}
+              >
+                <option value="ALL">All Types</option>
+                <option value="MONEY_RECEIVED">Money Received</option>
+                <option value="BREAKFAST_EXPENSE">Breakfast Expense</option>
+                <option value="ADJUSTMENT">Adjustments</option>
+                <option value="REVERSAL">Reversals</option>
+              </Select>
+            </FilterField>
 
-            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-              <input
-                type="date"
-                className="form-input"
+            <FilterField label="From:">
+              <DatePicker
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                style={{ width: '140px' }}
-                placeholder="Start Date"
+                style={{ width: 'auto' }}
               />
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>to</span>
-              <input
-                type="date"
-                className="form-input"
+            </FilterField>
+
+            <FilterField label="To:">
+              <DatePicker
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                style={{ width: '140px' }}
-                placeholder="End Date"
+                style={{ width: 'auto' }}
               />
-            </div>
-          </div>
+            </FilterField>
+          </FilterBar>
 
           {/* Transactions Table */}
           <div className="panel-card" style={{ padding: '1.25rem' }}>

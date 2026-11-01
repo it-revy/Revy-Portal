@@ -18,6 +18,7 @@ import {
   Edit2,
   RefreshCw
 } from 'lucide-react';
+import { PageHeader, Button, DatePicker } from '../components/ui';
 
 const DailyEntryPage = () => {
   const { hasPermission } = useAuth();
@@ -202,30 +203,28 @@ const DailyEntryPage = () => {
   return (
     <div className="page-body">
       {/* Header & Date Selector */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '1.4rem' }}>
-            <FileCheck color="var(--accent-primary)" /> Daily Entry Workstation
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', marginTop: '0.2rem', fontSize: '0.85rem' }}>
-            Authoritative daily breakfast planning, employee request snapshot & cash entry
-          </p>
-        </div>
-
-        <div className="panel-card" style={{ padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <Calendar size={18} color="var(--accent-primary)" />
-          <div>
-            <label style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>BUSINESS DATE</label>
-            <input
-              type="date"
-              className="form-input"
+      <PageHeader
+        title="Daily Entry Workstation"
+        subtitle="Authoritative daily breakfast planning, employee request snapshot & cash entry"
+        icon={FileCheck}
+        actions={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <DatePicker
               value={selectedDate}
               onChange={(e) => handleDateChange(e.target.value)}
-              style={{ border: 'none', padding: 0, fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)', background: 'transparent' }}
+              style={{ width: 'auto' }}
             />
+            <Button
+              variant="secondary"
+              onClick={() => fetchDailyEntryData(selectedDate)}
+              icon={RefreshCw}
+              title="Refresh workstation"
+            >
+              Refresh
+            </Button>
           </div>
-        </div>
-      </div>
+        }
+      />
 
       {/* Associated Request Window Info */}
       {data?.requestWindow && (

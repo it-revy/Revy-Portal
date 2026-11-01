@@ -26,6 +26,7 @@ import { useAuth } from '../context/AuthContext';
 import crmService from '../services/crmService';
 import OpportunityDetailModal from '../modules/crm/components/OpportunityDetailModal';
 import OpportunityStageModal from '../modules/crm/components/OpportunityStageModal';
+import { PageHeader, Button, SearchInput, Select, FilterBar, FilterField, Pagination } from '../components/ui';
 
 const STAGES = ['Enquiry', 'Qualify', 'Develop', 'Propose/Offer', 'Negotiate', 'Close'];
 
@@ -375,92 +376,85 @@ export default function CrmOpportunitiesPage() {
   return (
     <div className="page-body">
       {/* Page Header Command Bar */}
-      <div className="crm-page-header">
-        <div className="crm-page-header-title-group">
-          <div className="crm-page-header-icon" style={{ background: 'linear-gradient(135deg, #2563eb, #1d4ed8)' }}>
-            <Briefcase size={22} />
-          </div>
-          <div>
-            <h1 className="crm-page-header-title">Opportunity Pipeline Workspace</h1>
-            <p className="crm-page-header-subtitle">
-              Visual 6-stage Kanban progression, commercial outcome governance, and drag-and-drop workflow
-            </p>
-          </div>
-        </div>
+      <PageHeader
+        title="Opportunity Pipeline Workspace"
+        subtitle="Visual 6-stage Kanban progression, commercial outcome governance, and drag-and-drop workflow"
+        icon={Briefcase}
+        actions={
+          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center' }}>
+            {/* View Mode Toggle */}
+            <div style={{
+              display: 'flex',
+              background: 'var(--color-bg-subtle)',
+              padding: '2px',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--color-border-subtle)'
+            }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setViewMode('kanban');
+                  setSearchParams({ mode: 'kanban' });
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  padding: '6px 12px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: 'none',
+                  background: viewMode === 'kanban' ? 'var(--color-surface)' : 'transparent',
+                  color: viewMode === 'kanban' ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                  fontWeight: 600,
+                  fontSize: '0.825rem',
+                  cursor: 'pointer',
+                  boxShadow: viewMode === 'kanban' ? 'var(--shadow-xs)' : 'none'
+                }}
+              >
+                <Kanban size={15} />
+                <span>Kanban</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setViewMode('table');
+                  setSearchParams({ mode: 'table', view: presetView });
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.35rem',
+                  padding: '6px 12px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: 'none',
+                  background: viewMode === 'table' ? 'var(--color-surface)' : 'transparent',
+                  color: viewMode === 'table' ? 'var(--color-primary)' : 'var(--color-text-secondary)',
+                  fontWeight: 600,
+                  fontSize: '0.825rem',
+                  cursor: 'pointer',
+                  boxShadow: viewMode === 'table' ? 'var(--shadow-xs)' : 'none'
+                }}
+              >
+                <List size={15} />
+                <span>Table</span>
+              </button>
+            </div>
 
-        <div className="crm-page-header-actions">
-          {/* View Mode Toggle */}
-          <div style={{
-            display: 'flex',
-            background: '#f1f5f9',
-            padding: '3px',
-            borderRadius: '8px',
-            border: '1px solid var(--border-color)'
-          }}>
-            <button
-              type="button"
+            <Button
+              variant="secondary"
               onClick={() => {
-                setViewMode('kanban');
-                setSearchParams({ mode: 'kanban' });
+                fetchOpportunities();
+                fetchSummary();
               }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                padding: '6px 12px',
-                borderRadius: '6px',
-                border: 'none',
-                background: viewMode === 'kanban' ? '#ffffff' : 'transparent',
-                color: viewMode === 'kanban' ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                fontWeight: 600,
-                fontSize: '0.825rem',
-                cursor: 'pointer',
-                boxShadow: viewMode === 'kanban' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none'
-              }}
+              title="Refresh Pipeline"
+              disabled={loading}
+              icon={RefreshCw}
             >
-              <Kanban size={15} />
-              <span>Kanban</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setViewMode('table');
-                setSearchParams({ mode: 'table', view: presetView });
-              }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.35rem',
-                padding: '6px 12px',
-                borderRadius: '6px',
-                border: 'none',
-                background: viewMode === 'table' ? '#ffffff' : 'transparent',
-                color: viewMode === 'table' ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                fontWeight: 600,
-                fontSize: '0.825rem',
-                cursor: 'pointer',
-                boxShadow: viewMode === 'table' ? '0 1px 2px rgba(0,0,0,0.05)' : 'none'
-              }}
-            >
-              <List size={15} />
-              <span>Table</span>
-            </button>
+              <span className={loading ? 'spin' : ''}>Refresh</span>
+            </Button>
           </div>
-
-          <button
-            onClick={() => {
-              fetchOpportunities();
-              fetchSummary();
-            }}
-            className="crm-btn crm-btn-secondary"
-            title="Refresh Pipeline"
-            disabled={loading}
-          >
-            <RefreshCw size={15} className={loading ? 'spin' : ''} />
-            <span>Refresh</span>
-          </button>
-        </div>
-      </div>
+        }
+      />
 
       {/* Pipeline KPI Summary Banner */}
       <div style={{
@@ -559,137 +553,110 @@ export default function CrmOpportunitiesPage() {
       </div>
 
       {/* Toolbar & Filters */}
-      <div className="crm-toolbar">
+      <FilterBar>
         {/* Search */}
-        <form onSubmit={handleSearchSubmit} className="crm-toolbar-search-group">
-          <div className="crm-search-input-wrap">
-            <Search size={16} className="crm-search-icon" />
-            <input
-              type="text"
-              className="form-control crm-search-input"
+        <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: 'var(--space-2)', flex: 1, minWidth: '280px', maxWidth: '480px' }}>
+          <div style={{ flex: 1 }}>
+            <SearchInput
               placeholder="Search by ID, Opportunity Name, Account, Contact..."
               value={search}
               onChange={e => setSearch(e.target.value)}
+              onClear={handleClearSearch}
             />
-            {search && (
-              <button
-                type="button"
-                onClick={handleClearSearch}
-                className="crm-search-clear-btn"
-                title="Clear search"
-              >
-                <X size={15} />
-              </button>
-            )}
           </div>
-          <button type="submit" className="crm-btn crm-btn-secondary crm-btn-sm" style={{ height: '38px' }}>
+          <Button type="submit" variant="secondary" size="md">
             Search
-          </button>
+          </Button>
         </form>
 
         {/* Filters */}
-        <div className="crm-toolbar-filters">
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-3)', alignItems: 'center' }}>
           {/* Table View ONLY Filters */}
           {viewMode === 'table' && (
             <>
               {/* View Filter */}
-              <div className="crm-filter-item">
-                <label className="crm-filter-label">View:</label>
-                <select
+              <FilterField label="View">
+                <Select
+                  size="md"
                   value={presetView}
                   onChange={(e) => {
                     setPresetView(e.target.value);
                     setPage(1);
                   }}
-                  className="form-control crm-select-sm"
-                  style={{ width: 'auto', minWidth: '120px' }}
-                >
-                  <option value="all">All Opportunities</option>
-                  <option value="open">Open Pipeline</option>
-                  <option value="my">My Assigned</option>
-                  <option value="won">Closed Won</option>
-                  <option value="lost">Closed Lost</option>
-                </select>
-              </div>
+                  options={[
+                    { value: 'all', label: 'All Opportunities' },
+                    { value: 'open', label: 'Open Pipeline' },
+                    { value: 'my', label: 'My Assigned' },
+                    { value: 'won', label: 'Closed Won' },
+                    { value: 'lost', label: 'Closed Lost' }
+                  ]}
+                />
+              </FilterField>
 
               {/* Stage Filter */}
-              <div className="crm-filter-item">
-                <label className="crm-filter-label">Stage:</label>
-                <select
+              <FilterField label="Stage">
+                <Select
+                  size="md"
                   value={stageFilter}
                   onChange={(e) => {
                     setStageFilter(e.target.value);
                     setPage(1);
                   }}
-                  className="form-control crm-select-sm"
-                  style={{ width: 'auto', minWidth: '120px' }}
-                >
-                  <option value="ALL">All Stages</option>
-                  {STAGES.map(s => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              </div>
+                  options={[
+                    { value: 'ALL', label: 'All Stages' },
+                    ...STAGES.map(s => ({ value: s, label: s }))
+                  ]}
+                />
+              </FilterField>
 
               {/* Outcome Filter */}
-              <div className="crm-filter-item">
-                <label className="crm-filter-label">Outcome:</label>
-                <select
+              <FilterField label="Outcome">
+                <Select
+                  size="md"
                   value={outcomeFilter}
                   onChange={(e) => {
                     setOutcomeFilter(e.target.value);
                     setPage(1);
                   }}
-                  className="form-control crm-select-sm"
-                  style={{ width: 'auto', minWidth: '130px' }}
-                >
-                  {OUTCOMES.map(o => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-              </div>
+                  options={OUTCOMES}
+                />
+              </FilterField>
 
               {/* Owner Filter */}
-              <div className="crm-filter-item">
-                <label className="crm-filter-label">Owner:</label>
-                <select
+              <FilterField label="Owner">
+                <Select
+                  size="md"
                   value={ownerFilter}
                   onChange={(e) => {
                     setOwnerFilter(e.target.value);
                     setPage(1);
                   }}
-                  className="form-control crm-select-sm"
-                  style={{ width: 'auto', minWidth: '130px' }}
-                >
-                  <option value="ALL">All Owners</option>
-                  {assignees.map(a => (
-                    <option key={a.id} value={a.id}>{a.name || a.username}</option>
-                  ))}
-                </select>
-              </div>
+                  options={[
+                    { value: 'ALL', label: 'All Owners' },
+                    ...assignees.map(a => ({ value: String(a.id), label: a.name || a.username }))
+                  ]}
+                />
+              </FilterField>
             </>
           )}
 
           {/* Business Area Filter (Available in both views) */}
-          <div className="crm-filter-item">
-            <label className="crm-filter-label">Area:</label>
-            <select
+          <FilterField label="Area">
+            <Select
+              size="md"
               value={businessAreaFilter}
               onChange={(e) => {
                 setBusinessAreaFilter(e.target.value);
                 setPage(1);
               }}
-              className="form-control crm-select-sm"
-              style={{ width: 'auto', minWidth: '120px' }}
-            >
-              <option value="ALL">All Areas</option>
-              {BUSINESS_AREAS.map(ba => (
-                <option key={ba} value={ba}>{ba}</option>
-              ))}
-            </select>
-          </div>
+              options={[
+                { value: 'ALL', label: 'All Areas' },
+                ...BUSINESS_AREAS.map(ba => ({ value: ba, label: ba }))
+              ]}
+            />
+          </FilterField>
         </div>
-      </div>
+      </FilterBar>
 
       {/* Error notification banner with actionable Retry */}
       {error && (
@@ -1169,33 +1136,13 @@ export default function CrmOpportunitiesPage() {
           </div>
 
           {/* Table Server-Side Pagination Footer */}
-          <div className="crm-pagination-footer">
-            <div>
-              Showing <strong>{opportunities.length}</strong> of <strong>{totalCount}</strong> opportunities
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <button
-                className="crm-btn crm-btn-secondary crm-btn-sm"
-                disabled={page <= 1 || loading}
-                onClick={() => setPage(prev => Math.max(prev - 1, 1))}
-                aria-label="Previous page"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <span style={{ fontWeight: 600 }}>
-                {page} / {totalPages}
-              </span>
-              <button
-                className="crm-btn crm-btn-secondary crm-btn-sm"
-                disabled={page >= totalPages || loading}
-                onClick={() => setPage(prev => prev + 1)}
-                aria-label="Next page"
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          </div>
+          <Pagination
+            currentPage={page}
+            totalPages={totalPages || 1}
+            totalItems={totalCount}
+            pageSize={pageSize}
+            onPageChange={newPage => setPage(newPage)}
+          />
         </div>
       )}
 

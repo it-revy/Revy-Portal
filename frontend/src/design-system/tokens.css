@@ -1,0 +1,145 @@
+/* ==========================================================================
+   REVY ENTERPRISE DESIGN SYSTEM — TOKENS
+   Centralized Design Tokens for all REVY Portal Modules
+   ========================================================================== */
+
+:root {
+  /* ------------------------------------------------------------------------
+     1. COLOR PALETTE
+     ------------------------------------------------------------------------ */
+  /* Brand / Primary Blue */
+  --color-primary: #2563eb;
+  --color-primary-hover: #1d4ed8;
+  --color-primary-active: #1e40af;
+  --color-primary-subtle: #eff6ff;
+  --color-primary-border: #bfdbfe;
+
+  /* Neutrals & Surfaces */
+  --color-bg-app: #f8fafc;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #f8fafc;
+  --color-surface-muted: #f1f5f9;
+
+  /* Sidebar */
+  --color-sidebar-bg: #0f172a;
+  --color-sidebar-hover: #1e293b;
+  --color-sidebar-active: #334155;
+  --color-sidebar-border: rgba(255, 255, 255, 0.08);
+  --color-sidebar-text: #f8fafc;
+  --color-sidebar-text-muted: #94a3b8;
+
+  /* Text Hierarchy */
+  --color-text-primary: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-muted: #64748b;
+  --color-text-subtle: #94a3b8;
+  --color-text-disabled: #cbd5e1;
+  --color-text-inverse: #ffffff;
+
+  /* Borders & Dividers */
+  --color-border: #e2e8f0;
+  --color-border-strong: #cbd5e1;
+  --color-border-subtle: #f1f5f9;
+  --color-border-focus: #2563eb;
+
+  /* Status & Semantic Feedback */
+  --color-success: #16a34a;
+  --color-success-hover: #15803d;
+  --color-success-bg: #ecfdf5;
+  --color-success-border: #a7f3d0;
+  --color-success-text: #166534;
+
+  --color-warning: #d97706;
+  --color-warning-hover: #b45309;
+  --color-warning-bg: #fffbeb;
+  --color-warning-border: #fde68a;
+  --color-warning-text: #92400e;
+
+  --color-danger: #dc2626;
+  --color-danger-hover: #b91c1c;
+  --color-danger-bg: #fef2f2;
+  --color-danger-border: #fecaca;
+  --color-danger-text: #991b1b;
+
+  --color-info: #0284c7;
+  --color-info-hover: #0369a1;
+  --color-info-bg: #f0f9ff;
+  --color-info-border: #bae6fd;
+  --color-info-text: #075985;
+
+  /* Module Brand Accents (Preserved) */
+  --module-bms-accent: #2563eb;
+  --module-crm-accent: #f59e0b;
+  --module-users-accent: #6366f1;
+  --module-lms-accent: #0891b2;
+  --module-ims-accent: #10b981;
+  --module-finance-accent: #059669;
+
+  /* ------------------------------------------------------------------------
+     2. SPACING SCALE (4px Base)
+     ------------------------------------------------------------------------ */
+  --space-0: 0px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* ------------------------------------------------------------------------
+     3. COMPONENT DIMENSIONS
+     ------------------------------------------------------------------------ */
+  --control-height-sm: 34px;
+  --control-height-md: 38px;
+  --control-height-lg: 42px;
+
+  --btn-height-sm: 34px;
+  --btn-height-md: 38px;
+  --btn-height-lg: 42px;
+
+  --header-height: 60px;
+  --sidebar-width: 268px;
+  --sidebar-collapsed-width: 76px;
+
+  /* ------------------------------------------------------------------------
+     4. CORNER RADIUS
+     ------------------------------------------------------------------------ */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+
+  /* ------------------------------------------------------------------------
+     5. ELEVATION & SHADOWS
+     ------------------------------------------------------------------------ */
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.06), 0 1px 2px -1px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.06), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -4px rgba(0, 0, 0, 0.04);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.06);
+
+  /* ------------------------------------------------------------------------
+     6. TRANSITIONS & TIMINGS
+     ------------------------------------------------------------------------ */
+  --transition-fast: 150ms ease;
+  --transition-normal: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-smooth: 280ms cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ------------------------------------------------------------------------
+     7. Z-INDEX SCALE
+     ------------------------------------------------------------------------ */
+  --z-base: 1;
+  --z-sticky: 10;
+  --z-header: 40;
+  --z-sidebar: 50;
+  --z-dropdown: 60;
+  --z-drawer: 80;
+  --z-modal-backdrop: 90;
+  --z-modal: 100;
+  --z-toast: 110;
+}

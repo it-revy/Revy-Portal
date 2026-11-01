@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import UserManagementSidebar from '../components/UserManagementSidebar';
 import Header from '../components/Header';
 import ForcePasswordChangeModal from '../components/ForcePasswordChangeModal';
+import ErrorBoundary from '../components/ErrorBoundary';
 
 export default function UserManagementLayout({ children }) {
   const { user, loading, hasPermission, hasRole } = useAuth();
@@ -89,7 +90,9 @@ export default function UserManagementLayout({ children }) {
           sidebarCollapsed={sidebarCollapsed}
           onToggleCollapse={toggleSidebarCollapse}
         />
-        {children}
+        <ErrorBoundary level="module" title="User Management Workspace Error">
+          {children}
+        </ErrorBoundary>
       </div>
     </div>
   );

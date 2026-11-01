@@ -3,6 +3,8 @@ import API from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { CalendarRange, Plus, Trash2, ShieldAlert } from 'lucide-react';
 
+import { PageHeader, Button } from '../components/ui';
+
 const PublicHolidaysPage = () => {
   const [holidays, setHolidays] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -56,22 +58,22 @@ const PublicHolidaysPage = () => {
 
   return (
     <div className="page-body">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <CalendarRange color="var(--accent-primary)" /> Public Holidays Management
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-            Days marked as public holidays automatically bypass daily breakfast requirements
-          </p>
-        </div>
-
-        {hasRole('IT_ADMIN') && (
-          <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-            <Plus size={16} /> Add Public Holiday
-          </button>
-        )}
-      </div>
+      <PageHeader
+        title="Public Holidays Management"
+        subtitle="Days marked as public holidays automatically bypass daily breakfast requirements"
+        icon={CalendarRange}
+        actions={
+          hasRole('IT_ADMIN') && (
+            <Button
+              variant="primary"
+              onClick={() => setShowModal(true)}
+              icon={Plus}
+            >
+              Add Public Holiday
+            </Button>
+          )
+        }
+      />
 
       <div className="glass-panel" style={{ padding: '1.75rem' }}>
         <div className="table-container">

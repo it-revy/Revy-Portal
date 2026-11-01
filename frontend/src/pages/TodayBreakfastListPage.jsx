@@ -4,6 +4,7 @@ import Drawer from '../components/Drawer';
 import { useAuth } from '../context/AuthContext';
 import HistoricalRecordCard from '../components/HistoricalRecordCard';
 import { Utensils, CheckCircle2, XCircle, Search, Eye, History, Shield, Edit2, AlertCircle } from 'lucide-react';
+import { PageHeader, Button, SearchInput, Select, DatePicker, FilterBar, FilterField } from '../components/ui';
 
 const TodayBreakfastListPage = () => {
   const { hasPermission } = useAuth();
@@ -104,27 +105,22 @@ const TodayBreakfastListPage = () => {
 
   return (
     <div className="page-body">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <h1 style={{ fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <Utensils color="var(--accent-primary)" /> Today's Operational Breakfast List
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', marginTop: '0.2rem', fontSize: '0.85rem' }}>
-            Verify employee requested requirements vs. actual consumption control
-          </p>
-        </div>
-
-        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Business Date:</span>
-          <input
-            type="date"
-            className="form-input"
-            value={selectedDate}
-            onChange={(e) => handleDateChange(e.target.value)}
-            style={{ width: 'auto', minWidth: '140px', padding: '0.45rem 0.75rem' }}
-          />
-        </div>
-      </div>
+      {/* Standard Enterprise Page Header */}
+      <PageHeader
+        title="Today's Operational Breakfast List"
+        subtitle="Verify employee requested requirements vs. actual consumption control"
+        icon={Utensils}
+        iconBg="linear-gradient(135deg, #2563eb, #1d4ed8)"
+        actions={
+          <FilterField label="Business Date:">
+            <DatePicker
+              value={selectedDate}
+              onChange={(e) => handleDateChange(e.target.value)}
+              style={{ width: 'auto' }}
+            />
+          </FilterField>
+        }
+      />
 
       {dayStatus && (dayStatus.isSunday || dayStatus.isPublicHoliday) && (
         <div style={{
@@ -194,35 +190,41 @@ const TodayBreakfastListPage = () => {
         </div>
       )}
 
-      {/* Filter Bar */}
-      <div className="panel-card" style={{ padding: '1rem', marginBottom: '1.25rem', display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
-        <form onSubmit={(e) => { e.preventDefault(); fetchList(); }} style={{ flex: '1 1 240px', display: 'flex', gap: '0.5rem', minWidth: '200px' }}>
-          <input
-            type="text"
-            className="form-input"
+      {/* Standard Enterprise Filter Bar */}
+      <FilterBar
+        onReset={search || department !== 'ALL' ? () => {
+          setSearch('');
+          setDepartment('ALL');
+        } : null}
+      >
+        <form onSubmit={(e) => { e.preventDefault(); fetchList(); }} style={{ flex: '1 1 240px', display: 'flex', gap: 'var(--space-2)' }}>
+          <SearchInput
             placeholder="Search employee by Username, Name, Employee ID..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onSearch={fetchList}
           />
-          <button type="submit" className="btn btn-secondary">
-            <Search size={15} /> Search
-          </button>
+          <Button type="submit" variant="secondary">
+            Search
+          </Button>
         </form>
 
-        <select
-          className="form-select"
-          value={department}
-          onChange={(e) => setDepartment(e.target.value)}
-          style={{ width: 'auto', minWidth: '150px', flex: '1 1 auto' }}
-        >
-          <option value="ALL">All Departments</option>
-          <option value="IT Infrastructure">IT Infrastructure</option>
-          <option value="Administration">Administration</option>
-          <option value="Engineering">Engineering</option>
-          <option value="Research & Development">Research & Development</option>
-          <option value="Executive Office">Executive Office</option>
-        </select>
-      </div>
+        <FilterField label="Department:">
+          <Select
+            size="md"
+            value={department}
+            onChange={(e) => setDepartment(e.target.value)}
+            style={{ width: 'auto', minWidth: '160px' }}
+          >
+            <option value="ALL">All Departments</option>
+            <option value="IT Infrastructure">IT Infrastructure</option>
+            <option value="Administration">Administration</option>
+            <option value="Engineering">Engineering</option>
+            <option value="Research & Development">Research & Development</option>
+            <option value="Executive Office">Executive Office</option>
+          </Select>
+        </FilterField>
+      </FilterBar>
 
       {/* Table */}
       <div className="panel-card" style={{ padding: '1.25rem' }}>

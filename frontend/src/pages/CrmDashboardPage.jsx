@@ -16,6 +16,7 @@ import {
   Briefcase
 } from 'lucide-react';
 import crmService from '../services/crmService';
+import { PageHeader, Button } from '../components/ui';
 
 export default function CrmDashboardPage() {
   const navigate = useNavigate();
@@ -53,64 +54,34 @@ export default function CrmDashboardPage() {
   return (
     <div className="page-body">
       {/* Top Banner & Header */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: '1.5rem',
-        flexWrap: 'wrap',
-        gap: '1rem'
-      }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
-            <div style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '8px',
-              background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#ffffff',
-              boxShadow: '0 4px 10px rgba(245, 158, 11, 0.25)'
-            }}>
-              <Briefcase size={20} />
-            </div>
-            <div>
-              <h1 style={{ margin: 0, fontSize: '1.5rem', fontWeight: 700 }}>
-                CRM Dashboard
-              </h1>
-              <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                Real-time pipeline overview, lead statuses, and scheduled client interactions
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <button
-            onClick={fetchMetrics}
-            className="btn btn-secondary"
-            title="Refresh metrics"
-            disabled={loading}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
-          >
-            <RefreshCw size={15} className={loading ? 'spin' : ''} />
-            <span>Refresh</span>
-          </button>
-
-          {canCreateLead && (
-            <button
-              onClick={() => navigate('/crm/leads/new')}
-              className="btn btn-primary"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+      <PageHeader
+        title="CRM Dashboard"
+        subtitle="Real-time pipeline overview, lead statuses, and scheduled client interactions"
+        icon={Briefcase}
+        actions={
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            <Button
+              variant="secondary"
+              onClick={fetchMetrics}
+              title="Refresh metrics"
+              disabled={loading}
+              icon={RefreshCw}
             >
-              <Plus size={16} />
-              <span>New Lead</span>
-            </button>
-          )}
-        </div>
-      </div>
+              <span className={loading ? 'spin' : ''}>Refresh</span>
+            </Button>
+
+            {canCreateLead && (
+              <Button
+                variant="primary"
+                onClick={() => navigate('/crm/leads/new')}
+                icon={Plus}
+              >
+                New Lead
+              </Button>
+            )}
+          </div>
+        }
+      />
 
       {/* Error state */}
       {error && (

@@ -23,6 +23,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import crmService from '../services/crmService';
+import { PageHeader, Button, SearchInput, FilterBar, Pagination } from '../components/ui';
 
 const DOMAIN_REGEX = /^(?:https?:\/\/)?(?:www\.)?([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}(?::\d+)?(?:\/[^\s]*)?$/i;
 
@@ -274,73 +275,51 @@ export default function CrmAccountsPage() {
   return (
     <div className="page-body">
       {/* Page Header */}
-      <div className="crm-page-header">
-        <div className="crm-page-header-title-group">
-          <div className="crm-page-header-icon" style={{ background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)' }}>
-            <Building2 size={22} />
-          </div>
-          <div>
-            <h1 className="crm-page-header-title">Accounts Directory</h1>
-            <p className="crm-page-header-subtitle">
-              Enterprise clients, industries, contacts, and linked enquiry leads
-            </p>
-          </div>
-        </div>
+      <PageHeader
+        title="Accounts Directory"
+        subtitle="Enterprise clients, industries, contacts, and linked enquiry leads"
+        icon={Building2}
+        actions={
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            <Button
+              variant="secondary"
+              onClick={fetchAccounts}
+              title="Refresh Accounts"
+              disabled={loading}
+              icon={RefreshCw}
+            >
+              <span className={loading ? 'spin' : ''}>Refresh</span>
+            </Button>
 
-        <div className="crm-page-header-actions">
-          <button
-            onClick={fetchAccounts}
-            className="crm-btn crm-btn-secondary"
-            title="Refresh Accounts"
-            disabled={loading}
-          >
-            <RefreshCw size={15} className={loading ? 'spin' : ''} />
-            <span>Refresh</span>
-          </button>
-
-          {canCreate && (
-            <button onClick={openCreateModal} className="crm-btn crm-btn-primary">
-              <Plus size={16} />
-              <span>New Account</span>
-            </button>
-          )}
-        </div>
-      </div>
+            {canCreate && (
+              <Button onClick={openCreateModal} variant="primary" icon={Plus}>
+                New Account
+              </Button>
+            )}
+          </div>
+        }
+      />
 
       {/* Toolbar & Search */}
-      <div className="crm-toolbar">
-        <form onSubmit={handleSearchSubmit} className="crm-toolbar-search-group">
-          <div className="crm-search-input-wrap">
-            <Search size={16} className="crm-search-icon" />
-            <input
-              type="text"
-              className="form-control crm-search-input"
+      <FilterBar>
+        <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: 'var(--space-2)', flex: 1, minWidth: '280px', maxWidth: '560px' }}>
+          <div style={{ flex: 1 }}>
+            <SearchInput
               placeholder="Search by company name, account ID, industry, website, or location..."
               value={search}
               onChange={e => setSearch(e.target.value)}
+              onClear={handleClearSearch}
             />
-            {search && (
-              <button
-                type="button"
-                onClick={handleClearSearch}
-                className="crm-search-clear-btn"
-                title="Clear search"
-              >
-                <X size={15} />
-              </button>
-            )}
           </div>
-          <button type="submit" className="crm-btn crm-btn-secondary crm-btn-sm" style={{ height: '38px' }}>
+          <Button type="submit" variant="secondary" size="md">
             Search
-          </button>
+          </Button>
         </form>
 
-        <div className="crm-toolbar-filters">
-          <span style={{ fontSize: '0.85rem', color: 'var(--crm-text-muted)' }}>
-            Total: <strong>{totalCount}</strong> Accounts
-          </span>
+        <div style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginLeft: 'auto' }}>
+          Total: <strong>{totalCount}</strong> Accounts
         </div>
-      </div>
+      </FilterBar>
 
       {/* Error alert */}
       {error && (
@@ -532,32 +511,13 @@ export default function CrmAccountsPage() {
       </div>
 
         {/* Standard Pagination Footer inside Table Card */}
-        <div className="crm-pagination-footer">
-          <div>
-            Showing <strong>{accounts.length}</strong> of <strong>{totalCount}</strong> accounts
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page <= 1 || loading}
-              className="crm-btn crm-btn-secondary crm-btn-sm"
-              aria-label="Previous page"
-            >
-              <ChevronLeft size={16} />
-            </button>
-            <span style={{ fontWeight: 600 }}>
-              {page} / {totalPages}
-            </span>
-            <button
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages || loading}
-              className="crm-btn crm-btn-secondary crm-btn-sm"
-              aria-label="Next page"
-            >
-              <ChevronRight size={16} />
-            </button>
-          </div>
-        </div>
+        <Pagination
+          currentPage={page}
+          totalPages={totalPages}
+          totalItems={totalCount}
+          pageSize={pageSize}
+          onPageChange={newPage => setPage(newPage)}
+        />
       </div>
 
       {/* Create / Edit Account Modal */}

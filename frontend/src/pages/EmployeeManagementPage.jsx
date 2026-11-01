@@ -22,6 +22,7 @@ import {
   Utensils
 } from 'lucide-react';
 import { formatISTTimestamp } from '../utils/dateUtils';
+import { PageHeader, Button, SearchInput, Select, FilterBar, FilterField } from '../components/ui';
 
 const EmployeeManagementPage = () => {
   const [employees, setEmployees] = useState([]);
@@ -306,31 +307,27 @@ const EmployeeManagementPage = () => {
 
   return (
     <div className="page-body">
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <Users color="var(--accent-primary)" /> BMS Employees
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-            Users participating in the Breakfast Management System. (Central credentials and passwords are strictly managed in Central User Management).
-          </p>
-        </div>
-
-        {hasPermission('breakfast.employee.create') && (
-          <button className="btn btn-primary" onClick={handleOpenAddUserModal}>
-            <UserPlus size={18} />
-            Add User to BMS
-          </button>
-        )}
-      </div>
+      {/* Standard Enterprise Header */}
+      <PageHeader
+        title="BMS Employees"
+        subtitle="Users participating in the Breakfast Management System. (Central credentials and passwords are strictly managed in Central User Management)."
+        icon={Users}
+        iconBg="linear-gradient(135deg, #2563eb, #1d4ed8)"
+        actions={
+          hasPermission('breakfast.employee.create') && (
+            <Button variant="primary" icon={UserPlus} onClick={handleOpenAddUserModal}>
+              Add User to BMS
+            </Button>
+          )
+        }
+      />
 
       {/* Success Notification Banner */}
       {successMessage && (
         <div style={{
-          background: 'rgba(16, 185, 129, 0.15)',
-          border: '1px solid rgba(16, 185, 129, 0.3)',
-          color: '#34d399',
+          background: 'var(--color-success-bg)',
+          border: '1px solid var(--color-success-border)',
+          color: 'var(--color-success-text)',
           padding: '0.75rem 1rem',
           borderRadius: 'var(--radius-sm)',
           marginBottom: '1rem',
@@ -339,7 +336,7 @@ const EmployeeManagementPage = () => {
           gap: '0.5rem',
           fontSize: '0.875rem'
         }}>
-          <CheckCircle2 size={18} color="#10b981" />
+          <CheckCircle2 size={18} color="var(--color-success)" />
           <span>{successMessage}</span>
         </div>
       )}
@@ -347,9 +344,9 @@ const EmployeeManagementPage = () => {
       {/* Error Banner */}
       {error && (
         <div style={{
-          background: 'rgba(239, 68, 68, 0.15)',
-          border: '1px solid rgba(239, 68, 68, 0.3)',
-          color: '#fca5a5',
+          background: 'var(--color-danger-bg)',
+          border: '1px solid var(--color-danger-border)',
+          color: 'var(--color-danger-text)',
           padding: '0.75rem 1rem',
           borderRadius: 'var(--radius-sm)',
           marginBottom: '1rem',
@@ -359,52 +356,78 @@ const EmployeeManagementPage = () => {
           fontSize: '0.875rem'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <AlertCircle size={18} color="#ef4444" />
+            <AlertCircle size={18} color="var(--color-danger)" />
             <span>{error}</span>
           </div>
-          <button onClick={() => setError(null)} style={{ background: 'none', border: 'none', color: '#fca5a5', cursor: 'pointer' }}>
+          <button onClick={() => setError(null)} style={{ background: 'none', border: 'none', color: 'var(--color-danger)', cursor: 'pointer' }}>
             <X size={16} />
           </button>
         </div>
       )}
 
-      {/* Search & Filter Bar */}
-      <div className="glass-panel" style={{ padding: '1.25rem', marginBottom: '1.5rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-        <div style={{ flex: '1 1 220px', minWidth: '200px' }}>
-          <input
-            type="text"
-            className="form-input"
+      {/* Standard Enterprise Search & Filter Bar */}
+      <FilterBar
+        onReset={search || departmentFilter !== 'ALL' || statusFilter !== 'ALL' || participationFilter !== 'ALL' ? () => {
+          setSearch('');
+          setDepartmentFilter('ALL');
+          setStatusFilter('ALL');
+          setParticipationFilter('ALL');
+        } : null}
+      >
+        <div style={{ flex: '1 1 240px', minWidth: '220px' }}>
+          <SearchInput
             placeholder="Search by Username, ID, Name, Department..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
 
-        <select className="form-select" style={{ flex: '1 1 160px', width: 'auto', minWidth: '140px' }} value={departmentFilter} onChange={(e) => setDepartmentFilter(e.target.value)}>
-          <option value="ALL">All Departments</option>
-          <option value="IT Infrastructure">IT Infrastructure</option>
-          <option value="Administration">Administration</option>
-          <option value="Engineering">Engineering</option>
-          <option value="Research & Development">Research & Development</option>
-          <option value="Executive Office">Executive Office</option>
-          <option value="Finance & Accounts">Finance & Accounts</option>
-          <option value="Quality Assurance">Quality Assurance</option>
-          <option value="Human Resources">Human Resources</option>
-          <option value="Operations">Operations</option>
-        </select>
+        <FilterField label="Department:">
+          <Select
+            size="md"
+            style={{ width: 'auto', minWidth: '150px' }}
+            value={departmentFilter}
+            onChange={(e) => setDepartmentFilter(e.target.value)}
+          >
+            <option value="ALL">All Departments</option>
+            <option value="IT Infrastructure">IT Infrastructure</option>
+            <option value="Administration">Administration</option>
+            <option value="Engineering">Engineering</option>
+            <option value="Research & Development">Research & Development</option>
+            <option value="Executive Office">Executive Office</option>
+            <option value="Finance & Accounts">Finance & Accounts</option>
+            <option value="Quality Assurance">Quality Assurance</option>
+            <option value="Human Resources">Human Resources</option>
+            <option value="Operations">Operations</option>
+          </Select>
+        </FilterField>
 
-        <select className="form-select" style={{ flex: '1 1 140px', width: 'auto', minWidth: '130px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-          <option value="ALL">All Statuses</option>
-          <option value="active">Active</option>
-          <option value="inactive">Inactive</option>
-        </select>
+        <FilterField label="Status:">
+          <Select
+            size="md"
+            style={{ width: 'auto', minWidth: '130px' }}
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+          >
+            <option value="ALL">All Statuses</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </Select>
+        </FilterField>
 
-        <select className="form-select" style={{ flex: '1 1 160px', width: 'auto', minWidth: '140px' }} value={participationFilter} onChange={(e) => setParticipationFilter(e.target.value)}>
-          <option value="ALL">All Participation</option>
-          <option value="NORMAL">Regular Taker</option>
-          <option value="PERMANENT_NON_TAKER">Permanent Non-Taker</option>
-        </select>
-      </div>
+        <FilterField label="Participation:">
+          <Select
+            size="md"
+            style={{ width: 'auto', minWidth: '150px' }}
+            value={participationFilter}
+            onChange={(e) => setParticipationFilter(e.target.value)}
+          >
+            <option value="ALL">All Participation</option>
+            <option value="NORMAL">Regular Taker</option>
+            <option value="PERMANENT_NON_TAKER">Permanent Non-Taker</option>
+          </Select>
+        </FilterField>
+      </FilterBar>
 
       {/* Employees Table */}
       <div className="glass-panel table-card-panel">

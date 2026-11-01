@@ -1,0 +1,126 @@
+/* ==========================================================================
+   REVY ENTERPRISE DESIGN SYSTEM — THEME & BACKWARD COMPATIBILITY MAPPINGS
+   Ensures 100% cohesion and zero regression across all existing modules
+   ========================================================================== */
+
+@import './tokens.css';
+@import './typography.css';
+
+:root {
+  /* ========================================================================
+     BACKWARD-COMPATIBILITY ALIASES: index.css legacy variables
+     ======================================================================== */
+  --bg-primary: var(--color-bg-app);
+  --bg-secondary: var(--color-surface);
+  --bg-app: var(--color-bg-app);
+  --bg-sidebar: var(--color-sidebar-bg);
+  --bg-sidebar-hover: var(--color-sidebar-hover);
+  --bg-input: var(--color-surface);
+  --border-color: var(--color-border);
+  --border-focus: var(--color-border-focus);
+
+  --text-primary: var(--color-text-primary);
+  --text-secondary: var(--color-text-secondary);
+  --text-muted: var(--color-text-muted);
+  --text-subtle: var(--color-text-subtle);
+  --text-on-dark: var(--color-sidebar-text);
+
+  --accent-primary: var(--color-primary);
+  --accent-hover: var(--color-primary-hover);
+  --accent-active: var(--color-primary-active);
+  --accent-light: var(--color-primary-subtle);
+
+  --success: var(--color-success);
+  --success-bg: var(--color-success-bg);
+  --success-border: var(--color-success-border);
+  --success-text: var(--color-success-text);
+
+  --warning: var(--color-warning);
+  --warning-bg: var(--color-warning-bg);
+  --warning-border: var(--color-warning-border);
+  --warning-text: var(--color-warning-text);
+
+  --danger: var(--color-danger);
+  --danger-bg: var(--color-danger-bg);
+  --danger-border: var(--color-danger-border);
+  --danger-text: var(--color-danger-text);
+
+  --info: var(--color-info);
+  --info-bg: var(--color-info-bg);
+  --info-border: var(--color-info-border);
+  --info-text: var(--color-info-text);
+
+  --card-shadow: var(--shadow-sm);
+  --panel-shadow: var(--shadow-md);
+  --dropdown-shadow: var(--shadow-lg);
+  --modal-shadow: var(--shadow-xl);
+
+  /* ========================================================================
+     BACKWARD-COMPATIBILITY ALIASES: crm.css legacy variables
+     ======================================================================== */
+  --crm-primary: var(--color-primary);
+  --crm-primary-hover: var(--color-primary-hover);
+  --crm-primary-active: var(--color-primary-active);
+  --crm-primary-light: var(--color-primary-subtle);
+  --crm-primary-border: var(--color-primary-border);
+
+  --crm-surface: var(--color-surface);
+  --crm-surface-subtle: var(--color-surface-subtle);
+  --crm-surface-muted: var(--color-surface-muted);
+
+  --crm-border: var(--color-border);
+  --crm-border-strong: var(--color-border-strong);
+  --crm-border-focus: var(--color-border-focus);
+
+  --crm-text-primary: var(--color-text-primary);
+  --crm-text-secondary: var(--color-text-secondary);
+  --crm-text-muted: var(--color-text-muted);
+  --crm-text-light: var(--color-text-subtle);
+
+  --crm-control-height: var(--control-height-md);
+  --crm-control-radius: var(--radius-sm);
+}
+
+/* ==========================================================================
+   GLOBAL RESETS & ACCESSIBILITY
+   ========================================================================== */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 14px;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background-color: var(--color-bg-app);
+  color: var(--color-text-primary);
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
+/* Accessible focus ring */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+/* Custom Enterprise Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: var(--radius-full);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}

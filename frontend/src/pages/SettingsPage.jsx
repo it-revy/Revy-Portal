@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import API from '../services/api';
 import { Settings, Clock, Plus, Save, CheckCircle2 } from 'lucide-react';
 
+import { PageHeader } from '../components/ui';
+
 const TIME_REGEX = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
 const format12Hour = (timeStr) => {
@@ -128,14 +130,11 @@ const SettingsPage = () => {
 
   return (
     <div className="page-body">
-      <div style={{ marginBottom: '2rem' }}>
-        <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <Settings color="var(--accent-primary)" /> System Settings & Breakfast Cycle Configuration
-        </h1>
-        <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-          Configure daily breakfast request cycle opening & closing window and opt-out reason types
-        </p>
-      </div>
+      <PageHeader
+        title="System Settings & Breakfast Cycle Configuration"
+        subtitle="Configure daily breakfast request cycle opening & closing window and opt-out reason types"
+        icon={Settings}
+      />
 
       {message && (
         <div style={{

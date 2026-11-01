@@ -14,6 +14,7 @@ import {
   RefreshCw,
   FileText
 } from 'lucide-react';
+import { PageHeader, Button, Select, FilterBar, FilterField } from '../components/ui';
 
 const ReportsPage = () => {
   const [availableYears, setAvailableYears] = useState([]);
@@ -111,94 +112,83 @@ const ReportsPage = () => {
 
   return (
     <div className="page-body">
-      {/* Header Bar */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.75rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: 0 }}>
-            <FileSpreadsheet color="var(--accent-primary)" size={28} /> Reports & Financial Ledger
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', marginTop: '0.35rem', fontSize: '0.9rem' }}>
-            Comprehensive Monthly Financial Summary, Attendance Matrix, Orders & Ledger Transactions
-          </p>
-        </div>
-
-        <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
-          <button className="btn btn-secondary" onClick={fetchMonthlyReport} disabled={loading} title="Refresh report preview">
-            <RefreshCw size={16} className={loading ? 'spin' : ''} /> Refresh
-          </button>
-          <button className="btn btn-secondary" onClick={handlePrint} title="Print active report preview">
-            <Printer size={16} /> Print Report
-          </button>
-          <button className="btn btn-primary" onClick={handleExportExcel} disabled={exporting} style={{ background: '#16a34a', borderColor: '#16a34a' }}>
-            <Download size={16} /> {exporting ? 'Generating Excel...' : 'Export Excel (.xlsx)'}
-          </button>
-        </div>
-      </div>
-
-      {/* Filter Controls Panel */}
-      <div className="glass-panel" style={{ padding: '1.25rem', marginBottom: '1.5rem' }}>
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          {/* Year Filter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 140px', minWidth: '130px' }}>
-            <Calendar size={18} color="var(--accent-primary)" />
-            <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Year:</span>
-            <select
-              className="form-select"
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(e.target.value)}
-              style={{ flex: 1, minWidth: '90px', padding: '0.45rem 0.8rem' }}
-            >
-              <option value="all">All Years</option>
-              {availableYears.map(y => (
-                <option key={y} value={y}>{y}</option>
-              ))}
-            </select>
+      {/* Standard Enterprise Page Header */}
+      <PageHeader
+        title="Reports & Financial Ledger"
+        subtitle="Comprehensive Monthly Financial Summary, Attendance Matrix, Orders & Ledger Transactions"
+        icon={FileSpreadsheet}
+        iconBg="linear-gradient(135deg, #10b981, #059669)"
+        actions={
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <Button variant="secondary" icon={RefreshCw} onClick={fetchMonthlyReport} disabled={loading} title="Refresh report preview">
+              Refresh
+            </Button>
+            <Button variant="secondary" icon={Printer} onClick={handlePrint} title="Print active report preview">
+              Print Report
+            </Button>
+            <Button variant="success" icon={Download} onClick={handleExportExcel} disabled={exporting}>
+              {exporting ? 'Generating Excel...' : 'Export Excel (.xlsx)'}
+            </Button>
           </div>
+        }
+      />
 
-          {/* Report Type Selector */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '2 1 220px', minWidth: '180px' }}>
-            <FileText size={18} color="var(--accent-primary)" />
-            <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Type:</span>
-            <select
-              className="form-select"
-              value={reportType}
-              onChange={(e) => setReportType(e.target.value)}
-              style={{ flex: 1, minWidth: '160px', padding: '0.45rem 0.8rem' }}
-            >
-              <option value="MONTHLY_SUMMARY">Monthly Breakfast & Money Report</option>
-            </select>
-          </div>
+      {/* Standard Enterprise Filter Controls Panel */}
+      <FilterBar
+        onReset={selectedYear !== '' || department !== 'ALL' ? () => {
+          setSelectedYear('');
+          setDepartment('ALL');
+        } : null}
+      >
+        <FilterField label="Year:">
+          <Select
+            size="md"
+            value={selectedYear}
+            onChange={(e) => setSelectedYear(e.target.value)}
+            style={{ width: 'auto', minWidth: '120px' }}
+          >
+            <option value="all">All Years</option>
+            {availableYears.map(y => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </Select>
+        </FilterField>
 
-          {/* Department Filter */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '2 1 200px', minWidth: '170px' }}>
-            <Filter size={18} color="var(--accent-primary)" />
-            <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Dept:</span>
-            <select
-              className="form-select"
-              value={department}
-              onChange={(e) => setDepartment(e.target.value)}
-              style={{ flex: 1, minWidth: '140px', padding: '0.45rem 0.8rem' }}
-            >
-              <option value="ALL">All Departments</option>
-              <option value="IT Infrastructure">IT Infrastructure</option>
-              <option value="Administration">Administration</option>
-              <option value="Engineering">Engineering</option>
-              <option value="Research & Development">Research & Development</option>
-              <option value="Executive Office">Executive Office</option>
-              <option value="Finance & Accounts">Finance & Accounts</option>
-              <option value="Quality Assurance">Quality Assurance</option>
-              <option value="Human Resources">Human Resources</option>
-              <option value="Operations">Operations</option>
-            </select>
-          </div>
+        <FilterField label="Report Type:">
+          <Select
+            size="md"
+            value={reportType}
+            onChange={(e) => setReportType(e.target.value)}
+            style={{ width: 'auto', minWidth: '220px' }}
+          >
+            <option value="MONTHLY_SUMMARY">Monthly Breakfast & Money Report</option>
+          </Select>
+        </FilterField>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flex: '1 1 auto', justifyContent: 'flex-end' }}>
-            <button className="btn btn-primary" onClick={fetchMonthlyReport} disabled={loading} style={{ whiteSpace: 'nowrap' }}>
-              Generate Report
-            </button>
-          </div>
-        </div>
-      </div>
+        <FilterField label="Department:">
+          <Select
+            size="md"
+            value={department}
+            onChange={(e) => setDepartment(e.target.value)}
+            style={{ width: 'auto', minWidth: '160px' }}
+          >
+            <option value="ALL">All Departments</option>
+            <option value="IT Infrastructure">IT Infrastructure</option>
+            <option value="Administration">Administration</option>
+            <option value="Engineering">Engineering</option>
+            <option value="Research & Development">Research & Development</option>
+            <option value="Executive Office">Executive Office</option>
+            <option value="Finance & Accounts">Finance & Accounts</option>
+            <option value="Quality Assurance">Quality Assurance</option>
+            <option value="Human Resources">Human Resources</option>
+            <option value="Operations">Operations</option>
+          </Select>
+        </FilterField>
+
+        <Button variant="primary" onClick={fetchMonthlyReport} disabled={loading}>
+          Generate Report
+        </Button>
+      </FilterBar>
 
       {/* KPI Cards Overview */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.25rem', marginBottom: '1.75rem' }}>

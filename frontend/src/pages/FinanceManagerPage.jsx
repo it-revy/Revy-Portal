@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   DollarSign
 } from 'lucide-react';
+import { PageHeader, Button, SearchInput, Select, FilterBar, FilterField } from '../components/ui';
 
 const FinanceManagerPage = () => {
   const [metrics, setMetrics] = useState({ currentBalance: 0, fundLimit: 2500, totalReceived: 0, totalSpent: 0 });
@@ -140,21 +141,18 @@ const FinanceManagerPage = () => {
 
   return (
     <div className="page-body">
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: 0 }}>
-            <Wallet size={28} color="var(--accent-primary)" /> Finance Manager — Breakfast Money Management
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem', fontSize: '0.875rem' }}>
-            Review, approve, and record money provision for Breakfast Money Requests (Maximum Current Balance: ₹{metrics.fundLimit?.toLocaleString('en-IN')})
-          </p>
-        </div>
-
-        <button className="btn btn-secondary" onClick={fetchFundData} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <RefreshCw size={16} /> Refresh
-        </button>
-      </div>
+      {/* Standard Enterprise Page Header */}
+      <PageHeader
+        title="Finance Manager — Breakfast Money Management"
+        subtitle={`Review, approve, and record money provision for Breakfast Money Requests (Maximum Current Balance: ₹${metrics.fundLimit?.toLocaleString('en-IN')})`}
+        icon={Wallet}
+        iconBg="linear-gradient(135deg, #10b981, #059669)"
+        actions={
+          <Button variant="secondary" icon={RefreshCw} onClick={fetchFundData}>
+            Refresh
+          </Button>
+        }
+      />
 
       {message && (
         <div style={{
@@ -208,24 +206,20 @@ const FinanceManagerPage = () => {
             <FileText size={20} color="var(--accent-primary)" /> Breakfast Fund Requests
           </h3>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', width: '100%', maxWidth: '460px' }}>
-            <div style={{ position: 'relative', flex: '1 1 180px', minWidth: '140px' }}>
-              <Search size={15} color="var(--text-muted)" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)' }} />
-              <input
-                type="text"
-                className="form-input"
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap', width: '100%', maxWidth: '480px' }}>
+            <div style={{ flex: '1 1 200px', minWidth: '160px' }}>
+              <SearchInput
                 placeholder="Search request ID, requester..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                style={{ paddingLeft: '2.25rem', fontSize: '0.85rem', width: '100%' }}
               />
             </div>
 
-            <select
-              className="form-select"
+            <Select
+              size="md"
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              style={{ fontSize: '0.85rem', flex: '1 1 160px', minWidth: '140px' }}
+              style={{ width: 'auto', minWidth: '160px' }}
             >
               <option value="ALL">All Statuses</option>
               <option value="PENDING_APPROVAL">Pending Approval</option>
@@ -233,7 +227,7 @@ const FinanceManagerPage = () => {
               <option value="RECEIPT_PENDING">Receipt Pending</option>
               <option value="RECEIVED_VERIFIED">Received & Verified</option>
               <option value="REJECTED">Rejected</option>
-            </select>
+            </Select>
           </div>
         </div>
 

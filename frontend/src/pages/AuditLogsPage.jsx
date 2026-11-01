@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import API from '../services/api';
-import { ShieldAlert, Search, Eye, X, UserCheck } from 'lucide-react';
+import { ShieldAlert, Search, Eye, X, UserCheck, RefreshCw } from 'lucide-react';
 import { formatISTTimestamp } from '../utils/dateUtils';
+import { PageHeader, Button, SearchInput, Select, FilterBar, FilterField } from '../components/ui';
 
 const AuditLogsPage = () => {
   const [logs, setLogs] = useState([]);
@@ -47,52 +48,59 @@ const AuditLogsPage = () => {
 
   return (
     <div className="page-body">
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.75rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: 0 }}>
-            <ShieldAlert color="var(--accent-primary)" /> Platform Audit Trail & History
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem', fontSize: '0.875rem' }}>
-            Accountability records identifying actual user name, role used, and state changes
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title="Platform Audit Trail & History"
+        subtitle="Accountability records identifying actual user name, role used, and state changes"
+        icon={ShieldAlert}
+        iconBg="linear-gradient(135deg, #2563eb, #1d4ed8)"
+        actions={
+          <Button variant="secondary" icon={RefreshCw} onClick={fetchLogs}>
+            Refresh Logs
+          </Button>
+        }
+      />
 
-      {/* Filter Bar */}
-      <div className="glass-panel" style={{ padding: '1.25rem', marginBottom: '1.5rem', display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' }}>
-        <form onSubmit={handleSearchSubmit} style={{ flex: '1 1 240px', display: 'flex', gap: '0.5rem', minWidth: '200px' }}>
-          <input
-            type="text"
-            className="form-input"
+      {/* Standard Enterprise Filter Bar */}
+      <FilterBar
+        onReset={search || actionFilter !== 'ALL' ? () => {
+          setSearch('');
+          setActionFilter('ALL');
+        } : null}
+      >
+        <form onSubmit={handleSearchSubmit} style={{ flex: '1 1 280px', display: 'flex', gap: 'var(--space-2)' }}>
+          <SearchInput
             placeholder="Search by Employee ID, Name, Action, or Audit ID..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onSearch={fetchLogs}
           />
-          <button type="submit" className="btn btn-secondary" style={{ whiteSpace: 'nowrap' }}>
-            <Search size={16} /> Search
-          </button>
+          <Button type="submit" variant="secondary">
+            Search
+          </Button>
         </form>
 
-        <select
-          className="form-select"
-          value={actionFilter}
-          onChange={(e) => setActionFilter(e.target.value)}
-          style={{ flex: '1 1 200px', minWidth: '160px' }}
-        >
-          <option value="ALL">All Actions</option>
-          <option value="EMPLOYEE_CREATED">EMPLOYEE_CREATED</option>
-          <option value="EMPLOYEE_UPDATED">EMPLOYEE_UPDATED</option>
-          <option value="EMPLOYEE_DEACTIVATED">EMPLOYEE_DEACTIVATED</option>
-          <option value="PARTICIPATION_TYPE_CHANGED">PARTICIPATION_TYPE_CHANGED</option>
-          <option value="EMPLOYEE_ROLES_UPDATED">EMPLOYEE_ROLES_UPDATED</option>
-          <option value="BREAKFAST_RESPONSE_SUBMITTED">BREAKFAST_RESPONSE_SUBMITTED</option>
-          <option value="BREAKFAST_RESPONSE_UPDATED">BREAKFAST_RESPONSE_UPDATED</option>
-          <option value="BREAKFAST_SETTINGS_UPDATED">BREAKFAST_SETTINGS_UPDATED</option>
-        </select>
-      </div>
+        <FilterField label="Action:">
+          <Select
+            size="md"
+            value={actionFilter}
+            onChange={(e) => setActionFilter(e.target.value)}
+            style={{ width: 'auto', minWidth: '180px' }}
+          >
+            <option value="ALL">All Actions</option>
+            <option value="EMPLOYEE_CREATED">EMPLOYEE_CREATED</option>
+            <option value="EMPLOYEE_UPDATED">EMPLOYEE_UPDATED</option>
+            <option value="EMPLOYEE_DEACTIVATED">EMPLOYEE_DEACTIVATED</option>
+            <option value="PARTICIPATION_TYPE_CHANGED">PARTICIPATION_TYPE_CHANGED</option>
+            <option value="EMPLOYEE_ROLES_UPDATED">EMPLOYEE_ROLES_UPDATED</option>
+            <option value="BREAKFAST_RESPONSE_SUBMITTED">BREAKFAST_RESPONSE_SUBMITTED</option>
+            <option value="BREAKFAST_RESPONSE_UPDATED">BREAKFAST_RESPONSE_UPDATED</option>
+            <option value="BREAKFAST_SETTINGS_UPDATED">BREAKFAST_SETTINGS_UPDATED</option>
+          </Select>
+        </FilterField>
+      </FilterBar>
 
       {/* Audit Log Table */}
-      <div className="glass-panel" style={{ padding: '1.75rem' }}>
+      <div className="glass-panel" style={{ padding: '1.5rem' }}>
         <div className="table-container">
           <table className="custom-table">
             <thead>
@@ -116,7 +124,7 @@ const AuditLogsPage = () => {
                   <tr key={log.auditId}>
                     <td><span style={{ fontSize: '0.75rem', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{log.auditId}</span></td>
                     <td>
-                      <div><strong style={{ color: 'white' }}>{log.performedBy?.employeeName}</strong></div>
+                      <div><strong style={{ color: 'var(--color-text-primary)' }}>{log.performedBy?.employeeName}</strong></div>
                       <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{log.performedBy?.employeeId}</span>
                     </td>
                     <td>

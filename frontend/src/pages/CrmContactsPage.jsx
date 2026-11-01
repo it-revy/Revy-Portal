@@ -19,6 +19,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import crmService from '../services/crmService';
+import { PageHeader, Button, SearchInput, Select, FilterBar, FilterField, Pagination } from '../components/ui';
 
 export default function CrmContactsPage() {
   const navigate = useNavigate();
@@ -269,93 +270,71 @@ export default function CrmContactsPage() {
   return (
     <div className="page-body">
       {/* Page Header */}
-      <div className="crm-page-header">
-        <div className="crm-page-header-title-group">
-          <div className="crm-page-header-icon" style={{ background: 'linear-gradient(135deg, #10b981, #059669)' }}>
-            <Contact size={22} />
-          </div>
-          <div>
-            <h1 className="crm-page-header-title">Contacts Directory</h1>
-            <p className="crm-page-header-subtitle">
-              Individual client stakeholders, designations, and associated enterprise accounts
-            </p>
-          </div>
-        </div>
+      <PageHeader
+        title="Contacts Directory"
+        subtitle="Individual client stakeholders, designations, and associated enterprise accounts"
+        icon={Contact}
+        actions={
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            <Button
+              variant="secondary"
+              onClick={fetchContacts}
+              title="Refresh Contacts"
+              disabled={loading}
+              icon={RefreshCw}
+            >
+              <span className={loading ? 'spin' : ''}>Refresh</span>
+            </Button>
 
-        <div className="crm-page-header-actions">
-          <button
-            onClick={fetchContacts}
-            className="crm-btn crm-btn-secondary"
-            title="Refresh Contacts"
-            disabled={loading}
-          >
-            <RefreshCw size={15} className={loading ? 'spin' : ''} />
-            <span>Refresh</span>
-          </button>
-
-          {canCreate && (
-            <button onClick={openCreateModal} className="crm-btn crm-btn-primary">
-              <Plus size={16} />
-              <span>New Contact</span>
-            </button>
-          )}
-        </div>
-      </div>
+            {canCreate && (
+              <Button onClick={openCreateModal} variant="primary" icon={Plus}>
+                New Contact
+              </Button>
+            )}
+          </div>
+        }
+      />
 
       {/* Toolbar & Filters */}
-      <div className="crm-toolbar">
-        <form onSubmit={handleSearchSubmit} className="crm-toolbar-search-group">
-          <div className="crm-search-input-wrap">
-            <Search size={16} className="crm-search-icon" />
-            <input
-              type="text"
-              className="form-control crm-search-input"
+      <FilterBar>
+        <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: 'var(--space-2)', flex: 1, minWidth: '280px', maxWidth: '520px' }}>
+          <div style={{ flex: 1 }}>
+            <SearchInput
               placeholder="Search by contact name, contact ID, email, phone, designation..."
               value={search}
               onChange={e => setSearch(e.target.value)}
+              onClear={handleClearSearch}
             />
-            {search && (
-              <button
-                type="button"
-                onClick={handleClearSearch}
-                className="crm-search-clear-btn"
-                title="Clear search"
-              >
-                <X size={15} />
-              </button>
-            )}
           </div>
-          <button type="submit" className="crm-btn crm-btn-secondary crm-btn-sm" style={{ height: '38px' }}>
+          <Button type="submit" variant="secondary" size="md">
             Search
-          </button>
+          </Button>
         </form>
 
-        <div className="crm-toolbar-filters">
-          <div className="crm-filter-item">
-            <label className="crm-filter-label">Filter Account:</label>
-            <select
-              className="form-control crm-select-sm"
-              style={{ width: 'auto', minWidth: '180px' }}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+          <FilterField label="Filter Account">
+            <Select
+              size="md"
               value={filterAccountId}
               onChange={e => {
                 setFilterAccountId(e.target.value);
                 setPage(1);
               }}
-            >
-              <option value="">All Accounts</option>
-              {accounts.map(acc => (
-                <option key={acc.id} value={acc.id}>
-                  {acc.name} ({acc.accountId})
-                </option>
-              ))}
-            </select>
-          </div>
+              options={[
+                { value: '', label: 'All Accounts' },
+                ...accounts.map(acc => ({
+                  value: String(acc.id),
+                  label: `${acc.name} (${acc.accountId})`
+                }))
+              ]}
+            />
+          </FilterField>
 
-          <span style={{ fontSize: '0.85rem', color: 'var(--crm-text-muted)', marginLeft: 'auto' }}>
+          <span style={{ fontSize: '0.85rem', color: 'var(--color-text-secondary)', marginLeft: 'var(--space-2)' }}>
             Total: <strong>{totalCount}</strong> Contacts
           </span>
         </div>
-      </div>
+      </FilterBar>
 
       {/* Error alert */}
       {error && (
@@ -523,32 +502,13 @@ export default function CrmContactsPage() {
       </div>
 
         {/* Standard Pagination Footer inside Table Card */}
-        <div className="crm-pagination-footer">
-          <div>
-            Showing <strong>{contacts.length}</strong> of <strong>{totalCount}</strong> contacts
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page <= 1 || loading}
-              className="crm-btn crm-btn-secondary crm-btn-sm"
-              aria-label="Previous page"
-            >
-              <ChevronLeft size={16} />
-            </button>
-            <span style={{ fontWeight: 600 }}>
-              {page} / {totalPages}
-            </span>
-            <button
-              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages || loading}
-              className="crm-btn crm-btn-secondary crm-btn-sm"
-              aria-label="Next page"
-            >
-              <ChevronRight size={16} />
-            </button>
-          </div>
-        </div>
+        <Pagination
+          currentPage={page}
+          totalPages={totalPages}
+          totalItems={totalCount}
+          pageSize={pageSize}
+          onPageChange={newPage => setPage(newPage)}
+        />
       </div>
 
       {/* Create / Edit Contact Modal */}

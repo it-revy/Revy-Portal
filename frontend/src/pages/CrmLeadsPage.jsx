@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import crmService from '../services/crmService';
 import LeadStatusModal from '../modules/crm/components/LeadStatusModal';
+import { PageHeader, Button, SearchInput, Select, FilterBar, FilterField, Pagination } from '../components/ui';
 
 const SAVED_VIEWS = [
   { id: 'open', label: 'Open Leads', icon: Layers },
@@ -232,41 +233,34 @@ export default function CrmLeadsPage() {
   return (
     <div className="page-body">
       {/* Top Header */}
-      <div className="crm-page-header">
-        <div className="crm-page-header-title-group">
-          <div className="crm-page-header-icon">
-            <Layers size={22} />
-          </div>
-          <div>
-            <h1 className="crm-page-header-title">Leads Workspace</h1>
-            <p className="crm-page-header-subtitle">
-              Track client enquiries, technical specifications, and scheduled follow-ups
-            </p>
-          </div>
-        </div>
-
-        <div className="crm-page-header-actions">
-          <button
-            onClick={fetchLeads}
-            className="crm-btn crm-btn-secondary"
-            title="Refresh Leads"
-            disabled={loading}
-          >
-            <RefreshCw size={15} className={loading ? 'spin' : ''} />
-            <span>Refresh</span>
-          </button>
-
-          {canCreate && (
-            <button
-              onClick={() => navigate('/crm/leads/new')}
-              className="crm-btn crm-btn-primary"
+      <PageHeader
+        title="Leads Workspace"
+        subtitle="Track client enquiries, technical specifications, and scheduled follow-ups"
+        icon={Layers}
+        actions={
+          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+            <Button
+              variant="secondary"
+              onClick={fetchLeads}
+              title="Refresh Leads"
+              disabled={loading}
+              icon={RefreshCw}
             >
-              <Plus size={16} />
-              <span>New Lead</span>
-            </button>
-          )}
-        </div>
-      </div>
+              <span className={loading ? 'spin' : ''}>Refresh</span>
+            </Button>
+
+            {canCreate && (
+              <Button
+                variant="primary"
+                onClick={() => navigate('/crm/leads/new')}
+                icon={Plus}
+              >
+                New Lead
+              </Button>
+            )}
+          </div>
+        }
+      />
 
       {/* 5 Saved Views Tabs */}
       <div className="crm-tabs-container">
@@ -287,89 +281,74 @@ export default function CrmLeadsPage() {
       </div>
 
       {/* Filters & Search Toolbar */}
-      <div className="crm-toolbar">
+      <FilterBar>
         {/* Search Box with Clear Button and Submit */}
-        <form onSubmit={handleSearchSubmit} className="crm-toolbar-search-group">
-          <div className="crm-search-input-wrap">
-            <Search size={16} className="crm-search-icon" />
-            <input
-              type="text"
-              className="form-control crm-search-input"
+        <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: 'var(--space-2)', flex: 1, minWidth: '280px', maxWidth: '520px' }}>
+          <div style={{ flex: 1 }}>
+            <SearchInput
               placeholder="Search by Lead ID, Name, Account, Contact, Product..."
               value={search}
               onChange={e => setSearch(e.target.value)}
+              onClear={handleClearSearch}
             />
-            {search && (
-              <button
-                type="button"
-                onClick={handleClearSearch}
-                className="crm-search-clear-btn"
-                title="Clear search"
-              >
-                <X size={15} />
-              </button>
-            )}
           </div>
-          <button type="submit" className="crm-btn crm-btn-secondary crm-btn-sm" style={{ height: '38px' }}>
+          <Button type="submit" variant="secondary" size="md">
             Search
-          </button>
+          </Button>
         </form>
 
         {/* Faceted Filter Dropdowns */}
-        <div className="crm-toolbar-filters">
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-3)', alignItems: 'center' }}>
           {/* Business Area */}
-          <div className="crm-filter-item">
-            <label className="crm-filter-label">Business Area:</label>
-            <select
-              className="form-control crm-select-sm"
-              style={{ width: 'auto' }}
+          <FilterField label="Business Area">
+            <Select
+              size="md"
               value={businessArea}
               onChange={e => { setBusinessArea(e.target.value); setPage(1); }}
-            >
-              <option value="ALL">All Areas</option>
-              <option value="Biogas">Biogas</option>
-              <option value="WWT">WWT</option>
-            </select>
-          </div>
+              options={[
+                { value: 'ALL', label: 'All Areas' },
+                { value: 'Biogas', label: 'Biogas' },
+                { value: 'WWT', label: 'WWT' }
+              ]}
+            />
+          </FilterField>
 
           {/* Requirement Type */}
-          <div className="crm-filter-item">
-            <label className="crm-filter-label">Requirement:</label>
-            <select
-              className="form-control crm-select-sm"
-              style={{ width: 'auto' }}
+          <FilterField label="Requirement">
+            <Select
+              size="md"
               value={requirementType}
               onChange={e => { setRequirementType(e.target.value); setPage(1); }}
-            >
-              <option value="ALL">All Types</option>
-              <option value="Consulting">Consulting</option>
-              <option value="Sample Testing">Sample Testing</option>
-              <option value="Product">Product</option>
-            </select>
-          </div>
+              options={[
+                { value: 'ALL', label: 'All Types' },
+                { value: 'Consulting', label: 'Consulting' },
+                { value: 'Sample Testing', label: 'Sample Testing' },
+                { value: 'Product', label: 'Product' }
+              ]}
+            />
+          </FilterField>
 
           {/* Lifecycle Status (Visible in All Leads view) */}
           {currentView === 'all' && (
-            <div className="crm-filter-item">
-              <label className="crm-filter-label">Status:</label>
-              <select
-                className="form-control crm-select-sm"
-                style={{ width: 'auto' }}
+            <FilterField label="Status">
+              <Select
+                size="md"
                 value={lifecycleStatus}
                 onChange={e => { setLifecycleStatus(e.target.value); setPage(1); }}
-              >
-                <option value="ALL">All Statuses</option>
-                <option value="Enquiry">Enquiry</option>
-                <option value="Offer">Offer</option>
-                <option value="Negotiation">Negotiation</option>
-                <option value="Supply">Supply</option>
-                <option value="Payment">Payment</option>
-                <option value="Dormant">Dormant</option>
-              </select>
-            </div>
+                options={[
+                  { value: 'ALL', label: 'All Statuses' },
+                  { value: 'Enquiry', label: 'Enquiry' },
+                  { value: 'Offer', label: 'Offer' },
+                  { value: 'Negotiation', label: 'Negotiation' },
+                  { value: 'Supply', label: 'Supply' },
+                  { value: 'Payment', label: 'Payment' },
+                  { value: 'Dormant', label: 'Dormant' }
+                ]}
+              />
+            </FilterField>
           )}
         </div>
-      </div>
+      </FilterBar>
 
       {/* Success Notification Banner */}
       {successNotification && (
@@ -863,51 +842,14 @@ export default function CrmLeadsPage() {
         </div>
 
         {/* Server-Side Pagination Footer */}
-        <div className="crm-pagination-footer">
-          <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-            Showing <strong>{leads.length}</strong> of <strong>{totalCount}</strong> leads
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem' }}>
-              <span>Page size:</span>
-              <select
-                className="form-control crm-select-sm"
-                style={{ width: 'auto' }}
-                value={pageSize}
-                onChange={e => { setPageSize(Number(e.target.value)); setPage(1); }}
-              >
-                <option value={10}>10</option>
-                <option value={20}>20</option>
-                <option value={50}>50</option>
-              </select>
-            </div>
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-              <button
-                className="crm-btn crm-btn-secondary crm-btn-sm"
-                style={{ minWidth: '32px', padding: '0.3rem 0.5rem' }}
-                disabled={page <= 1 || loading}
-                onClick={() => setPage(prev => Math.max(prev - 1, 1))}
-                aria-label="Previous page"
-              >
-                <ChevronLeft size={16} />
-              </button>
-              <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>
-                {page} / {totalPages || 1}
-              </span>
-              <button
-                className="crm-btn crm-btn-secondary crm-btn-sm"
-                style={{ minWidth: '32px', padding: '0.3rem 0.5rem' }}
-                disabled={page >= totalPages || loading}
-                onClick={() => setPage(prev => prev + 1)}
-                aria-label="Next page"
-              >
-                <ChevronRight size={16} />
-              </button>
-            </div>
-          </div>
-        </div>
+        <Pagination
+          currentPage={page}
+          totalPages={totalPages || 1}
+          totalItems={totalCount}
+          pageSize={pageSize}
+          onPageChange={newPage => setPage(newPage)}
+          onPageSizeChange={newSize => { setPageSize(newSize); setPage(1); }}
+        />
       </div>
 
 

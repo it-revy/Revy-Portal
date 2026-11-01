@@ -24,6 +24,7 @@ import {
   ChevronRight,
   Briefcase
 } from 'lucide-react';
+import { PageHeader, Button, SearchInput, Select, FilterBar, FilterField } from '../components/ui';
 
 const UserManagementPage = () => {
   const { hasRole, hasPermission, user: currentUser } = useAuth();
@@ -349,30 +350,25 @@ const UserManagementPage = () => {
 
   return (
     <div className="page-body">
-      {/* Header Banner */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: 0, fontSize: '1.6rem' }}>
-            <Users color="var(--accent-primary)" size={28} />
-            User & System Identity Management
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', marginTop: '0.35rem', fontSize: '0.9rem' }}>
-            Manage central user identities, reporting managers, and independent business module memberships
-          </p>
-        </div>
-
-        <button className="btn btn-primary" onClick={handleOpenCreateModal} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <UserPlus size={18} />
-          Add New User
-        </button>
-      </div>
+      {/* Standard Enterprise Header */}
+      <PageHeader
+        title="User & System Identity Management"
+        subtitle="Manage central user identities, reporting managers, and independent business module memberships"
+        icon={Users}
+        iconBg="linear-gradient(135deg, #6366f1, #4f46e5)"
+        actions={
+          <Button variant="primary" icon={UserPlus} onClick={handleOpenCreateModal}>
+            Add New User
+          </Button>
+        }
+      />
 
       {/* Notifications */}
       {successMessage && (
         <div style={{
-          background: 'rgba(16, 185, 129, 0.15)',
-          border: '1px solid rgba(16, 185, 129, 0.35)',
-          color: '#34d399',
+          background: 'var(--color-success-bg)',
+          border: '1px solid var(--color-success-border)',
+          color: 'var(--color-success-text)',
           padding: '0.75rem 1rem',
           borderRadius: 'var(--radius-sm)',
           marginBottom: '1.25rem',
@@ -381,16 +377,16 @@ const UserManagementPage = () => {
           gap: '0.5rem',
           fontSize: '0.875rem'
         }}>
-          <CheckCircle2 size={18} color="#10b981" />
+          <CheckCircle2 size={18} color="var(--color-success)" />
           <span>{successMessage}</span>
         </div>
       )}
 
       {error && (
         <div style={{
-          background: 'rgba(239, 68, 68, 0.15)',
-          border: '1px solid rgba(239, 68, 68, 0.3)',
-          color: '#fca5a5',
+          background: 'var(--color-danger-bg)',
+          border: '1px solid var(--color-danger-border)',
+          color: 'var(--color-danger-text)',
           padding: '0.75rem 1rem',
           borderRadius: 'var(--radius-sm)',
           marginBottom: '1.25rem',
@@ -400,57 +396,65 @@ const UserManagementPage = () => {
           fontSize: '0.875rem'
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <AlertCircle size={18} color="#ef4444" />
+            <AlertCircle size={18} color="var(--color-danger)" />
             <span>{error}</span>
           </div>
-          <button onClick={() => setError(null)} style={{ background: 'none', border: 'none', color: '#fca5a5', cursor: 'pointer' }}>
+          <button onClick={() => setError(null)} style={{ background: 'none', border: 'none', color: 'var(--color-danger)', cursor: 'pointer' }}>
             <X size={16} />
           </button>
         </div>
       )}
 
-      {/* Filters Bar */}
-      <div className="glass-panel" style={{ padding: '1.25rem', marginBottom: '1.5rem', display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-        <div style={{ flex: '1 1 240px', minWidth: '220px', position: 'relative' }}>
-          <input
-            type="text"
-            className="form-input"
+      {/* Standard Enterprise Filters Bar */}
+      <FilterBar
+        onReset={search || statusFilter !== 'ALL' || moduleFilter !== 'ALL' ? () => {
+          setSearch('');
+          setStatusFilter('ALL');
+          setModuleFilter('ALL');
+        } : null}
+      >
+        <div style={{ flex: '1 1 260px', minWidth: '220px' }}>
+          <SearchInput
             placeholder="Search by Name, Username, Email, Phone..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
 
-        <select
-          className="form-select"
-          style={{ flex: '0 1 180px', minWidth: '150px' }}
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-        >
-          <option value="ALL">All Statuses</option>
-          <option value="active">Active Only</option>
-          <option value="inactive">Inactive Only</option>
-        </select>
+        <FilterField label="Status:">
+          <Select
+            size="md"
+            style={{ width: 'auto', minWidth: '150px' }}
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+          >
+            <option value="ALL">All Statuses</option>
+            <option value="active">Active Only</option>
+            <option value="inactive">Inactive Only</option>
+          </Select>
+        </FilterField>
 
-        <select
-          id="user-module-filter-select"
-          className="form-select"
-          style={{ flex: '0 1 200px', minWidth: '160px' }}
-          value={moduleFilter}
-          onChange={(e) => setModuleFilter(e.target.value)}
-        >
-          <option value="ALL">All Modules</option>
-          <option value="BMS">BMS (Breakfast)</option>
-          <option value="CRM">CRM (Sales & Pipeline)</option>
-          <option value="LMS">LMS (Laboratory)</option>
-          <option value="IMS">IMS (Inventory)</option>
-          <option value="LEAVE">Leave Management</option>
-          <option value="USERS">User Management</option>
-          <option value="MIS">MIS</option>
-          <option value="DWR">DWR</option>
-          <option value="REPORTS">Reports</option>
-        </select>
-      </div>
+        <FilterField label="Module Access:">
+          <Select
+            id="user-module-filter-select"
+            size="md"
+            style={{ width: 'auto', minWidth: '160px' }}
+            value={moduleFilter}
+            onChange={(e) => setModuleFilter(e.target.value)}
+          >
+            <option value="ALL">All Modules</option>
+            <option value="BMS">BMS (Breakfast)</option>
+            <option value="CRM">CRM (Sales & Pipeline)</option>
+            <option value="LMS">LMS (Laboratory)</option>
+            <option value="IMS">IMS (Inventory)</option>
+            <option value="LEAVE">Leave Management</option>
+            <option value="USERS">User Management</option>
+            <option value="MIS">MIS</option>
+            <option value="DWR">DWR</option>
+            <option value="REPORTS">Reports</option>
+          </Select>
+        </FilterField>
+      </FilterBar>
 
       {/* Users Table */}
       <div className="glass-panel table-card-panel">

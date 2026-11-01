@@ -24,6 +24,7 @@ import {
   Edit2
 } from 'lucide-react';
 import { formatISTTimestamp } from '../utils/dateUtils';
+import { PageHeader, Button, SearchInput, Select, DatePicker, Input, FilterBar, FilterField } from '../components/ui';
 
 const BreakfastOrdersPage = () => {
   const [orders, setOrders] = useState([]);
@@ -124,138 +125,125 @@ const BreakfastOrdersPage = () => {
 
   return (
     <div className="page-body">
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '1.4rem', margin: 0 }}>
-            <FileText color="var(--accent-primary)" size={28} /> All Breakfast Orders & Entries
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem', fontSize: '0.85rem' }}>
-            Unified administrative view combining Daily Breakfast Entries & Additional Breakfast Orders
-          </p>
-        </div>
-
-        <button className="btn btn-secondary" onClick={fetchOrders} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <RefreshCw size={16} /> Refresh Orders
-        </button>
-      </div>
+      {/* Standard Enterprise Header */}
+      <PageHeader
+        title="All Breakfast Orders & Entries"
+        subtitle="Unified administrative view combining Daily Breakfast Entries & Additional Breakfast Orders"
+        icon={FileText}
+        iconBg="linear-gradient(135deg, #2563eb, #1d4ed8)"
+        actions={
+          <Button variant="secondary" icon={RefreshCw} onClick={fetchOrders}>
+            Refresh Orders
+          </Button>
+        }
+      />
 
       {/* Summary Metrics Banner */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1.25rem', marginBottom: '1.5rem' }}>
-        <div className="glass-panel metric-card" style={{ padding: '1.15rem', borderLeft: '5px solid #2563eb' }}>
+        <div className="glass-panel metric-card" style={{ padding: '1.15rem', borderLeft: '4px solid var(--color-primary)' }}>
           <div>
             <div className="metric-label">TOTAL ALL ORDERS</div>
-            <div className="metric-val" style={{ color: '#2563eb', fontSize: '1.75rem', fontWeight: 800 }}>
+            <div className="metric-val" style={{ color: 'var(--color-primary)', fontSize: '1.75rem', fontWeight: 800 }}>
               {summary.totalOrders || 0}
             </div>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Unified Database Count</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Unified Database Count</span>
           </div>
-          <Layers size={34} color="#2563eb" opacity={0.8} />
+          <Layers size={32} color="var(--color-primary)" opacity={0.8} />
         </div>
 
-        <div className="glass-panel metric-card" style={{ padding: '1.15rem', borderLeft: '5px solid #16a34a' }}>
+        <div className="glass-panel metric-card" style={{ padding: '1.15rem', borderLeft: '4px solid var(--color-success)' }}>
           <div>
             <div className="metric-label">TOTAL ORDERS AMOUNT</div>
-            <div className="metric-val" style={{ color: '#16a34a', fontSize: '1.75rem', fontWeight: 800 }}>
+            <div className="metric-val" style={{ color: 'var(--color-success)', fontSize: '1.75rem', fontWeight: 800 }}>
               ₹{(summary.totalAmount || 0).toLocaleString('en-IN')}
             </div>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Sum of All Recorded Expenses</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Sum of All Recorded Expenses</span>
           </div>
-          <DollarSign size={34} color="#16a34a" opacity={0.8} />
+          <DollarSign size={32} color="var(--color-success)" opacity={0.8} />
         </div>
 
-        <div className="glass-panel metric-card" style={{ padding: '1.15rem', borderLeft: '5px solid #0284c7' }}>
+        <div className="glass-panel metric-card" style={{ padding: '1.15rem', borderLeft: '4px solid var(--color-info)' }}>
           <div>
             <div className="metric-label">DAILY BREAKFAST ENTRIES</div>
-            <div className="metric-val" style={{ color: '#0284c7', fontSize: '1.75rem', fontWeight: 800 }}>
+            <div className="metric-val" style={{ color: 'var(--color-info)', fontSize: '1.75rem', fontWeight: 800 }}>
               {summary.dailyCount || 0}
             </div>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Primary Daily Headcount Entries</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Primary Daily Headcount Entries</span>
           </div>
-          <Coffee size={34} color="#0284c7" opacity={0.8} />
+          <Coffee size={32} color="var(--color-info)" opacity={0.8} />
         </div>
 
-        <div className="glass-panel metric-card" style={{ padding: '1.15rem', borderLeft: '5px solid #8b5cf6' }}>
+        <div className="glass-panel metric-card" style={{ padding: '1.15rem', borderLeft: '4px solid #8b5cf6' }}>
           <div>
             <div className="metric-label">ADDITIONAL ORDERS</div>
             <div className="metric-val" style={{ color: '#8b5cf6', fontSize: '1.75rem', fontWeight: 800 }}>
               {summary.additionalCount || 0}
             </div>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Extra Tea, Snacks & Client Orders</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Extra Tea, Snacks & Client Orders</span>
           </div>
-          <ShoppingBag size={34} color="#8b5cf6" opacity={0.8} />
+          <ShoppingBag size={32} color="#8b5cf6" opacity={0.8} />
         </div>
       </div>
 
-      {/* Unified Filters Toolbar */}
-      <div className="glass-panel" style={{ padding: '1.25rem', marginBottom: '1.5rem' }}>
-        <form onSubmit={handleSearchSubmit} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', alignItems: 'end' }}>
-          <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label" style={{ fontSize: '0.75rem', fontWeight: 600 }}>Search Order</label>
-            <div style={{ position: 'relative' }}>
-              <input
-                type="text"
-                className="form-input"
-                placeholder="ID, Title, Item, Creator..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                style={{ paddingLeft: '2.2rem' }}
-              />
-              <Search size={16} style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-            </div>
+      {/* Standard Enterprise Filters Toolbar */}
+      <FilterBar
+        onReset={searchTerm || startDate || endDate || orderTypeFilter !== 'ALL' || minAmount || maxAmount ? handleResetFilters : null}
+      >
+        <form onSubmit={handleSearchSubmit} style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap', width: '100%' }}>
+          <div style={{ flex: '1 1 220px', minWidth: '200px' }}>
+            <SearchInput
+              placeholder="Search by ID, Title, Item, Creator..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onSearch={() => { setCurrentPage(1); fetchOrders(); }}
+            />
           </div>
 
-          <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label" style={{ fontSize: '0.75rem', fontWeight: 600 }}>Order Type</label>
-            <select className="form-select" value={orderTypeFilter} onChange={(e) => setOrderTypeFilter(e.target.value)}>
+          <FilterField label="Order Type:">
+            <Select
+              size="md"
+              value={orderTypeFilter}
+              onChange={(e) => setOrderTypeFilter(e.target.value)}
+              style={{ width: 'auto', minWidth: '150px' }}
+            >
               <option value="ALL">All Order Types</option>
               <option value="DAILY_ENTRY">Daily Breakfast</option>
               <option value="ADDITIONAL_ORDER">Additional Order</option>
               <option value="HISTORICAL">Historical Breakfast</option>
-            </select>
-          </div>
+            </Select>
+          </FilterField>
 
-          <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label" style={{ fontSize: '0.75rem', fontWeight: 600 }}>Date From</label>
-            <input
-              type="date"
-              className="form-input"
+          <FilterField label="Date From:">
+            <DatePicker
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
+              style={{ width: 'auto' }}
             />
-          </div>
+          </FilterField>
 
-          <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label" style={{ fontSize: '0.75rem', fontWeight: 600 }}>Date To</label>
-            <input
-              type="date"
-              className="form-input"
+          <FilterField label="Date To:">
+            <DatePicker
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
+              style={{ width: 'auto' }}
             />
-          </div>
+          </FilterField>
 
-          <div className="form-group" style={{ margin: 0 }}>
-            <label className="form-label" style={{ fontSize: '0.75rem', fontWeight: 600 }}>Min Amount (₹)</label>
-            <input
+          <FilterField label="Min ₹:">
+            <Input
               type="number"
-              className="form-input"
               placeholder="0"
               value={minAmount}
               onChange={(e) => setMinAmount(e.target.value)}
+              style={{ width: '90px' }}
             />
-          </div>
+          </FilterField>
 
-          <div style={{ display: 'flex', gap: '0.5rem', gridColumn: 'span 1' }}>
-            <button type="submit" className="btn btn-primary" style={{ flex: 1, height: '38px', padding: '0 1rem' }}>
-              <Search size={16} /> Search
-            </button>
-            <button type="button" className="btn btn-secondary" onClick={handleResetFilters} style={{ height: '38px', padding: '0 0.85rem' }} title="Reset Filters">
-              Reset
-            </button>
-          </div>
+          <Button type="submit" variant="primary" icon={Search}>
+            Search
+          </Button>
         </form>
-      </div>
+      </FilterBar>
 
       {/* Main Content Area */}
       {loading ? (

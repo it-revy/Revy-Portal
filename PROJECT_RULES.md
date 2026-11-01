@@ -299,6 +299,17 @@ After understanding a file:
 
 ---
 
+## Frontend & UI/UX Standards (REVY Enterprise Design System)
+
+**Mandatory for all frontend features, updates, and future modules:**
+- **Single Design System:** All pages MUST use the centralized REVY Enterprise Design System (frontend/src/design-system/).
+- **No Independent Themes:** Developers and AI agents must NEVER create custom button styles, independent dropdown designs, disparate table layouts, or new color palettes.
+- **Shared UI Components:** All views must use the components under frontend/src/components/ui/ (PageHeader, FilterBar, FilterField, SearchInput, Select, DatePicker, Button, DataTable, Pagination, Card, StatusBadge).
+- **Strict Filter Invariance:** CHANGE THE LOOK OF FILTERS, NOT THEIR FUNCTIONALITY. Strictly preserve all existing filter names, options, query parameters, and backend logic.
+- **Reference Specification:** Full rules and code patterns are documented in [DESIGN_SYSTEM_RULES.md](./DESIGN_SYSTEM_RULES.md) and [frontend/src/design-system/README.md](./frontend/src/design-system/README.md).
+
+---
+
 ## Quick Reference
 
 ```

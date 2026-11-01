@@ -19,6 +19,7 @@ import {
   FileSpreadsheet,
   AlertCircle
 } from 'lucide-react';
+import { PageHeader, Button, DatePicker, StatusBadge } from '../components/ui';
 
 const CEOViewPage = () => {
   const [report, setReport] = useState(null);
@@ -116,70 +117,37 @@ const CEOViewPage = () => {
   return (
     <div className="page-body">
       {/* Executive Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.75rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', margin: 0, fontSize: '1.5rem' }}>
-              <PieChart color="var(--accent-primary)" size={28} />
-              Directors Executive Management Dashboard
-            </h1>
-            <span
-              className="badge"
-              style={{
-                background: 'rgba(59, 130, 246, 0.15)',
-                color: '#60a5fa',
-                border: '1px solid rgba(59, 130, 246, 0.3)',
-                fontSize: '0.75rem',
-                textTransform: 'uppercase',
-                letterSpacing: '0.04em'
-              }}
-            >
-              Executive Read-Only View
-            </span>
+      <PageHeader
+        title="Directors Executive Management Dashboard"
+        subtitle={`Comprehensive management insights, request vs. actual consumption metrics, expenditure trends, and participation rates for ${report?.currentMonth || 'current month'}.`}
+        icon={PieChart}
+        actions={
+          <div style={{ display: 'flex', gap: 'var(--space-2)', alignItems: 'center', flexWrap: 'wrap' }}>
+            <StatusBadge variant="info">Executive Read-Only View</StatusBadge>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+              <DatePicker
+                id="ceo-date-selector"
+                value={selectedDate || report?.selectedDate || report?.todayDate || ''}
+                onChange={(e) => handleDateChange(e.target.value)}
+                style={{ width: 'auto' }}
+              />
+              {selectedDate && selectedDate !== report?.todayDate && (
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={handleResetToday}
+                  title="Reset to today's date"
+                >
+                  Today
+                </Button>
+              )}
+            </div>
+            {loading && (
+              <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>Updating...</span>
+            )}
           </div>
-          <p style={{ color: 'var(--text-secondary)', marginTop: '0.35rem', fontSize: '0.875rem' }}>
-            Comprehensive management insights, request vs. actual consumption metrics, expenditure trends, and participation rates for <strong>{report?.currentMonth}</strong>.
-          </p>
-        </div>
-
-        {/* Date Selector Filter */}
-        <div style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', flexWrap: 'wrap' }}>
-          <div className="panel-card" style={{ padding: '0.4rem 0.85rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <Calendar size={16} color="var(--accent-primary)" />
-            <label htmlFor="ceo-date-selector" style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0, cursor: 'pointer' }}>
-              Date:
-            </label>
-            <input
-              id="ceo-date-selector"
-              type="date"
-              style={{
-                padding: '0.2rem 0.4rem',
-                fontSize: '0.85rem',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                borderRadius: '4px',
-                background: 'rgba(15, 23, 42, 0.8)',
-                color: 'var(--text-primary)',
-                cursor: 'pointer'
-              }}
-              value={selectedDate || report?.selectedDate || report?.todayDate || ''}
-              onChange={(e) => handleDateChange(e.target.value)}
-            />
-          </div>
-          {selectedDate && selectedDate !== report?.todayDate && (
-            <button
-              className="btn btn-secondary"
-              style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem' }}
-              onClick={handleResetToday}
-              title="Reset to today's date"
-            >
-              Today
-            </button>
-          )}
-          {loading && (
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Updating...</span>
-          )}
-        </div>
-      </div>
+        }
+      />
 
       {/* 8 Core Management KPI Cards */}
       <div

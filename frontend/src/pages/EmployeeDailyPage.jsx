@@ -17,6 +17,7 @@ import {
   Info
 } from 'lucide-react';
 import { formatISTTimestamp, formatISTTime } from '../utils/dateUtils';
+import { PageHeader } from '../components/ui';
 
 const EmployeeDailyPage = () => {
   const { user } = useAuth();
@@ -300,16 +301,11 @@ const EmployeeDailyPage = () => {
   return (
     <div className="page-body">
       {/* Header Greeting */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <h1 style={{ fontSize: '1.4rem', margin: 0, display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <Utensils size={24} color="var(--accent-primary)" /> My Breakfast Response
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem', fontSize: '0.85rem' }}>
-            Logged in as: <strong>{user?.name}</strong> ({user?.employeeId})
-          </p>
-        </div>
-      </div>
+      <PageHeader
+        title="My Breakfast Response"
+        subtitle={`Logged in as: ${user?.name || 'Employee'} (${user?.employeeId || 'ID'})`}
+        icon={Utensils}
+      />
 
       {/* Breakfast Request Window Banner (Section 10 Requirement) */}
       <div className="panel-card" style={{

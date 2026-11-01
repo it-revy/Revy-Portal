@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import BMSSidebar from '../components/BMSSidebar';
 import Header from '../components/Header';
 import ForcePasswordChangeModal from '../components/ForcePasswordChangeModal';
+import ErrorBoundary from '../components/ErrorBoundary';
 
 export default function BMSLayout({ children, requiredPermission, requiredRole }) {
   const { user, loading, hasPermission, hasRole, hasModuleAccess } = useAuth();
@@ -119,7 +120,9 @@ export default function BMSLayout({ children, requiredPermission, requiredRole }
           sidebarCollapsed={sidebarCollapsed}
           onToggleCollapse={toggleSidebarCollapse}
         />
-        {children}
+        <ErrorBoundary level="module" title="Breakfast Management Workspace Error">
+          {children}
+        </ErrorBoundary>
       </div>
     </div>
   );

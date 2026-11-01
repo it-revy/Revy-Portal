@@ -20,6 +20,7 @@ import {
   ChevronUp
 } from 'lucide-react';
 import { formatISTTimestamp } from '../utils/dateUtils';
+import { PageHeader, Button, SearchInput, DatePicker } from '../components/ui';
 
 const AdditionalOrdersPage = () => {
   const [selectedDate, setSelectedDate] = useState('');
@@ -271,37 +272,34 @@ const AdditionalOrdersPage = () => {
 
   return (
     <div className="page-body">
-      {/* Page Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
-        <div>
-          <h1 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', margin: 0 }}>
-            <Coffee size={28} color="var(--accent-primary)" /> Additional Orders
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem', fontSize: '0.875rem' }}>
-            Manage multiple additional breakfast and snack orders per business date
-          </p>
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
-          <div className="panel-card" style={{ padding: '0.5rem 1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <Filter size={18} color="var(--accent-primary)" />
-            <div>
-              <label style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', display: 'block', fontWeight: 600 }}>BUSINESS DATE</label>
-              <input
-                type="date"
-                className="form-input"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                style={{ border: 'none', padding: 0, fontWeight: 700, fontSize: '0.9rem', color: 'var(--text-primary)', background: 'transparent' }}
-              />
+      {/* Standard Enterprise Page Header */}
+      <PageHeader
+        title="Additional Orders"
+        subtitle="Manage multiple additional breakfast and snack orders per business date"
+        icon={Coffee}
+        iconBg="linear-gradient(135deg, #2563eb, #1d4ed8)"
+        actions={
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <div className="revy-card" style={{ padding: '0.35rem 0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem', boxShadow: 'none' }}>
+              <Filter size={16} color="var(--color-primary)" />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '0.7rem', color: 'var(--color-text-secondary)', fontWeight: 600, textTransform: 'uppercase' }}>Date:</span>
+                <input
+                  type="date"
+                  className="revy-input revy-input-sm"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  style={{ width: 'auto', fontWeight: 600, padding: '0 4px', border: 'none', background: 'transparent' }}
+                />
+              </div>
             </div>
-          </div>
 
-          <button className="btn btn-primary" onClick={handleOpenNewModal} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.65rem 1.25rem' }}>
-            <Plus size={18} /> New Order
-          </button>
-        </div>
-      </div>
+            <Button variant="primary" icon={Plus} onClick={handleOpenNewModal}>
+              New Order
+            </Button>
+          </div>
+        }
+      />
 
       {/* Notifications */}
       {message && (
@@ -427,18 +425,12 @@ const AdditionalOrdersPage = () => {
             <Coffee size={20} color="var(--accent-primary)" /> Existing Orders for {selectedDate}
           </h3>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', width: '100%', maxWidth: '340px' }}>
-            <div style={{ position: 'relative', width: '100%' }}>
-              <Search size={16} color="var(--text-muted)" style={{ position: 'absolute', left: '0.75rem', top: '50%', transform: 'translateY(-50%)' }} />
-              <input
-                type="text"
-                className="form-input"
-                placeholder="Search orders..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                style={{ paddingLeft: '2.35rem', fontSize: '0.85rem' }}
-              />
-            </div>
+          <div style={{ width: '100%', maxWidth: '320px' }}>
+            <SearchInput
+              placeholder="Search orders..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
           </div>
         </div>
 

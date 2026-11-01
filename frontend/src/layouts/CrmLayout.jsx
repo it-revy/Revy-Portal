@@ -4,8 +4,10 @@ import { useAuth } from '../context/AuthContext';
 import CrmSidebar from '../components/CrmSidebar';
 import Header from '../components/Header';
 import ForcePasswordChangeModal from '../components/ForcePasswordChangeModal';
+import ErrorBoundary from '../components/ErrorBoundary';
 
 export default function CrmLayout({ children, requiredPermission = null, requiredRole = null }) {
+
   const { user, loading, hasPermission, hasRole, hasModuleAccess, isGlobalAdmin } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
@@ -121,7 +123,9 @@ export default function CrmLayout({ children, requiredPermission = null, require
           sidebarCollapsed={sidebarCollapsed}
           onToggleCollapse={toggleSidebarCollapse}
         />
-        {children}
+        <ErrorBoundary level="module" title="CRM Workspace Error">
+          {children}
+        </ErrorBoundary>
       </div>
     </div>
   );
