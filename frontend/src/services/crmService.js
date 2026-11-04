@@ -52,6 +52,10 @@ export const crmService = {
     return API.post(`/crm/leads/${leadId}/qualify`, data);
   },
 
+  unqualifyLead: async (leadId, data) => {
+    return API.post(`/crm/leads/${leadId}/unqualify`, data);
+  },
+
   // =========================================================================
   // OPPORTUNITIES & PIPELINE (PHASE 4A)
   // =========================================================================
@@ -313,6 +317,53 @@ export const crmService = {
 
   removeCrmMembership: async (userId) => {
     return API.delete(`/crm/users/${userId}/membership`);
+  },
+
+  // =========================================================================
+  // LEAD NURTURING & UNIFIED TIMELINE API METHODS
+  // =========================================================================
+
+  getLeadNurturing: async (leadId) => {
+    return API.get(`/crm/leads/${leadId}/nurturing`);
+  },
+
+  getLeadTimeline: async (leadId, params = {}) => {
+    const query = new URLSearchParams();
+    if (params.sort) query.append('sort', params.sort);
+    if (params.filter) query.append('filter', params.filter);
+    return API.get(`/crm/leads/${leadId}/timeline?${query.toString()}`);
+  },
+
+  getLeadNextActivity: async (leadId) => {
+    return API.get(`/crm/leads/${leadId}/next-activity`);
+  },
+
+  completeNurturingActivity: async (leadId, activityId, data) => {
+    return API.post(`/crm/leads/${leadId}/nurturing/activities/${activityId}/complete`, data);
+  },
+
+  rescheduleNurturingActivity: async (leadId, activityId, data) => {
+    return API.post(`/crm/leads/${leadId}/nurturing/activities/${activityId}/reschedule`, data);
+  },
+
+  skipNurturingActivity: async (leadId, activityId, data) => {
+    return API.post(`/crm/leads/${leadId}/nurturing/activities/${activityId}/skip`, data);
+  },
+
+  recordCustomerResponse: async (leadId, data) => {
+    return API.post(`/crm/leads/${leadId}/nurturing/customer-response`, data);
+  },
+
+  pauseNurturing: async (leadId, data = {}) => {
+    return API.post(`/crm/leads/${leadId}/nurturing/pause`, data);
+  },
+
+  resumeNurturing: async (leadId, data = {}) => {
+    return API.post(`/crm/leads/${leadId}/nurturing/resume`, data);
+  },
+
+  cancelNurturing: async (leadId, data) => {
+    return API.post(`/crm/leads/${leadId}/nurturing/cancel`, data);
   }
 };
 

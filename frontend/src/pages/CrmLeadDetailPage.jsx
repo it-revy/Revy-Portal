@@ -11,30 +11,46 @@ import {
   Edit,
   RefreshCw,
   Plus,
-  MessageSquare,
+  Briefcase,
+  Clock,
   AlertCircle,
   CheckCircle2,
   ExternalLink,
-  ShieldCheck
+  ShieldCheck,
+  XCircle
 } from 'lucide-react';
 import crmService from '../services/crmService';
 import LeadStatusModal from '../modules/crm/components/LeadStatusModal';
 import CommunicationModal from '../modules/crm/components/CommunicationModal';
 import LeadQualifyWizard from '../modules/crm/components/LeadQualifyWizard';
 import OpportunityDetailModal from '../modules/crm/components/OpportunityDetailModal';
+import NextActivityPanel from '../modules/crm/components/NextActivityPanel';
+import UnifiedTimeline from '../modules/crm/components/UnifiedTimeline';
+import CustomerResponseModal from '../modules/crm/components/CustomerResponseModal';
+import CompleteActivityModal from '../modules/crm/components/CompleteActivityModal';
+import ActivityActionModal from '../modules/crm/components/ActivityActionModal';
 import { PageHeader, Button } from '../components/ui';
+import { formatISTTimestamp, formatISTDate, formatDateOnly } from '../utils/dateUtils';
 
 export default function CrmLeadDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, hasPermission } = useAuth();
+  const { hasPermission } = useAuth();
 
   const [lead, setLead] = useState(null);
-  const [communications, setCommunications] = useState([]);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [successNotification, setSuccessNotification] = useState(null);
   const [warningNotification, setWarningNotification] = useState(null);
+
+  // Nurturing & Unified Timeline State
+  const [nurturingState, setNurturingState] = useState(null);
+  const [nextActivity, setNextActivity] = useState(null);
+  const [timelineItems, setTimelineItems] = useState([]);
+  const [timelineSort, setTimelineSort] = useState('desc');
+  const [timelineFilter, setTimelineFilter] = useState('all');
+  const [timelineLoading, setTimelineLoading] = useState(false);
 
   // Modals
   const [isStatusModalOpen, setIsStatusModalOpen] = useState(false);
@@ -44,49 +60,121 @@ export default function CrmLeadDetailPage() {
   const [viewOpportunityModal, setViewOpportunityModal] = useState(null);
   const [selectedOppIdForDetail, setSelectedOppIdForDetail] = useState(null);
 
-  // Add Opportunity Modal State
-  const [isAddOppModalOpen, setIsAddOppModalOpen] = useState(false);
-  const [newOppFormData, setNewOppFormData] = useState({
-    name: '',
-    estimatedValue: '',
-    stage: 'Qualify',
-    businessArea: 'Biogas',
-    subStatus: '',
-    description: '',
-    expectedCloseDate: ''
-  });
-  const [submittingOpp, setSubmittingOpp] = useState(false);
-  const [addOppError, setAddOppError] = useState(null);
+  // Nurturing Action Modals
+  const [completeActivityModal, setCompleteActivityModal] = useState(null);
+  const [actionActivityModal, setActionActivityModal] = useState(null);
+  const [isCustomerResponseModalOpen, setIsCustomerResponseModalOpen] = useState(false);
+
+  // Unqualify Lead Modal State
+  const [isUnqualifyModalOpen, setIsUnqualifyModalOpen] = useState(false);
+  const [disqualificationReason, setDisqualificationReason] = useState('');
+  const [unqualifyError, setUnqualifyError] = useState(null);
+  const [submittingUnqualify, setSubmittingUnqualify] = useState(false);
 
   const canEdit = hasPermission('crm.lead.edit');
   const canUpdateStatus = hasPermission('crm.lead.status.update');
   const canLogComm = hasPermission('crm.communication.create') || hasPermission('crm.lead.edit');
+  const canUnqualify = (canEdit || canUpdateStatus) &&
+    lead &&
+    !lead.isQualified &&
+    !lead.qualifiedAt &&
+    !lead.convertedAt &&
+    !lead.opportunityId &&
+    lead.lifecycleStatus !== 'Dormant' &&
+    !lead.disqualificationReason;
 
   const fetchLeadDetails = useCallback(async () => {
+    const cleanId = (id || '').trim();
+    if (!cleanId) {
+      setError('Invalid lead identifier.');
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const [leadRes, commsRes] = await Promise.all([
-        crmService.getLeadById(id),
-        crmService.getLeadCommunications(id)
+      const [leadRes, nurturingRes, nextActRes, timelineRes] = await Promise.all([
+        crmService.getLeadById(cleanId),
+        crmService.getLeadNurturing(cleanId).catch(() => ({ data: { success: false } })),
+        crmService.getLeadNextActivity(cleanId).catch(() => ({ data: { success: false } })),
+        crmService.getLeadTimeline(cleanId, { sort: timelineSort, filter: timelineFilter }).catch(() => ({ data: { success: false, timeline: [] } }))
       ]);
 
-      if (leadRes.data.success) {
+      if (leadRes.data?.success) {
         setLead(leadRes.data.lead);
       }
-      if (commsRes.data.success) {
-        setCommunications(commsRes.data.communications || []);
+      if (nurturingRes.data?.success) {
+        setNurturingState(nurturingRes.data.nurturing);
+      }
+      if (nextActRes.data?.success) {
+        setNextActivity(nextActRes.data.nextActivity);
+      }
+      if (timelineRes.data?.success) {
+        setTimelineItems(timelineRes.data.timeline || []);
       }
     } catch (err) {
       if (err.response?.status === 404) {
-        setError(`Lead with identifier "${id}" not found.`);
+        setError(`Lead with identifier "${cleanId}" not found.`);
       } else {
         setError(err.response?.data?.message || 'Failed to load lead details. Please try again.');
       }
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, timelineSort, timelineFilter]);
+
+  const handleTimelineFilterChange = async (filterKey) => {
+    setTimelineFilter(filterKey);
+    setTimelineLoading(true);
+    try {
+      const res = await crmService.getLeadTimeline(id, { sort: timelineSort, filter: filterKey });
+      if (res.data?.success) {
+        setTimelineItems(res.data.timeline || []);
+      }
+    } catch (err) {
+      console.error('Failed to filter timeline:', err);
+    } finally {
+      setTimelineLoading(false);
+    }
+  };
+
+  const handleTimelineSortChange = async (newSort) => {
+    setTimelineSort(newSort);
+    setTimelineLoading(true);
+    try {
+      const res = await crmService.getLeadTimeline(id, { sort: newSort, filter: timelineFilter });
+      if (res.data?.success) {
+        setTimelineItems(res.data.timeline || []);
+      }
+    } catch (err) {
+      console.error('Failed to sort timeline:', err);
+    } finally {
+      setTimelineLoading(false);
+    }
+  };
+
+  const handlePauseNurturing = async () => {
+    if (!window.confirm('Pause automatic lead nurturing cadence for this lead? Pending reminder emails and calls will be put on hold.')) return;
+    try {
+      const res = await crmService.pauseNurturing(id, { reason: 'User paused cadence from Lead Details panel.' });
+      if (res.data.success) {
+        fetchLeadDetails();
+      }
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to pause nurturing.');
+    }
+  };
+
+  const handleResumeNurturing = async () => {
+    try {
+      const res = await crmService.resumeNurturing(id, {});
+      if (res.data.success) {
+        fetchLeadDetails();
+      }
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to resume nurturing.');
+    }
+  };
 
   useEffect(() => {
     fetchLeadDetails();
@@ -96,36 +184,7 @@ export default function CrmLeadDetailPage() {
 
   const formatDateTime = (isoStr) => {
     if (!isoStr) return '—';
-    try {
-      const d = new Date(isoStr);
-      return d.toLocaleString('en-IN', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
-      });
-    } catch {
-      return isoStr;
-    }
-  };
-
-  const formatDateOnly = (dateStr) => {
-    if (!dateStr) return 'Not scheduled';
-    try {
-      const cleanDate = dateStr.slice(0, 10);
-      const [year, month, day] = cleanDate.split('-').map(Number);
-      if (!year || !month || !day) return dateStr;
-      const d = new Date(year, month - 1, day);
-      return d.toLocaleDateString('en-GB', {
-        day: '2-digit',
-        month: 'short',
-        year: 'numeric'
-      });
-    } catch {
-      return dateStr;
-    }
+    return formatISTTimestamp(isoStr, false);
   };
 
   const getStatusBadge = (status) => {
@@ -141,43 +200,24 @@ export default function CrmLeadDetailPage() {
     return <span className={badgeClass}>{status}</span>;
   };
 
-  const handleCreateOpportunity = async (e) => {
+  const handleUnqualifyLead = async (e) => {
     e.preventDefault();
-    if (!newOppFormData.name.trim()) {
-      setAddOppError('Opportunity name is required.');
+    if (!disqualificationReason.trim()) {
+      setUnqualifyError('Disqualification reason is mandatory.');
       return;
     }
-    setSubmittingOpp(true);
-    setAddOppError(null);
+    setSubmittingUnqualify(true);
+    setUnqualifyError(null);
     try {
-      const payload = {
-        name: newOppFormData.name.trim(),
-        estimatedValue: newOppFormData.estimatedValue ? Number(newOppFormData.estimatedValue) : null,
-        stage: newOppFormData.stage || 'Qualify',
-        businessArea: newOppFormData.businessArea || null,
-        subStatus: newOppFormData.subStatus ? newOppFormData.subStatus.trim() : null,
-        description: newOppFormData.description ? newOppFormData.description.trim() : null,
-        expectedCloseDate: newOppFormData.expectedCloseDate || null
-      };
-      const res = await crmService.createLeadOpportunity(lead.id, payload);
-      if (res.data?.success) {
-        setIsAddOppModalOpen(false);
-        setNewOppFormData({
-          name: '',
-          estimatedValue: '',
-          stage: 'Qualify',
-          businessArea: 'Biogas',
-          subStatus: '',
-          description: '',
-          expectedCloseDate: ''
-        });
-        setSuccessNotification('New Commercial Opportunity created and linked successfully.');
-        fetchLeadDetails();
-      }
+      await crmService.unqualifyLead(lead.id, { reason: disqualificationReason.trim() });
+      setIsUnqualifyModalOpen(false);
+      setDisqualificationReason('');
+      setSuccessNotification(`Lead ${lead.leadId} has been marked as unqualified.`);
+      fetchLeadDetails();
     } catch (err) {
-      setAddOppError(err.response?.data?.message || 'Failed to create opportunity.');
+      setUnqualifyError(err.response?.data?.message || err.response?.data?.detail || 'Failed to unqualify lead.');
     } finally {
-      setSubmittingOpp(false);
+      setSubmittingUnqualify(false);
     }
   };
 
@@ -197,9 +237,18 @@ export default function CrmLeadDetailPage() {
           <AlertCircle size={40} color="var(--danger)" style={{ margin: '0 auto 1rem', display: 'block' }} />
           <h2 style={{ marginBottom: '0.75rem', color: 'var(--danger)' }}>Unable to View Lead</h2>
           <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>{error || 'Lead not found.'}</p>
-          <button onClick={() => navigate('/crm/leads')} className="btn btn-primary">
-            ← Return to Leads
-          </button>
+          <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+            <button
+              onClick={() => fetchLeadDetails()}
+              className="btn btn-primary"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}
+            >
+              <RefreshCw size={15} /> Try Again
+            </button>
+            <button onClick={() => navigate('/crm/leads')} className="btn btn-secondary">
+              ← Return to Leads
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -289,13 +338,14 @@ export default function CrmLeadDetailPage() {
               </Button>
             )}
 
-            {canEdit && (
+            {canUnqualify && (
               <Button
-                variant="primary"
-                onClick={() => setIsAddOppModalOpen(true)}
-                icon={Plus}
+                variant="secondary"
+                onClick={() => setIsUnqualifyModalOpen(true)}
+                icon={XCircle}
+                style={{ color: 'var(--color-danger, #ef4444)', borderColor: 'var(--color-danger, #ef4444)' }}
               >
-                Add Opportunity
+                Unqualify
               </Button>
             )}
 
@@ -331,6 +381,31 @@ export default function CrmLeadDetailPage() {
           </div>
         }
       />
+
+      {/* Disqualification Reason Banner */}
+      {lead.disqualificationReason && (
+        <div style={{
+          marginBottom: 'var(--space-4)',
+          padding: '0.85rem 1.25rem',
+          borderRadius: '8px',
+          background: '#fef2f2',
+          border: '1px solid #fecaca',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '0.75rem',
+          color: '#991b1b'
+        }}>
+          <XCircle size={20} style={{ color: '#ef4444', flexShrink: 0, marginTop: '2px' }} />
+          <div>
+            <strong style={{ fontSize: '0.9rem', display: 'block', marginBottom: '0.2rem' }}>
+              Lead Disqualified ({lead.lifecycleStatus})
+            </strong>
+            <span style={{ fontSize: '0.85rem' }}>
+              Reason: {lead.disqualificationReason}
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Commercial Opportunities (1:N) & Qualification Status */}
       {((lead.opportunities && lead.opportunities.length > 0) || lead.opportunity || lead.isQualified || lead.qualifiedAt || lead.lifecycleStatus === 'Qualified') && (
@@ -368,7 +443,7 @@ export default function CrmLeadDetailPage() {
                 </h3>
                 <p style={{ margin: '0.15rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                   {lead.isQualified || lead.qualifiedAt
-                    ? `Lead qualified on ${lead.qualifiedAt ? new Date(lead.qualifiedAt).toLocaleDateString() : '—'}${lead.qualifiedByName ? ` by ${lead.qualifiedByName}` : ''}.`
+                    ? `Lead qualified on ${lead.qualifiedAt ? formatISTDate(lead.qualifiedAt) : '—'}${lead.qualifiedByName ? ` by ${lead.qualifiedByName}` : ''}.`
                     : 'Track multiple commercial requirements, offers, and proposals for this lead.'}
                 </p>
               </div>
@@ -395,17 +470,7 @@ export default function CrmLeadDetailPage() {
                   <span>{lead.contact.name}</span>
                 </Link>
               )}
-              {canEdit && (
-                <button
-                  type="button"
-                  onClick={() => setIsAddOppModalOpen(true)}
-                  className="btn btn-primary"
-                  style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}
-                >
-                  <Plus size={14} />
-                  <span>Add Opportunity</span>
-                </button>
-              )}
+
             </div>
           </div>
 
@@ -508,7 +573,7 @@ export default function CrmLeadDetailPage() {
             </div>
           ) : (
             <div style={{ textAlign: 'center', padding: '1.5rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-              No commercial opportunities created yet. Click "+ Add Opportunity" to record a commercial requirement.
+              No commercial opportunities created yet. Commercial opportunities are linked via Lead Qualification.
             </div>
           )}
         </div>
@@ -771,114 +836,34 @@ export default function CrmLeadDetailPage() {
             </div>
           </div>
 
-          {/* Chronological Communication History Timeline */}
-          <div className="glass-panel" style={{ padding: '1.5rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
-              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <MessageSquare size={18} color="var(--accent-primary)" />
-                <span>Communication History ({communications.length})</span>
-              </h3>
+          {/* Next Activity Panel (Microsoft Dynamics 365 Sales Hub approach) */}
+          <NextActivityPanel
+            nextActivity={nextActivity}
+            nurturingState={nurturingState}
+            onCompleteActivity={(act) => setCompleteActivityModal(act)}
+            onRescheduleActivity={(act) => setActionActivityModal({ activity: act, actionType: 'reschedule' })}
+            onSkipActivity={(act) => setActionActivityModal({ activity: act, actionType: 'skip' })}
+            onPauseNurturing={handlePauseNurturing}
+            onResumeNurturing={handleResumeNurturing}
+            canEdit={canEdit}
+          />
 
-              {canLogComm && (
-                <button
-                  onClick={() => setIsCommModalOpen(true)}
-                  className="btn btn-secondary"
-                  style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}
-                >
-                  <Plus size={13} />
-                  <span>Log Interaction</span>
-                </button>
-              )}
-            </div>
-
-            {communications.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '2.5rem 1rem', color: 'var(--text-muted)' }}>
-                <MessageSquare size={32} color="#cbd5e1" style={{ margin: '0 auto 0.5rem', display: 'block' }} />
-                <p style={{ margin: 0, fontSize: '0.875rem' }}>No communication events recorded yet.</p>
-                <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.75rem' }}>
-                  Log client calls, introductory emails, or internal discussions to build a complete customer interaction audit trail.
-                </p>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                {communications.map(item => (
-                  <div
-                    key={item.id}
-                    style={{
-                      padding: '1rem',
-                      background: '#ffffff',
-                      border: '1px solid #e2e8f0',
-                      borderRadius: '8px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '0.4rem',
-                      boxShadow: '0 1px 3px rgba(0,0,0,0.02)'
-                    }}
-                  >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{
-                          padding: '2px 8px',
-                          borderRadius: '4px',
-                          fontSize: '0.75rem',
-                          fontWeight: 600,
-                          background: '#eff6ff',
-                          color: '#1d4ed8'
-                        }}>
-                          {item.channel}
-                        </span>
-                        <strong style={{ fontSize: '0.9rem', color: '#0f172a' }}>
-                          {item.eventType}
-                        </strong>
-                      </div>
-                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                        {formatDateTime(item.communicationDate || item.createdAt)}
-                      </span>
-                    </div>
-
-                    <p style={{ margin: '0.35rem 0 0 0', fontSize: '0.875rem', color: '#334155', lineHeight: 1.5 }}>
-                      {item.summary}
-                    </p>
-
-                    {(item.outcome || item.nextAction) && (
-                      <div style={{
-                        marginTop: '0.4rem',
-                        padding: '0.5rem 0.75rem',
-                        background: '#f8fafc',
-                        borderRadius: '6px',
-                        fontSize: '0.8rem',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '0.25rem'
-                      }}>
-                        {item.outcome && (
-                          <div>
-                            <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Outcome: </span>
-                            <span>{item.outcome}</span>
-                          </div>
-                        )}
-                        {item.nextAction && (
-                          <div>
-                            <span style={{ fontWeight: 600, color: 'var(--text-secondary)' }}>Next Action: </span>
-                            <span>{item.nextAction}</span>
-                            {item.followUpDate && (
-                              <span style={{ color: 'var(--text-muted)', marginLeft: '0.5rem' }}>
-                                (Follow-up: {formatDateTime(item.followUpDate)})
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
-                    <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>
-                      Logged by <strong>{item.loggedBy?.name || item.loggedBy?.username || 'System User'}</strong> • ID: {item.communicationId}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          {/* Unified Activity Timeline (Dynamics 365 Sales Hub stacked layout) */}
+          <UnifiedTimeline
+            timelineItems={timelineItems}
+            loading={timelineLoading}
+            sortOrder={timelineSort}
+            onSortChange={handleTimelineSortChange}
+            activeFilter={timelineFilter}
+            onFilterChange={handleTimelineFilterChange}
+            onOpenLogInteraction={() => setIsCommModalOpen(true)}
+            onOpenRecordResponse={() => setIsCustomerResponseModalOpen(true)}
+            onCompleteActivity={(act) => setCompleteActivityModal(act)}
+            onRescheduleActivity={(act) => setActionActivityModal({ activity: act, actionType: 'reschedule' })}
+            onSkipActivity={(act) => setActionActivityModal({ activity: act, actionType: 'skip' })}
+            onRefresh={() => fetchLeadDetails()}
+            canEdit={canEdit}
+          />
         </div>
 
         {/* Right Column: Account, Contact, and Lead Ownership */}
@@ -1489,6 +1474,39 @@ export default function CrmLeadDetailPage() {
         />
       )}
 
+      {/* Complete Nurturing Activity Modal */}
+      {completeActivityModal && (
+        <CompleteActivityModal
+          isOpen={Boolean(completeActivityModal)}
+          onClose={() => setCompleteActivityModal(null)}
+          activity={completeActivityModal}
+          lead={lead}
+          onActivityCompleted={() => fetchLeadDetails()}
+        />
+      )}
+
+      {/* Reschedule or Skip Activity Modal */}
+      {actionActivityModal && (
+        <ActivityActionModal
+          isOpen={Boolean(actionActivityModal)}
+          onClose={() => setActionActivityModal(null)}
+          activity={actionActivityModal.activity}
+          actionType={actionActivityModal.actionType}
+          lead={lead}
+          onActionSuccess={() => fetchLeadDetails()}
+        />
+      )}
+
+      {/* Record Customer Response Modal */}
+      {isCustomerResponseModalOpen && (
+        <CustomerResponseModal
+          isOpen={isCustomerResponseModalOpen}
+          onClose={() => setIsCustomerResponseModalOpen(false)}
+          lead={lead}
+          onResponseRecorded={() => fetchLeadDetails()}
+        />
+      )}
+
       {/* Contact Details View Modal / Panel */}
       {viewContactModal && (
         <div className="modal-backdrop" style={{ zIndex: 1200 }} onClick={() => setViewContactModal(null)}>
@@ -1752,13 +1770,13 @@ export default function CrmLeadDetailPage() {
         />
       )}
 
-      {/* Add Commercial Opportunity Modal (1:N) */}
-      {isAddOppModalOpen && (
-        <div className="modal-backdrop" style={{ zIndex: 1200 }} onClick={() => !submittingOpp && setIsAddOppModalOpen(false)}>
+      {/* Unqualify Lead Confirmation Modal */}
+      {isUnqualifyModalOpen && (
+        <div className="modal-backdrop" style={{ zIndex: 1200 }} onClick={() => !submittingUnqualify && setIsUnqualifyModalOpen(false)}>
           <div
             className="modal-content"
             style={{
-              maxWidth: '560px',
+              maxWidth: '520px',
               width: '92%',
               borderRadius: '12px',
               padding: '1.75rem',
@@ -1773,27 +1791,27 @@ export default function CrmLeadDetailPage() {
                   width: '38px',
                   height: '38px',
                   borderRadius: '10px',
-                  background: 'var(--accent-light)',
-                  color: 'var(--accent-primary)',
+                  background: '#fef2f2',
+                  color: '#ef4444',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center'
                 }}>
-                  <Briefcase size={20} />
+                  <XCircle size={20} />
                 </div>
                 <div>
                   <h3 style={{ margin: 0, fontSize: '1.15rem', fontWeight: 700, color: '#0f172a' }}>
-                    Add Commercial Opportunity
+                    Unqualify Lead
                   </h3>
                   <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                    Link a new requirement or proposal to Lead: <strong>{lead.leadId}</strong>
+                    Lead: <strong>{lead.leadId}</strong>
                   </span>
                 </div>
               </div>
               <button
                 type="button"
-                disabled={submittingOpp}
-                onClick={() => setIsAddOppModalOpen(false)}
+                disabled={submittingUnqualify}
+                onClick={() => setIsUnqualifyModalOpen(false)}
                 style={{ background: 'none', border: 'none', fontSize: '1.3rem', color: '#94a3b8', cursor: 'pointer', lineHeight: 1 }}
                 title="Close"
               >
@@ -1801,126 +1819,41 @@ export default function CrmLeadDetailPage() {
               </button>
             </div>
 
-            {addOppError && (
+            <p style={{ margin: '0 0 1rem 0', color: 'var(--text-muted)', fontSize: '0.85rem', lineHeight: 1.5 }}>
+              Unqualifying this lead will set its lifecycle status to <strong>Dormant</strong> and record the disqualification reason in the timeline.
+            </p>
+
+            {unqualifyError && (
               <div style={{ padding: '0.75rem 1rem', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '6px', color: '#b91c1c', fontSize: '0.825rem', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <AlertCircle size={16} />
-                <span>{addOppError}</span>
+                <span>{unqualifyError}</span>
               </div>
             )}
 
-            <form onSubmit={handleCreateOpportunity} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <form onSubmit={handleUnqualifyLead} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
               <div>
                 <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                  Opportunity Name <span style={{ color: 'var(--danger)' }}>*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Wastewater Biogas Trial 2026, Annual Testing Batch"
-                  className="form-control"
-                  value={newOppFormData.name}
-                  onChange={(e) => setNewOppFormData({ ...newOppFormData, name: e.target.value })}
-                />
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                    Estimated Value (INR)
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    placeholder="e.g. 250000"
-                    className="form-control"
-                    value={newOppFormData.estimatedValue}
-                    onChange={(e) => setNewOppFormData({ ...newOppFormData, estimatedValue: e.target.value })}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                    Pipeline Stage
-                  </label>
-                  <select
-                    className="form-control"
-                    value={newOppFormData.stage}
-                    onChange={(e) => setNewOppFormData({ ...newOppFormData, stage: e.target.value })}
-                  >
-                    <option value="Qualify">Qualify</option>
-                    <option value="Develop">Develop</option>
-                    <option value="Propose">Propose</option>
-                    <option value="Close">Close</option>
-                  </select>
-                </div>
-              </div>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                    Business Area
-                  </label>
-                  <select
-                    className="form-control"
-                    value={newOppFormData.businessArea}
-                    onChange={(e) => setNewOppFormData({ ...newOppFormData, businessArea: e.target.value })}
-                  >
-                    <option value="Biogas">Biogas</option>
-                    <option value="Wastewater Treatment (WWT)">Wastewater Treatment (WWT)</option>
-                    <option value="R&D Lab">R&D Lab</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                    Expected Close Date
-                  </label>
-                  <input
-                    type="date"
-                    className="form-control"
-                    value={newOppFormData.expectedCloseDate}
-                    onChange={(e) => setNewOppFormData({ ...newOppFormData, expectedCloseDate: e.target.value })}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                  Operational Sub-status (Free Text)
-                </label>
-                <input
-                  type="text"
-                  maxLength={255}
-                  placeholder="e.g. Waiting for revised quotation, Sample collection to be scheduled..."
-                  className="form-control"
-                  value={newOppFormData.subStatus}
-                  onChange={(e) => setNewOppFormData({ ...newOppFormData, subStatus: e.target.value })}
-                />
-                <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                  Unrestricted free-text operational progress note.
-                </span>
-              </div>
-
-              <div>
-                <label style={{ display: 'block', fontSize: '0.78rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '0.25rem' }}>
-                  Scope & Requirements Description
+                  Disqualification Reason <span style={{ color: 'var(--danger)' }}>*</span>
                 </label>
                 <textarea
-                  rows={3}
-                  placeholder="Commercial scope details, deliverables, assumptions..."
+                  rows={4}
+                  required
+                  placeholder="Enter the business reason for unqualifying this lead (e.g. Budget constraints, Not a fit for microbial bio-culture solutions, Project indefinitely deferred)..."
                   className="form-control"
-                  value={newOppFormData.description}
-                  onChange={(e) => setNewOppFormData({ ...newOppFormData, description: e.target.value })}
+                  value={disqualificationReason}
+                  onChange={(e) => {
+                    setDisqualificationReason(e.target.value);
+                    if (unqualifyError) setUnqualifyError(null);
+                  }}
+                  style={{ width: '100%', resize: 'vertical' }}
                 />
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem', paddingTop: '0.75rem', borderTop: '1px solid #f1f5f9' }}>
                 <button
                   type="button"
-                  disabled={submittingOpp}
-                  onClick={() => setIsAddOppModalOpen(false)}
+                  disabled={submittingUnqualify}
+                  onClick={() => setIsUnqualifyModalOpen(false)}
                   className="btn btn-secondary"
                   style={{ padding: '0.45rem 1.1rem', fontSize: '0.85rem' }}
                 >
@@ -1928,17 +1861,26 @@ export default function CrmLeadDetailPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={submittingOpp}
-                  className="btn btn-primary"
-                  style={{ padding: '0.45rem 1.25rem', fontSize: '0.85rem', display: 'inline-flex', alignItems: 'center', gap: '0.4rem' }}
+                  disabled={submittingUnqualify || !disqualificationReason.trim()}
+                  className="btn btn-danger"
+                  style={{
+                    padding: '0.45rem 1.25rem',
+                    fontSize: '0.85rem',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.4rem',
+                    background: '#ef4444',
+                    borderColor: '#ef4444',
+                    color: '#ffffff'
+                  }}
                 >
-                  {submittingOpp ? (
+                  {submittingUnqualify ? (
                     <>
                       <RefreshCw size={14} className="spin" />
-                      <span>Creating...</span>
+                      <span>Unqualifying...</span>
                     </>
                   ) : (
-                    <span>Create Opportunity</span>
+                    <span>Confirm Unqualify</span>
                   )}
                 </button>
               </div>

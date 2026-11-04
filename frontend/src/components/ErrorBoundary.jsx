@@ -8,7 +8,8 @@ export class ErrorBoundary extends React.Component {
       hasError: false,
       error: null,
       errorInfo: null,
-      showDetails: false
+      showDetails: false,
+      remountKey: 0
     };
   }
 
@@ -25,8 +26,28 @@ export class ErrorBoundary extends React.Component {
     }
   }
 
+  componentDidUpdate(prevProps) {
+    if (this.props.resetKey !== undefined && prevProps.resetKey !== this.props.resetKey) {
+      if (this.state.hasError) {
+        this.setState(prevState => ({
+          hasError: false,
+          error: null,
+          errorInfo: null,
+          showDetails: false,
+          remountKey: prevState.remountKey + 1
+        }));
+      }
+    }
+  }
+
   handleReset = () => {
-    this.setState({ hasError: false, error: null, errorInfo: null, showDetails: false });
+    this.setState(prevState => ({
+      hasError: false,
+      error: null,
+      errorInfo: null,
+      showDetails: false,
+      remountKey: prevState.remountKey + 1
+    }));
     if (this.props.onReset) {
       this.props.onReset();
     }
@@ -40,7 +61,6 @@ export class ErrorBoundary extends React.Component {
           : this.props.fallback;
       }
 
-      const isLayout = this.props.level === 'layout';
       const isGlobal = this.props.level === 'global';
 
       return (
@@ -189,7 +209,7 @@ export class ErrorBoundary extends React.Component {
                       maxHeight: '160px'
                     }}
                   >
-                    {this.state.error.toString()}
+                    {this.state.error.toString() + (this.state.error.stack ? '\n\n' + this.state.error.stack : '') + (this.state.errorInfo?.componentStack ? '\n\nComponent Stack:' + this.state.errorInfo.componentStack : '')}
                   </pre>
                 )}
               </div>
@@ -199,7 +219,7 @@ export class ErrorBoundary extends React.Component {
       );
     }
 
-    return this.props.children;
+    return <React.Fragment key={this.state.remountKey}>{this.props.children}</React.Fragment>;
   }
 }
 

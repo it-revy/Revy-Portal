@@ -44,10 +44,14 @@ export default function CrmContactsPage() {
 
   // Form states for Create/Edit Modal
   const [modalFormData, setModalFormData] = useState({
+    firstName: '',
+    lastName: '',
     name: '',
     designation: '',
     email: '',
     mobileNumber: '',
+    whatsappNumber: '',
+    isPrimary: false,
     accountId: '',
     isActive: true,
     confirmDuplicate: false
@@ -158,10 +162,14 @@ export default function CrmContactsPage() {
   const openCreateModal = () => {
     setContactToEdit(null);
     setModalFormData({
+      firstName: '',
+      lastName: '',
       name: '',
       designation: '',
       email: '',
       mobileNumber: '',
+      whatsappNumber: '',
+      isPrimary: false,
       accountId: filterAccountId || '',
       isActive: true,
       confirmDuplicate: false
@@ -174,11 +182,17 @@ export default function CrmContactsPage() {
 
   const openEditModal = (c) => {
     setContactToEdit(c);
+    const fn = c.firstName || (c.name ? c.name.split(' ')[0] : '');
+    const ln = c.lastName || (c.name && c.name.includes(' ') ? c.name.split(' ').slice(1).join(' ') : '');
     setModalFormData({
-      name: c.name || '',
+      firstName: fn,
+      lastName: ln,
+      name: c.name || `${fn} ${ln}`.trim(),
       designation: c.designation || '',
       email: c.email || '',
       mobileNumber: c.mobileNumber || '',
+      whatsappNumber: c.whatsappNumber || '',
+      isPrimary: Boolean(c.isPrimary),
       accountId: c.accountId || c.account?.id || '',
       isActive: c.isActive !== false,
       confirmDuplicate: false
@@ -206,8 +220,8 @@ export default function CrmContactsPage() {
 
   const validateForm = () => {
     const errors = {};
-    if (!modalFormData.name.trim()) {
-      errors.name = 'Contact full name is required.';
+    if (!modalFormData.firstName.trim() && !modalFormData.lastName.trim() && !modalFormData.name.trim()) {
+      errors.firstName = 'Either First Name or Last Name is required.';
     }
     if (modalFormData.email.trim()) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -226,11 +240,18 @@ export default function CrmContactsPage() {
     setFormSubmitting(true);
     setFormError(null);
 
+    const fn = modalFormData.firstName.trim();
+    const ln = modalFormData.lastName.trim();
+    const autoName = `${fn} ${ln}`.trim();
     const payload = {
-      name: modalFormData.name.trim(),
+      firstName: fn || undefined,
+      lastName: ln || undefined,
+      name: autoName || modalFormData.name.trim(),
       designation: modalFormData.designation.trim() || undefined,
       email: modalFormData.email.trim() || undefined,
       mobileNumber: modalFormData.mobileNumber.trim() || undefined,
+      whatsappNumber: modalFormData.whatsappNumber.trim() || undefined,
+      isPrimary: Boolean(modalFormData.isPrimary),
       accountId: modalFormData.accountId || (contactToEdit ? null : undefined),
       isActive: modalFormData.isActive,
       confirmDuplicate: Boolean(modalFormData.confirmDuplicate)
@@ -404,15 +425,22 @@ export default function CrmContactsPage() {
 
                   {/* Name & Designation */}
                   <td>
-                    <button
-                      onClick={() => openDetailDrawer(c)}
-                      style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer' }}
-                      title="View Contact Details"
-                    >
-                      <span style={{ fontSize: '0.92rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                        {c.name}
-                      </span>
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <button
+                        onClick={() => openDetailDrawer(c)}
+                        style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', cursor: 'pointer' }}
+                        title="View Contact Details"
+                      >
+                        <span style={{ fontSize: '0.92rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {c.name}
+                        </span>
+                      </button>
+                      {c.isPrimary && (
+                        <span style={{ fontSize: '0.68rem', fontWeight: 700, padding: '1px 6px', borderRadius: '10px', background: '#dbeafe', color: '#1d4ed8' }}>
+                          Primary
+                        </span>
+                      )}
+                    </div>
                     {c.designation && (
                       <div className="crm-cell-secondary" style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
                         <Briefcase size={11} /> {c.designation}
@@ -563,21 +591,63 @@ export default function CrmContactsPage() {
                   </div>
                 )}
 
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div className="form-group">
+                    <label className="form-label" style={{ fontWeight: 600 }}>
+                      First Name <span style={{ color: 'var(--danger)' }}>*</span>
+                    </label>
+                    <input
+                      type="text"
+                      className={`form-control ${fieldErrors.firstName ? 'is-invalid' : ''}`}
+                      placeholder="e.g. Rahul"
+                      value={modalFormData.firstName}
+                      onChange={e => {
+                        const fn = e.target.value;
+                        const ln = modalFormData.lastName;
+                        setModalFormData({
+                          ...modalFormData,
+                          firstName: fn,
+                          name: `${fn} ${ln}`.trim()
+                        });
+                      }}
+                    />
+                    {fieldErrors.firstName && (
+                      <div style={{ color: '#dc2626', fontSize: '0.75rem', marginTop: '0.25rem' }}>{fieldErrors.firstName}</div>
+                    )}
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label" style={{ fontWeight: 600 }}>Last Name</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. Patel"
+                      value={modalFormData.lastName}
+                      onChange={e => {
+                        const ln = e.target.value;
+                        const fn = modalFormData.firstName;
+                        setModalFormData({
+                          ...modalFormData,
+                          lastName: ln,
+                          name: `${fn} ${ln}`.trim()
+                        });
+                      }}
+                    />
+                  </div>
+                </div>
+
                 <div className="form-group">
-                  <label className="form-label" style={{ fontWeight: 600 }}>
-                    Full Name <span style={{ color: 'var(--danger)' }}>*</span>
+                  <label className="form-label" style={{ fontWeight: 600, display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Generated Full Name</span>
+                    <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: 400 }}>Auto-computed from First + Last Name</span>
                   </label>
                   <input
                     type="text"
-                    className={`form-control ${fieldErrors.name ? 'is-invalid' : ''}`}
-                    placeholder="e.g. Dr. Rajesh Sharma"
-                    value={modalFormData.name}
-                    onChange={e => setModalFormData({ ...modalFormData, name: e.target.value })}
-                    required
+                    readOnly
+                    className="form-control"
+                    style={{ background: '#f8fafc', color: '#334155', cursor: 'not-allowed', fontWeight: 600 }}
+                    value={modalFormData.name || '—'}
                   />
-                  {fieldErrors.name && (
-                    <div style={{ color: '#dc2626', fontSize: '0.75rem', marginTop: '0.25rem' }}>{fieldErrors.name}</div>
-                  )}
                 </div>
 
                 <div className="form-group">
@@ -631,6 +701,32 @@ export default function CrmContactsPage() {
                       value={modalFormData.mobileNumber}
                       onChange={e => setModalFormData({ ...modalFormData, mobileNumber: e.target.value })}
                     />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div className="form-group">
+                    <label className="form-label" style={{ fontWeight: 600 }}>WhatsApp Number</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. +91 98765 43210"
+                      value={modalFormData.whatsappNumber}
+                      onChange={e => setModalFormData({ ...modalFormData, whatsappNumber: e.target.value })}
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', paddingTop: '1.75rem' }}>
+                    <input
+                      type="checkbox"
+                      id="contactIsPrimary"
+                      checked={modalFormData.isPrimary}
+                      onChange={e => setModalFormData({ ...modalFormData, isPrimary: e.target.checked })}
+                      style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                    />
+                    <label htmlFor="contactIsPrimary" style={{ margin: 0, fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}>
+                      Primary Contact for this Account
+                    </label>
                   </div>
                 </div>
 
@@ -817,6 +913,19 @@ export default function CrmContactsPage() {
             <div className="modal-body" style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
               {/* Meta Grid */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', background: '#f8fafc', padding: '1rem', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                <div>
+                  <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Primary Contact</div>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 600, color: selectedContactDetail.isPrimary ? '#1d4ed8' : '#64748b', marginTop: '2px' }}>
+                    {selectedContactDetail.isPrimary ? 'Yes (Primary)' : 'No'}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>WhatsApp Number</div>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 500, marginTop: '2px' }}>
+                    {selectedContactDetail.whatsappNumber || '—'}
+                  </div>
+                </div>
                 <div>
                   <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Linked Account</div>
                   <div style={{ fontSize: '0.875rem', fontWeight: 600, marginTop: '2px', color: '#1e293b' }}>

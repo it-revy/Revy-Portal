@@ -69,9 +69,72 @@ def setup_test_database():
                 conn.exec_driver_sql("ALTER TABLE leads ADD COLUMN legacy_lifecycle_status VARCHAR(50)")
                 conn.commit()
 
+            comm_cols = conn.exec_driver_sql("PRAGMA table_info(lead_communications)").fetchall()
+            if comm_cols and not any(c[1] == 'subject' for c in comm_cols):
+                conn.exec_driver_sql("ALTER TABLE lead_communications ADD COLUMN subject VARCHAR(255)")
+            if comm_cols and not any(c[1] == 'interaction_source' for c in comm_cols):
+                conn.exec_driver_sql("ALTER TABLE lead_communications ADD COLUMN interaction_source VARCHAR(50) DEFAULT 'Manual'")
+            if comm_cols and not any(c[1] == 'nurturing_activity_id' for c in comm_cols):
+                conn.exec_driver_sql("ALTER TABLE lead_communications ADD COLUMN nurturing_activity_id VARCHAR(36)")
+            if comm_cols and not any(c[1] == 'updated_at' for c in comm_cols):
+                conn.exec_driver_sql("ALTER TABLE lead_communications ADD COLUMN updated_at TIMESTAMP")
+            conn.commit()
+
             acc_cols = conn.exec_driver_sql("PRAGMA table_info(accounts)").fetchall()
-            if acc_cols and not any(c[1] == 'site_name' for c in acc_cols):
-                conn.exec_driver_sql("ALTER TABLE accounts ADD COLUMN site_name VARCHAR(255)")
+            existing_acc = [c[1] for c in acc_cols]
+            for col, col_type in [
+                ("site_name", "VARCHAR(255)"),
+                ("business_area", "VARCHAR(50)"),
+                ("country", "VARCHAR(100)"),
+                ("state", "VARCHAR(100)"),
+                ("city", "VARCHAR(100)"),
+                ("billing_address", "TEXT"),
+                ("shipping_address", "TEXT"),
+                ("gst_number", "VARCHAR(30)"),
+                ("pan_number", "VARCHAR(20)"),
+                ("parent_account_id", "VARCHAR(36)"),
+                ("created_by_id", "VARCHAR(36)"),
+                ("updated_by_id", "VARCHAR(36)"),
+            ]:
+                if acc_cols and col not in existing_acc:
+                    conn.exec_driver_sql(f"ALTER TABLE accounts ADD COLUMN {col} {col_type}")
+            conn.commit()
+
+            con_cols = conn.exec_driver_sql("PRAGMA table_info(contacts)").fetchall()
+            existing_con = [c[1] for c in con_cols]
+            for col, col_type in [
+                ("first_name", "VARCHAR(100)"),
+                ("last_name", "VARCHAR(100)"),
+                ("whatsapp_number", "VARCHAR(30)"),
+                ("is_primary", "BOOLEAN DEFAULT 0"),
+                ("created_by_id", "VARCHAR(36)"),
+                ("updated_by_id", "VARCHAR(36)"),
+            ]:
+                if con_cols and col not in existing_con:
+                    conn.exec_driver_sql(f"ALTER TABLE contacts ADD COLUMN {col} {col_type}")
+            conn.commit()
+
+            if lead_cols:
+                existing_lead = [c[1] for c in lead_cols]
+                for col, col_type in [
+                    ("disqualification_reason", "TEXT"),
+                    ("converted_at", "DATETIME"),
+                    ("converted_by_id", "VARCHAR(36)"),
+                ]:
+                    if col not in existing_lead:
+                        conn.exec_driver_sql(f"ALTER TABLE leads ADD COLUMN {col} {col_type}")
+                conn.commit()
+
+            if opp_cols:
+                existing_opp = [c[1] for c in opp_cols]
+                for col, col_type in [
+                    ("won_reason", "TEXT"),
+                    ("closed_by_id", "VARCHAR(36)"),
+                    ("reopened_at", "DATETIME"),
+                    ("reopened_by_id", "VARCHAR(36)"),
+                ]:
+                    if col not in existing_opp:
+                        conn.exec_driver_sql(f"ALTER TABLE crm_opportunities ADD COLUMN {col} {col_type}")
                 conn.commit()
         except Exception:
             pass

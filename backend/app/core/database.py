@@ -1,6 +1,6 @@
 import os
 import logging
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from app.core.config import settings
 
@@ -15,7 +15,8 @@ def get_engine():
         test_db_path = os.path.join(backend_dir, "test_isolated_suite.db").replace("\\", "/")
         test_url = os.getenv("TEST_DATABASE_URL", f"sqlite:///{test_db_path}")
         logger.info(f"Connected to Isolated Test Database: {test_url}")
-        return create_engine(test_url, connect_args={"check_same_thread": False})
+        test_engine = create_engine(test_url, connect_args={"check_same_thread": False})
+        return test_engine
 
     db_url = settings.DATABASE_URL
     if db_url.startswith("postgres://"):

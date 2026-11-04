@@ -67,6 +67,13 @@ const Breadcrumb = () => {
         } else {
           crumbs.push({ label: "Leads", isCurrent: true });
         }
+      } else if (second === 'opportunities') {
+        if (segments.length > 2) {
+          crumbs.push({ label: "Sales Funnel", to: "/crm/opportunities" });
+          crumbs.push({ label: segments[2].toUpperCase().startsWith("OPP-") ? segments[2].toUpperCase() : "Opportunity Details", isCurrent: true });
+        } else {
+          crumbs.push({ label: "Sales Funnel", isCurrent: true });
+        }
       } else if (second === 'user-hub' || second === 'users') {
         crumbs.push({ label: "CRM User Hub", isCurrent: true });
       } else {

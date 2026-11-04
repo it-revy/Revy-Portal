@@ -377,7 +377,7 @@ export default function CrmOpportunitiesPage() {
     <div className="page-body">
       {/* Page Header Command Bar */}
       <PageHeader
-        title="Opportunity Pipeline Workspace"
+        title="Sales Funnel Workspace"
         subtitle="Visual 6-stage Kanban progression, commercial outcome governance, and drag-and-drop workflow"
         icon={Briefcase}
         actions={

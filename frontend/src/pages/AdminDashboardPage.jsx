@@ -12,6 +12,7 @@ import {
   AlertCircle,
   RefreshCw,
   ShoppingBag,
+  DollarSign,
 } from 'lucide-react';
 import { PageHeader, Button, Select, DatePicker, SearchInput } from '../components/ui';
 

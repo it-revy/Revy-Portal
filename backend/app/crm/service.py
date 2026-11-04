@@ -18,6 +18,7 @@ from app.core.exceptions import (
     ConflictError
 )
 from app.users.model import User
+import app.models  # Ensure Employee, User, and core declarative models are registered in SQLAlchemy registry
 from app.modules.model import Module, ModuleRole, UserModuleMembership
 from app.crm.model import (
     Account,
@@ -34,7 +35,8 @@ from app.crm.model import (
     TestingChargeRecord,
     ProductTransaction,
     Milestone,
-    OpportunityQuotation
+    OpportunityQuotation,
+    CrmIdempotencyRecord
 )
 from app.files.model import FileMetadata
 from app.crm.schema import (
@@ -91,7 +93,24 @@ def normalize_text(val: Optional[str]) -> str:
     return " ".join(val.strip().lower().split())
 
 
+def _iso_utc(dt: Any) -> Optional[str]:
+    """
+    Formats a datetime or date into an unambiguous ISO-8601 string with explicit UTC offset (+00:00).
+    If dt is a date-only object, returns YYYY-MM-DD.
+    """
+    if not dt:
+        return None
+    if isinstance(dt, datetime):
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).isoformat()
+    if isinstance(dt, date):
+        return dt.isoformat()
+    return str(dt)
+
+
 _sequence_lock = threading.Lock()
+_sqlite_write_lock = threading.Lock()
 
 
 def get_next_sequence_id(db: Session, entity_name: str, prefix: str, padding: int = 5, commit: bool = True) -> str:
@@ -99,29 +118,42 @@ def get_next_sequence_id(db: Session, entity_name: str, prefix: str, padding: in
     Concurrency-safe sequence generator using CrmSequence with thread locking and row locking.
     Generates IDs like LEAD-00001, ACC-00001, CON-00001, COM-00001, ENG-00001, SMP-00001, TST-00001, CHG-00001, PRD-00001.
     If commit=False, flushes instead of committing to preserve outer transaction atomicity.
+    Includes concurrency lock retries for SQLite test environments.
     """
     entity_key = entity_name.strip().upper()
-    with _sequence_lock:
-        seq = db.query(CrmSequence).filter(CrmSequence.entity_name == entity_key).with_for_update().first()
-        if not seq:
-            try:
-                seq = CrmSequence(entity_name=entity_key, current_value=1)
-                db.add(seq)
+    max_retries = 5
+    for attempt in range(max_retries):
+        try:
+            with _sequence_lock:
+                seq = db.query(CrmSequence).filter(CrmSequence.entity_name == entity_key).with_for_update().first()
+                if not seq:
+                    try:
+                        seq = CrmSequence(entity_name=entity_key, current_value=1)
+                        db.add(seq)
+                        if commit:
+                            db.commit()
+                        else:
+                            db.flush()
+                        return f"{prefix}-{1:0{padding}d}"
+                    except IntegrityError:
+                        db.rollback()
+                        seq = db.query(CrmSequence).filter(CrmSequence.entity_name == entity_key).with_for_update().first()
+
+                seq.current_value += 1
                 if commit:
                     db.commit()
                 else:
                     db.flush()
-                return f"{prefix}-{1:0{padding}d}"
-            except IntegrityError:
+                return f"{prefix}-{seq.current_value:0{padding}d}"
+        except (OperationalError, Exception) as e:
+            try:
                 db.rollback()
-                seq = db.query(CrmSequence).filter(CrmSequence.entity_name == entity_key).with_for_update().first()
-
-        seq.current_value += 1
-        if commit:
-            db.commit()
-        else:
-            db.flush()
-        return f"{prefix}-{seq.current_value:0{padding}d}"
+            except Exception:
+                pass
+            if "locked" in str(e).lower() and attempt < max_retries - 1:
+                time.sleep(0.05 * (attempt + 1))
+                continue
+            raise
 
 
 INTERNAL_EVENT_KEYWORDS = [
@@ -699,6 +731,17 @@ class CrmService:
                 "phone": a.phone,
                 "email": a.email,
                 "address": a.address,
+                "businessArea": a.business_area,
+                "country": a.country,
+                "state": a.state,
+                "city": a.city,
+                "billingAddress": a.billing_address,
+                "shippingAddress": a.shipping_address,
+                "gstNumber": a.gst_number,
+                "panNumber": a.pan_number,
+                "parentAccountId": a.parent_account_id,
+                "createdById": a.created_by_id,
+                "updatedById": a.updated_by_id,
                 "isActive": a.is_active,
                 "contactCount": contact_counts.get(a.id, 0),
                 "leadCount": lead_counts.get(a.id, 0),
@@ -776,6 +819,26 @@ class CrmService:
                 "phone": acc.phone,
                 "email": acc.email,
                 "address": acc.address,
+                "businessArea": acc.business_area,
+                "country": acc.country,
+                "state": acc.state,
+                "city": acc.city,
+                "billingAddress": acc.billing_address,
+                "shippingAddress": acc.shipping_address,
+                "gstNumber": acc.gst_number,
+                "panNumber": acc.pan_number,
+                "parentAccountId": acc.parent_account_id,
+                "parentAccount": {
+                    "id": acc.parent_account.id,
+                    "accountId": acc.parent_account.account_id,
+                    "name": acc.parent_account.name
+                } if getattr(acc, "parent_account", None) else None,
+                "subAccounts": [
+                    {"id": sa.id, "accountId": sa.account_id, "name": sa.name}
+                    for sa in getattr(acc, "sub_accounts", [])
+                ],
+                "createdById": acc.created_by_id,
+                "updatedById": acc.updated_by_id,
                 "isActive": acc.is_active,
                 "contactCount": len(contacts),
                 "leadCount": len(leads),
@@ -948,6 +1011,15 @@ class CrmService:
             else:
                 final_address = loc
 
+        parent_acc = None
+        if payload.parentAccountId:
+            parent_acc = self.db.query(Account).filter(
+                or_(Account.id == payload.parentAccountId, Account.account_id == payload.parentAccountId),
+                Account.is_active == True
+            ).first()
+            if not parent_acc:
+                raise NotFoundError(f"Parent account '{payload.parentAccountId}' not found.")
+
         account = Account(
             account_id=account_code,
             name=payload.name.strip(),
@@ -957,6 +1029,17 @@ class CrmService:
             phone=payload.phone.strip() if payload.phone else None,
             email=payload.email.strip().lower() if payload.email else None,
             address=final_address,
+            business_area=payload.businessArea,
+            country=payload.country.strip() if payload.country else None,
+            state=payload.state.strip() if payload.state else None,
+            city=payload.city.strip() if payload.city else None,
+            billing_address=payload.billingAddress.strip() if payload.billingAddress else None,
+            shipping_address=payload.shippingAddress.strip() if payload.shippingAddress else None,
+            gst_number=payload.gstNumber.strip() if payload.gstNumber else None,
+            pan_number=payload.panNumber.strip() if payload.panNumber else None,
+            parent_account_id=parent_acc.id if parent_acc else None,
+            created_by_id=str(actor.id) if actor.id else None,
+            updated_by_id=str(actor.id) if actor.id else None,
             is_active=True
         )
 
@@ -1001,6 +1084,17 @@ class CrmService:
             "phone": account.phone,
             "email": account.email,
             "address": account.address,
+            "businessArea": account.business_area,
+            "country": account.country,
+            "state": account.state,
+            "city": account.city,
+            "billingAddress": account.billing_address,
+            "shippingAddress": account.shipping_address,
+            "gstNumber": account.gst_number,
+            "panNumber": account.pan_number,
+            "parentAccountId": account.parent_account_id,
+            "createdById": account.created_by_id,
+            "updatedById": account.updated_by_id,
             "isActive": account.is_active,
             "contactCount": 0,
             "leadCount": 0,
@@ -1061,6 +1155,53 @@ class CrmService:
             acc.phone = payload.phone.strip() if payload.phone else None
         if payload.email is not None:
             acc.email = payload.email.strip().lower() if payload.email else None
+        if payload.businessArea is not None:
+            acc.business_area = payload.businessArea
+        if payload.country is not None:
+            acc.country = payload.country.strip() if payload.country else None
+        if payload.state is not None:
+            acc.state = payload.state.strip() if payload.state else None
+        if payload.city is not None:
+            acc.city = payload.city.strip() if payload.city else None
+        if payload.billingAddress is not None:
+            acc.billing_address = payload.billingAddress.strip() if payload.billingAddress else None
+        if payload.shippingAddress is not None:
+            acc.shipping_address = payload.shippingAddress.strip() if payload.shippingAddress else None
+        if payload.gstNumber is not None:
+            acc.gst_number = payload.gstNumber.strip() if payload.gstNumber else None
+        if payload.panNumber is not None:
+            acc.pan_number = payload.panNumber.strip() if payload.panNumber else None
+        if payload.parentAccountId is not None:
+            if payload.parentAccountId == "":
+                acc.parent_account_id = None
+            else:
+                if payload.parentAccountId == acc.id or payload.parentAccountId == acc.account_id:
+                    raise ValidationError("An account cannot be its own parent.")
+                parent_acc = self.db.query(Account).filter(
+                    or_(Account.id == payload.parentAccountId, Account.account_id == payload.parentAccountId),
+                    Account.is_active == True
+                ).first()
+                if not parent_acc:
+                    raise NotFoundError(f"Parent account '{payload.parentAccountId}' not found.")
+                if parent_acc.id == acc.id:
+                    raise ValidationError("An account cannot be its own parent.")
+
+                # Circular parent-account check
+                curr_ancestor_id = parent_acc.parent_account_id
+                visited = {acc.id, parent_acc.id}
+                while curr_ancestor_id:
+                    if curr_ancestor_id == acc.id:
+                        raise ValidationError("Circular parent-account relationship detected.")
+                    if curr_ancestor_id in visited:
+                        break
+                    visited.add(curr_ancestor_id)
+                    anc_row = self.db.query(Account.parent_account_id).filter(Account.id == curr_ancestor_id).first()
+                    curr_ancestor_id = anc_row[0] if anc_row else None
+
+                acc.parent_account_id = parent_acc.id
+
+        acc.updated_by_id = str(actor.id) if actor.id else None
+
         if payload.address is not None:
             acc.address = payload.address.strip() if payload.address else None
         if payload.location is not None and payload.location.strip():
@@ -1156,9 +1297,15 @@ class CrmService:
                 "accountId": c.account_id,
                 "accountName": c.account.name if c.account else None,
                 "name": c.name,
+                "firstName": c.first_name,
+                "lastName": c.last_name,
                 "email": c.email,
                 "mobileNumber": c.mobile_number,
+                "whatsappNumber": c.whatsapp_number,
                 "designation": c.designation,
+                "isPrimary": bool(c.is_primary),
+                "createdById": c.created_by_id,
+                "updatedById": c.updated_by_id,
                 "isActive": c.is_active,
                 "opportunityCount": opp_counts.get(c.id, 0),
                 "createdAt": c.created_at.isoformat() if c.created_at else None,
@@ -1207,9 +1354,15 @@ class CrmService:
                 "name": c.account.name
             } if c.account else None,
             "name": c.name,
+            "firstName": c.first_name,
+            "lastName": c.last_name,
             "email": c.email,
             "mobileNumber": c.mobile_number,
+            "whatsappNumber": c.whatsapp_number,
             "designation": c.designation,
+            "isPrimary": bool(c.is_primary),
+            "createdById": c.created_by_id,
+            "updatedById": c.updated_by_id,
             "isActive": c.is_active,
             "opportunityCount": len(opportunities),
             "opportunities": opportunities_list,
@@ -1369,14 +1522,36 @@ class CrmService:
                             }
                         )
 
+        clean_first = payload.firstName.strip() if payload.firstName else None
+        clean_last = payload.lastName.strip() if payload.lastName else None
+        if not clean_first and not clean_last and clean_name:
+            parts = clean_name.split(None, 1)
+            clean_first = parts[0]
+            clean_last = parts[1] if len(parts) > 1 else None
+
+        clean_whatsapp = payload.whatsappNumber.strip() if payload.whatsappNumber else None
+        is_primary = bool(payload.isPrimary)
+
+        if is_primary and account:
+            self.db.query(Contact).filter(
+                Contact.account_id == account.id,
+                Contact.is_primary == True
+            ).update({"is_primary": False})
+
         contact_code = get_next_sequence_id(self.db, "CONTACT", "CON")
         contact = Contact(
             contact_id=contact_code,
             account_id=account.id if account else None,
+            first_name=clean_first,
+            last_name=clean_last,
             name=clean_name,
             email=clean_email,
             mobile_number=clean_phone,
+            whatsapp_number=clean_whatsapp,
             designation=payload.designation.strip() if payload.designation else None,
+            is_primary=is_primary,
+            created_by_id=str(actor.id) if actor.id else None,
+            updated_by_id=str(actor.id) if actor.id else None,
             is_active=True
         )
 
@@ -1412,9 +1587,15 @@ class CrmService:
             "accountId": contact.account_id,
             "accountName": account.name if account else None,
             "name": contact.name,
+            "firstName": contact.first_name,
+            "lastName": contact.last_name,
             "email": contact.email,
             "mobileNumber": contact.mobile_number,
+            "whatsappNumber": contact.whatsapp_number,
             "designation": contact.designation,
+            "isPrimary": bool(contact.is_primary),
+            "createdById": contact.created_by_id,
+            "updatedById": contact.updated_by_id,
             "isActive": contact.is_active,
             "opportunityCount": 0,
             "opportunities": [],
@@ -1445,11 +1626,34 @@ class CrmService:
             "isActive": c.is_active
         }
 
-        if payload.name is not None:
+        if payload.firstName is not None or payload.lastName is not None:
+            if payload.firstName is not None:
+                c.first_name = payload.firstName.strip() if payload.firstName else None
+            if payload.lastName is not None:
+                c.last_name = payload.lastName.strip() if payload.lastName else None
+            c.name = f"{c.first_name or ''} {c.last_name or ''}".strip()
+        elif payload.name is not None:
             clean_name = payload.name.strip()
             if not clean_name:
                 raise ValidationError("Contact name cannot be empty.")
             c.name = clean_name
+            parts = clean_name.split(None, 1)
+            c.first_name = parts[0]
+            c.last_name = parts[1] if len(parts) > 1 else None
+
+        if payload.whatsappNumber is not None:
+            c.whatsapp_number = payload.whatsappNumber.strip() if payload.whatsappNumber else None
+
+        if payload.isPrimary is not None:
+            c.is_primary = bool(payload.isPrimary)
+            if c.is_primary and c.account_id:
+                self.db.query(Contact).filter(
+                    Contact.account_id == c.account_id,
+                    Contact.id != c.id,
+                    Contact.is_primary == True
+                ).update({"is_primary": False})
+
+        c.updated_by_id = str(actor.id) if actor.id else None
 
         if payload.accountId is not None:
             if payload.accountId == "" or payload.accountId is None:
@@ -1567,6 +1771,71 @@ class CrmService:
         payload: LeadCreate,
         request: Optional[Request] = None
     ) -> Dict[str, Any]:
+        is_sqlite = bool(self.db.bind and "sqlite" in str(self.db.bind.url))
+        if is_sqlite:
+            with _sqlite_write_lock:
+                return self._create_lead_impl(actor, payload, request)
+        return self._create_lead_impl(actor, payload, request)
+
+    def _create_lead_impl(
+        self,
+        actor: CurrentUser,
+        payload: LeadCreate,
+        request: Optional[Request] = None
+    ) -> Dict[str, Any]:
+        # 0. Database-backed Idempotency Check (Persistent across backend restarts & multi-worker deployments)
+        client_req_id = payload.clientRequestId.strip() if payload.clientRequestId and payload.clientRequestId.strip() else None
+        idempotency_rec = None
+
+        if client_req_id and getattr(actor, "id", None):
+            user_uuid = str(actor.id)
+            # Check existing persistent idempotency record in PostgreSQL
+            idempotency_rec = self.db.query(CrmIdempotencyRecord).filter(
+                CrmIdempotencyRecord.user_id == user_uuid,
+                CrmIdempotencyRecord.client_request_id == client_req_id
+            ).first()
+
+            if idempotency_rec:
+                if idempotency_rec.status == "COMPLETED" and idempotency_rec.lead_id:
+                    existing_lead = self.db.query(Lead).filter(Lead.id == idempotency_rec.lead_id).first()
+                    if existing_lead:
+                        logger.info(f"Database idempotency hit for user={user_uuid}, clientRequestId={client_req_id}. Returning Lead {existing_lead.lead_id}")
+                        return self.get_lead(actor, existing_lead.id)
+                elif idempotency_rec.status == "PROCESSING":
+                    # Concurrent request already in flight; wait briefly for resolution (up to 3s)
+                    for _ in range(15):
+                        time.sleep(0.2)
+                        self.db.expire(idempotency_rec)
+                        refreshed = self.db.query(CrmIdempotencyRecord).filter(
+                            CrmIdempotencyRecord.id == idempotency_rec.id
+                        ).first()
+                        if refreshed and refreshed.status == "COMPLETED" and refreshed.lead_id:
+                            existing_lead = self.db.query(Lead).filter(Lead.id == refreshed.lead_id).first()
+                            if existing_lead:
+                                logger.info(f"Concurrent idempotency resolved for user={user_uuid}, clientRequestId={client_req_id}. Returning Lead {existing_lead.lead_id}")
+                                return self.get_lead(actor, existing_lead.id)
+            else:
+                # Reserve idempotency key in DB to synchronize concurrent workers
+                try:
+                    idempotency_rec = CrmIdempotencyRecord(
+                        user_id=user_uuid,
+                        client_request_id=client_req_id,
+                        status="PROCESSING"
+                    )
+                    self.db.add(idempotency_rec)
+                    self.db.flush()
+                except IntegrityError:
+                    self.db.rollback()
+                    # Concurrency collision: another thread/worker just inserted this key
+                    idempotency_rec = self.db.query(CrmIdempotencyRecord).filter(
+                        CrmIdempotencyRecord.user_id == user_uuid,
+                        CrmIdempotencyRecord.client_request_id == client_req_id
+                    ).first()
+                    if idempotency_rec and idempotency_rec.status == "COMPLETED" and idempotency_rec.lead_id:
+                        existing_lead = self.db.query(Lead).filter(Lead.id == idempotency_rec.lead_id).first()
+                        if existing_lead:
+                            return self.get_lead(actor, existing_lead.id)
+
         # 1. Contact (optional at creation time)
         contact = None
         if payload.contactId:
@@ -1619,7 +1888,7 @@ class CrmService:
 
         lead = None
         for attempt in range(5):
-            lead_code = get_next_sequence_id(self.db, "LEAD", "LEAD")
+            lead_code = get_next_sequence_id(self.db, "LEAD", "LEAD", commit=False)
             lead = Lead(
                 lead_id=lead_code,
                 lead_name=clean_title,
@@ -1696,8 +1965,7 @@ class CrmService:
 
             try:
                 self.db.add(lead)
-                self.db.commit()
-                self.db.refresh(lead)
+                self.db.flush()
                 break
             except IntegrityError as e:
                 self.db.rollback()
@@ -1707,8 +1975,41 @@ class CrmService:
                     continue
                 logger.error(f"IntegrityError creating lead: {e}")
                 raise ValidationError("Could not save lead due to a database integrity constraint.")
+            except OperationalError as e:
+                self.db.rollback()
+                if "locked" in str(e).lower() and attempt < 4:
+                    time.sleep(0.05 * (attempt + 1))
+                    continue
+                raise
         else:
             raise ValidationError("Could not generate a unique Lead ID after multiple attempts.")
+
+        # Automatic Lead Nurturing Initialization (Mandatory requirement, unified in same transaction)
+        lead_ref_code = getattr(lead, "lead_id", "")
+        try:
+            from app.crm.nurturing_service import LeadNurturingService
+            nurturing_svc = LeadNurturingService(self.db, self.audit_service)
+            nurturing_svc.initialize_lead_nurturing(
+                lead=lead,
+                actor_id=str(actor.id) if actor.id else None,
+                commit=False
+            )
+
+            # Single atomic database commit for Lead, Nurturing, and Idempotency records
+            if idempotency_rec:
+                idempotency_rec.lead_id = lead.id
+                idempotency_rec.status = "COMPLETED"
+                idempotency_rec.response_code = 201
+
+            self.db.commit()
+            self.db.refresh(lead)
+        except Exception as nurture_err:
+            try:
+                self.db.rollback()
+            except Exception:
+                pass
+            logger.error(f"Failed to auto-initialize nurturing for lead {lead_ref_code}: {nurture_err}")
+            raise ValidationError(f"Could not complete atomic lead creation and nurturing setup: {str(nurture_err)}")
 
         try:
             self.audit_service.log(
@@ -1879,6 +2180,16 @@ class CrmService:
 
         if "connectedDate" in payload.model_fields_set:
             lead.connected_date = payload.connectedDate
+            try:
+                from app.crm.nurturing_service import LeadNurturingService
+                nurturing_svc = LeadNurturingService(self.db, self.audit_service)
+                nurturing_svc.recalculate_on_connected_date_change(
+                    lead=lead,
+                    new_connected_date=payload.connectedDate,
+                    actor_id=str(actor.id) if actor.id else None
+                )
+            except Exception as nurture_calc_err:
+                logger.warning(f"Failed to recalculate nurturing schedule: {nurture_calc_err}")
 
         # Additional Contacts update
         if payload.additionalContactIds is not None:
@@ -1994,6 +2305,26 @@ class CrmService:
         if remarks:
             lead.remarks = remarks.strip()
         lead.updated_by_id = str(actor.id) if actor.id else None
+
+        # Record Lead Status Change interaction for unified timeline
+        try:
+            comm_code = get_next_sequence_id(self.db, "COMMUNICATION", "COM", commit=False)
+            status_comm = LeadCommunicationHistory(
+                communication_id=comm_code,
+                lead_id=lead.id,
+                communication_date=datetime.now(timezone.utc),
+                channel="Other",
+                event_type=f"Lead Status: {clean_status}",
+                subject=f"Status changed from {before_status} to {clean_status}",
+                summary=remarks.strip() if remarks else f"Lead business status transitioned from {before_status} to {clean_status}.",
+                outcome=clean_status,
+                interaction_source="Lead Status Change",
+                created_by_id=str(actor.id) if actor.id else None,
+                created_at=datetime.now(timezone.utc)
+            )
+            self.db.add(status_comm)
+        except Exception as comm_err:
+            logger.warning(f"Could not log status transition interaction: {comm_err}")
 
         try:
             self.db.commit()
@@ -2154,6 +2485,7 @@ class CrmService:
         }
 
     def get_lead(self, actor: CurrentUser, lead_id: str) -> Dict[str, Any]:
+        clean_id = (lead_id or "").strip()
         lead = (
             self.db.query(Lead)
             .options(
@@ -2169,11 +2501,15 @@ class CrmService:
                 joinedload(Lead.requirement_types),
                 joinedload(Lead.contact_methods)
             )
-            .filter(or_(Lead.id == lead_id, Lead.lead_id == lead_id))
+            .filter(or_(
+                Lead.id == clean_id,
+                func.lower(Lead.id) == clean_id.lower(),
+                func.lower(Lead.lead_id) == clean_id.lower()
+            ))
             .first()
         )
         if not lead:
-            raise NotFoundError(f"Lead '{lead_id}' not found.")
+            raise NotFoundError(f"Lead '{clean_id}' not found.")
 
         return self._format_lead(lead)
 
@@ -2185,7 +2521,7 @@ class CrmService:
 
         contact_methods = [cm.contact_method for cm in lead.contact_methods] if getattr(lead, "contact_methods", None) else []
 
-        display_name = lead.lead_name or lead.lead_id
+        display_name = lead.lead_name or lead.company_name or f"{lead.first_name or ''} {lead.last_name or ''}".strip() or lead.lead_id or "Untitled Lead"
 
         account_obj = None
         if lead.account:
@@ -2313,24 +2649,24 @@ class CrmService:
             "leadId": lead.lead_id,
             "leadName": lead.lead_name,
             "displayName": display_name,
-            "businessArea": lead.business_area,
+            "businessArea": lead.business_area or "Biogas",
             "requirementType": ", ".join(types) if types else None,
             "requirementTypes": types,
             "requirementSummary": lead.requirement_summary,
             "requestedProductService": lead.requested_product_service,
-            "leadSource": lead.lead_source,
-            "lifecycleStatus": lead.lifecycle_status,
+            "leadSource": lead.lead_source or "Website",
+            "lifecycleStatus": lead.lifecycle_status or "Enquiry",
             "communicationChannel": lead.communication_channel,
             "remarks": lead.remarks,
-            "nextFollowUpDate": lead.next_follow_up_date.isoformat() if lead.next_follow_up_date else None,
+            "nextFollowUpDate": _iso_utc(lead.next_follow_up_date),
             "nextFollowUpAction": lead.next_follow_up_action,
-            "connectedDate": lead.connected_date.isoformat() if lead.connected_date else None,
-            "lastConnectedDate": lead.last_connected_date.isoformat() if lead.last_connected_date else None,
+            "connectedDate": _iso_utc(lead.connected_date),
+            "lastConnectedDate": _iso_utc(lead.last_connected_date),
             "websiteLink": lead.website_link,
             "location": lead.location,
             "siteName": lead.site_name,
-            "createdAt": lead.created_at.isoformat() if lead.created_at else None,
-            "updatedAt": lead.updated_at.isoformat() if lead.updated_at else None,
+            "createdAt": _iso_utc(lead.created_at),
+            "updatedAt": _iso_utc(lead.updated_at),
 
             # Section 1 Direct Contact Fields
             "firstName": lead.first_name,
@@ -2355,6 +2691,12 @@ class CrmService:
             # Section 5 Contact Methods
             "contactMethods": contact_methods,
             "preferredContactMethod": lead.preferred_contact_method,
+
+            "disqualificationReason": lead.disqualification_reason,
+            "convertedAt": _iso_utc(lead.converted_at),
+            "convertedById": lead.converted_by_id,
+            "convertedByName": lead.converted_by.name if getattr(lead, "converted_by", None) else None,
+            "isConverted": bool(lead.converted_at or lead.opportunity_id),
 
             # Linkages
             "accountId": lead.account_id,
@@ -2381,7 +2723,7 @@ class CrmService:
             "opportunity": opp_obj,
             "opportunities": opps_list,
             "isQualified": bool(lead.qualified_at or lead.lifecycle_status == "Qualified"),
-            "qualifiedAt": lead.qualified_at.isoformat() if lead.qualified_at else None,
+            "qualifiedAt": _iso_utc(lead.qualified_at),
             "qualifiedById": lead.qualified_by_id,
             "qualifiedByName": lead.qualified_by.name if getattr(lead, "qualified_by", None) else None,
         }
@@ -2468,6 +2810,12 @@ class CrmService:
             "status": opp.status or "Open",
             "stage": opp.stage or "Qualify",
             "lossReason": opp.loss_reason,
+            "wonReason": opp.won_reason,
+            "closedById": opp.closed_by_id,
+            "closedByName": opp.closed_by.name if getattr(opp, "closed_by", None) else None,
+            "reopenedAt": opp.reopened_at.isoformat() if opp.reopened_at else None,
+            "reopenedById": opp.reopened_by_id,
+            "reopenedByName": opp.reopened_by.name if getattr(opp, "reopened_by", None) else None,
             "subStatus": opp.sub_status,
             "sub_status": opp.sub_status,
             "businessArea": opp.business_area or "Biogas",
@@ -2703,6 +3051,16 @@ class CrmService:
             "suggestedClientStatus": suggested_status
         }
 
+    def _sanitize_user_id(self, user_id: Optional[str]) -> Optional[str]:
+        """Validates that user_id is a non-empty string. On PostgreSQL, ensures target user exists to prevent FK violation."""
+        if not user_id or not str(user_id).strip():
+            return None
+        uid = str(user_id).strip()
+        if self.db.bind and self.db.bind.dialect.name == "postgresql":
+            user_row = self.db.query(User.id).filter(User.id == uid).first()
+            return uid if user_row else None
+        return uid
+
     def qualify_lead(
         self,
         actor: CurrentUser,
@@ -2738,7 +3096,7 @@ class CrmService:
 
         # Idempotency / Retry-Safety:
         # If the lead is already qualified and linked to an opportunity, return existing linked records safely without creating duplicates
-        if lead.qualified_at and lead.opportunity_id:
+        if (lead.qualified_at or lead.converted_at) and lead.opportunity_id:
             opp = self.db.query(Opportunity).options(
                 joinedload(Opportunity.account),
                 joinedload(Opportunity.contact)
@@ -2765,6 +3123,8 @@ class CrmService:
                     } if opp.contact else None,
                     "opportunity": self._format_opportunity(opp)
                 }
+
+        actor_user_id = self._sanitize_user_id(str(actor.id) if actor and getattr(actor, "id", None) else None)
 
         try:
             # 1. Resolve Account
@@ -2805,6 +3165,7 @@ class CrmService:
                 phone = (payload.account.phone or lead.business_phone or "").strip() or None
                 email = (payload.account.email or lead.company_email or "").strip().lower() or None
                 address = (payload.account.address or lead.location or "").strip() or None
+                acc_biz_area = getattr(payload.account, "businessArea", None) or lead.business_area or "Biogas"
 
                 account = Account(
                     account_id=account_code,
@@ -2815,6 +3176,9 @@ class CrmService:
                     phone=phone,
                     email=email,
                     address=address,
+                    business_area=acc_biz_area,
+                    created_by_id=actor_user_id,
+                    updated_by_id=actor_user_id,
                     is_active=True
                 )
                 self.db.add(account)
@@ -2855,6 +3219,7 @@ class CrmService:
                     con_desig = (payload.contact.designation or lead.job_title or "").strip() or None
 
                     # If an existing contact has this email under a DIFFERENT account, reject with explanation
+                    # If under SAME account, reuse existing contact
                     if con_email:
                         existing_con = self.db.query(Contact).filter(
                             func.lower(Contact.email) == con_email,
@@ -2864,19 +3229,35 @@ class CrmService:
                             raise ValidationError(
                                 f"A contact with email '{con_email}' already exists under account '{existing_con.account.name if existing_con.account else existing_con.account_id}'."
                             )
+                        elif existing_con and existing_con.account_id == account.id:
+                            contact = existing_con
 
-                    contact_code = get_next_sequence_id(self.db, "CONTACT", "CON", commit=False)
-                    contact = Contact(
-                        contact_id=contact_code,
-                        account_id=account.id,
-                        name=con_name,
-                        email=con_email,
-                        mobile_number=con_phone,
-                        designation=con_desig,
-                        is_active=True
-                    )
-                    self.db.add(contact)
-                    self.db.flush()
+                    if not contact:
+                        con_first = lead.first_name
+                        con_last = lead.last_name
+                        if not con_first and not con_last and con_name:
+                            parts = con_name.strip().split(maxsplit=1)
+                            con_first = parts[0]
+                            con_last = parts[1] if len(parts) > 1 else ""
+
+                        contact_code = get_next_sequence_id(self.db, "CONTACT", "CON", commit=False)
+                        contact = Contact(
+                            contact_id=contact_code,
+                            account_id=account.id,
+                            first_name=con_first,
+                            last_name=con_last,
+                            name=con_name,
+                            email=con_email,
+                            mobile_number=con_phone,
+                            whatsapp_number=lead.mobile_phone,
+                            designation=con_desig,
+                            is_primary=True,
+                            created_by_id=actor_user_id,
+                            updated_by_id=actor_user_id,
+                            is_active=True
+                        )
+                        self.db.add(contact)
+                        self.db.flush()
                 else:
                     raise ValidationError(f"Invalid contact action '{payload.contact.action}'. Must be 'reuse' or 'create'.")
             elif lead.contact_id:
@@ -2904,6 +3285,8 @@ class CrmService:
             opp_name = (payload.opportunityName or lead.lead_name or f"Opportunity - {account.name}").strip()
             req_types_str = ", ".join([rt.requirement_type for rt in lead.requirement_types]) if lead.requirement_types else "Consulting"
 
+            assigned_user_id = self._sanitize_user_id(payload.assignedToUserId or lead.assigned_to_user_id)
+
             opportunity = Opportunity(
                 opportunity_id=opp_code,
                 name=opp_name,
@@ -2911,14 +3294,16 @@ class CrmService:
                 contact_id=contact.id,  # Mandatory Primary Contact
                 originating_lead_id=lead.id,
                 status="Open",
+                stage="Qualify",
+                business_area=lead.business_area or "Biogas",
                 currency=lead.currency or "INR",
                 estimated_value=payload.estimatedValue,
                 description=payload.opportunityDescription or lead.description,
                 requirement_summary=lead.requirement_summary,
                 requirement_types=req_types_str,
-                assigned_to_user_id=payload.assignedToUserId or lead.assigned_to_user_id,
-                created_by_id=str(actor.id) if actor.id else None,
-                updated_by_id=str(actor.id) if actor.id else None
+                assigned_to_user_id=assigned_user_id,
+                created_by_id=actor_user_id,
+                updated_by_id=actor_user_id
             )
             self.db.add(opportunity)
             self.db.flush()
@@ -2932,12 +3317,15 @@ class CrmService:
             }
 
             # In approved 6-status model, qualification is decoupled from lifecycle_status
+            now_utc = datetime.now(timezone.utc)
             lead.account_id = account.id
             lead.contact_id = contact.id
             lead.opportunity_id = opportunity.id
-            lead.qualified_at = datetime.now(timezone.utc)
-            lead.qualified_by_id = str(actor.id) if actor.id else None
-            lead.updated_by_id = str(actor.id) if actor.id else None
+            lead.qualified_at = now_utc
+            lead.qualified_by_id = actor_user_id
+            lead.converted_at = now_utc
+            lead.converted_by_id = actor_user_id
+            lead.updated_by_id = actor_user_id
 
             # Optional client relationship update
             if payload.clientStatus and payload.clientStatus in ("New", "Existing"):
@@ -2983,12 +3371,26 @@ class CrmService:
         except (IntegrityError, OperationalError) as e:
             self.db.rollback()
             self.db.expire_all()
-            logger.warning(f"IntegrityError/OperationalError during lead qualification, checking if already qualified concurrently: {e}")
-            for attempt in range(25):
+
+            orig = getattr(e, "orig", None)
+            pgcode = getattr(orig, "pgcode", None)
+            diag = getattr(orig, "diag", None)
+            constraint_name = getattr(diag, "constraint_name", None) if diag else None
+            table_name = getattr(diag, "table_name", None) if diag else None
+            column_name = getattr(diag, "column_name", None) if diag else None
+            detail = getattr(diag, "message_detail", None) if diag else str(e)
+
+            logger.error(
+                f"[CRM QUALIFY INTEGRITY ERROR] Lead: {lead_id}, Actor: {actor.id if actor else None}, "
+                f"SQLSTATE: {pgcode}, Constraint: {constraint_name}, Table: {table_name}, Column: {column_name}, "
+                f"Detail: {detail}", exc_info=True
+            )
+
+            for attempt in range(15):
                 time.sleep(0.08)
                 self.db.expire_all()
-                recheck_lead = self.db.query(Lead).filter(Lead.id == lead_id).first()
-                if recheck_lead and recheck_lead.lifecycle_status == "Qualified" and recheck_lead.opportunity_id:
+                recheck_lead = self.db.query(Lead).filter(or_(Lead.id == lead_id, Lead.lead_id == lead_id)).first()
+                if recheck_lead and (recheck_lead.opportunity_id or recheck_lead.qualified_at or recheck_lead.converted_at):
                     opp = self.db.query(Opportunity).options(
                         joinedload(Opportunity.account),
                         joinedload(Opportunity.contact)
@@ -3015,7 +3417,11 @@ class CrmService:
                             } if opp.contact else None,
                             "opportunity": self._format_opportunity(opp)
                         }
-            raise ValidationError("Lead qualification failed due to a database integrity constraint.")
+
+            err_msg = f"Lead qualification failed due to a database integrity constraint ({constraint_name or 'constraint violation'})."
+            if detail and "already exists" in detail.lower():
+                err_msg = f"A record with this information already exists: {detail}"
+            raise ValidationError(err_msg)
         except Exception as e:
             self.db.rollback()
             logger.error(f"Unexpected error during lead qualification: {e}")
@@ -3082,6 +3488,84 @@ class CrmService:
                 "designation": contact.designation
             } if contact else None,
             "opportunity": self._format_opportunity(opportunity)
+        }
+
+    def unqualify_lead(
+        self,
+        actor: CurrentUser,
+        lead_id: str,
+        reason: str,
+        request: Optional[Request] = None
+    ) -> Dict[str, Any]:
+        lead = self.db.query(Lead).filter(
+            or_(Lead.id == lead_id, Lead.lead_id == lead_id)
+        ).with_for_update().first()
+
+        if not lead:
+            raise NotFoundError(f"Lead '{lead_id}' not found.")
+
+        clean_reason = (reason or "").strip()
+        if not clean_reason:
+            raise ValidationError("A disqualification reason is mandatory to unqualify a lead.")
+
+        if lead.opportunity_id or lead.qualified_at or lead.converted_at:
+            raise ValidationError(
+                f"Lead '{lead.lead_id}' has already been qualified/converted to an Opportunity and cannot be unqualified."
+            )
+
+        if lead.lifecycle_status == "Dormant" and lead.disqualification_reason:
+            raise ValidationError(
+                f"Lead '{lead.lead_id}' is already unqualified / dormant."
+            )
+
+        lead.disqualification_reason = clean_reason
+        lead.lifecycle_status = "Dormant"
+        lead.updated_by_id = str(actor.id) if actor.id else None
+
+        comm_code = get_next_sequence_id(self.db, "COMMUNICATION", "COM", commit=False)
+        comm = LeadCommunicationHistory(
+            communication_id=comm_code,
+            lead_id=lead.id,
+            communication_date=datetime.now(timezone.utc),
+            channel="System Event",
+            event_type="Status Change",
+            interaction_source="Lead Status Change",
+            subject="Lead Unqualified",
+            summary=f"Lead marked as unqualified. Reason: {clean_reason}",
+            created_by_id=str(actor.id) if actor.id else None
+        )
+        self.db.add(comm)
+
+        if hasattr(lead, 'nurturing_process') and lead.nurturing_process:
+            if lead.nurturing_process.nurturing_status == "Active":
+                lead.nurturing_process.nurturing_status = "Cancelled"
+                lead.nurturing_process.stopped_at = datetime.now(timezone.utc)
+                lead.nurturing_process.stop_reason = f"Lead unqualified: {clean_reason}"
+
+        self.db.commit()
+        self.db.refresh(lead)
+
+        try:
+            self.audit_service.log(
+                action="CRM_LEAD_DISQUALIFIED",
+                request=request,
+                performed_by_employee_id=str(actor.id) if actor.id else None,
+                performed_by_name=actor.name or actor.username,
+                role_used=actor.active_role,
+                target_info={
+                    "recordId": lead.id,
+                    "leadCode": lead.lead_id,
+                    "reason": clean_reason,
+                    "details": f"Unqualified lead {lead.lead_id}. Reason: {clean_reason}"
+                }
+            )
+        except Exception as e:
+            logger.warning(f"Audit log failed for lead unqualification {lead.lead_id}: {e}")
+
+        return {
+            "success": True,
+            "message": f"Lead '{lead.lead_id}' has been unqualified successfully.",
+            "lead": self._format_lead(lead)
         }
 
     def list_opportunities(
@@ -3491,14 +3975,20 @@ class CrmService:
             opp.status = "Lost"
             opp.stage = "Close"
             opp.loss_reason = payload.lossReason.strip()
+            opp.won_reason = None
+            opp.closed_by_id = str(actor.id) if actor.id else None
             close_dt = payload.actualCloseDate or datetime.now(timezone.utc)
             opp.actual_close_date = close_dt if isinstance(close_dt, datetime) else datetime.combine(close_dt, datetime.min.time(), tzinfo=timezone.utc)
         elif target_status == "Won":
             if new_stage != "Close":
                 raise ValidationError("Opportunity must be in 'Close' stage to be marked as Won.")
+            if not payload.wonReason or not payload.wonReason.strip():
+                raise ValidationError("Won reason is mandatory when marking an opportunity as Won.")
             opp.status = "Won"
             opp.stage = "Close"
+            opp.won_reason = payload.wonReason.strip()
             opp.loss_reason = None
+            opp.closed_by_id = str(actor.id) if actor.id else None
             close_dt = payload.actualCloseDate or datetime.now(timezone.utc)
             opp.actual_close_date = close_dt if isinstance(close_dt, datetime) else datetime.combine(close_dt, datetime.min.time(), tzinfo=timezone.utc)
         else:
@@ -3507,6 +3997,8 @@ class CrmService:
             opp.stage = new_stage
             opp.status = "Open"
             opp.loss_reason = None
+            opp.won_reason = None
+            opp.closed_by_id = None
             opp.actual_close_date = None
 
         opp.updated_by_id = str(actor.id) if actor.id else None
@@ -4210,12 +4702,17 @@ class CrmService:
         old_close_date = opp.actual_close_date.isoformat() if opp.actual_close_date else None
         old_loss_reason = opp.loss_reason
 
+        now_utc = datetime.now(timezone.utc)
         opp.status = "Open"
         opp.stage = target_stage
         opp.actual_close_date = None
         opp.loss_reason = None
+        opp.won_reason = None
+        opp.closed_by_id = None
+        opp.reopened_at = now_utc
+        opp.reopened_by_id = str(actor.id) if actor.id else None
         opp.updated_by_id = str(actor.id) if actor.id else None
-        opp.updated_at = datetime.now(timezone.utc)
+        opp.updated_at = now_utc
         self.db.commit()
         self.db.refresh(opp)
 
@@ -4842,11 +5339,14 @@ class CrmService:
             communication_date=comm_date,
             channel=payload.channel,
             event_type=payload.eventType,
+            subject=payload.eventType,
             summary=payload.summary.strip() if payload.summary else None,
             outcome=payload.outcome.strip() if payload.outcome else None,
             next_action=payload.nextAction.strip() if payload.nextAction else None,
             follow_up_date=payload.followUpDate,
-            created_by_id=str(actor.id) if actor.id else None
+            interaction_source="Manual",
+            created_by_id=str(actor.id) if actor.id else None,
+            created_at=datetime.now(timezone.utc)
         )
         self.db.add(comm)
 

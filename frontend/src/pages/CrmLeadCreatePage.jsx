@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -61,6 +61,11 @@ export default function CrmLeadCreatePage() {
   const [isAdditionalInfoOpen, setIsAdditionalInfoOpen] = useState(true);
   const [isDirty, setIsDirty] = useState(false);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const clientRequestIdRef = useRef(
+    typeof crypto !== 'undefined' && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `req_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+  );
 
   // Form State across 5 sections
   const [formData, setFormData] = useState({
@@ -292,6 +297,7 @@ export default function CrmLeadCreatePage() {
     setSuccessMsg(null);
 
     const payload = {
+      clientRequestId: !isEditMode ? clientRequestIdRef.current : undefined,
       topic: formData.topic.trim() || undefined,
       leadName: formData.topic.trim() || undefined,
       firstName: formData.firstName.trim() || undefined,
@@ -343,12 +349,43 @@ export default function CrmLeadCreatePage() {
       }
     } catch (err) {
       console.error('Lead save error:', err);
+      const isTimeout = err.code === 'ECONNABORTED' || (err.message && err.message.toLowerCase().includes('timeout')) || err.response?.status === 504;
+      const isNetworkErr = err.message === 'Network Error' || err.code === 'ERR_NETWORK';
+
+      // Automatic Reconciliation Guard: On connection delays or proxy timeouts, check if backend already persisted the lead
+      if (!isEditMode && (isTimeout || isNetworkErr)) {
+        try {
+          const searchParam = formData.companyName?.trim() || formData.contactEmail?.trim() || formData.topic?.trim() || '';
+          if (searchParam) {
+            const checkRes = await crmService.getLeads({ search: searchParam, pageSize: 5 });
+            const list = checkRes.data?.leads || [];
+            const match = list.find(l => 
+              (formData.companyName?.trim() && (l.companyName || '').toLowerCase() === formData.companyName.trim().toLowerCase()) ||
+              (formData.contactEmail?.trim() && (l.contactEmail || '').toLowerCase() === formData.contactEmail.trim().toLowerCase())
+            );
+            if (match) {
+              setIsDirty(false);
+              setSubmitting(false);
+              const leadCode = match.leadId || match.lead_id || 'Lead';
+              navigate(shouldClose ? '/crm/leads' : `/crm/leads/${match.id}`, {
+                state: {
+                  successMessage: `Lead ${leadCode} was saved successfully.`
+                }
+              });
+              return;
+            }
+          }
+        } catch (reconcileErr) {
+          console.warn('Safe reconciliation lookup error:', reconcileErr);
+        }
+      }
+
       if (err.response) {
         const serverMsg = err.response.data?.message || err.response.data?.detail || 'Validation error while saving lead.';
         setError(serverMsg);
-      } else if (err.code === 'ECONNABORTED' || (err.message && err.message.toLowerCase().includes('timeout'))) {
-        setError('Request timed out while waiting for the server. The lead may have already been saved. Please verify the Leads list before retrying to prevent duplicate records.');
-      } else if (err.message === 'Network Error' || err.code === 'ERR_NETWORK') {
+      } else if (isTimeout) {
+        setError('Server took too long to confirm the response. Safe duplicate prevention is enabled. Click "Save" again to verify or save your lead without creating a duplicate.');
+      } else if (isNetworkErr) {
         setError('Connection Error — Unable to reach the server. Please check your network connection and try again.');
       } else {
         setError(err.message || 'An unexpected error occurred while saving the lead.');
@@ -366,7 +403,7 @@ export default function CrmLeadCreatePage() {
 
     if (shouldClose) {
       try {
-        navigate('/crm/leads', {
+        navigate(isEditMode ? `/crm/leads/${id}` : '/crm/leads', {
           state: {
             successMessage: isEditMode
               ? `Lead ${leadCode} updated successfully.`
@@ -398,7 +435,7 @@ export default function CrmLeadCreatePage() {
     if (isDirty) {
       setShowCancelConfirm(true);
     } else {
-      navigate('/crm/leads');
+      navigate(isEditMode ? `/crm/leads/${id}` : '/crm/leads');
     }
   };
 
@@ -528,7 +565,7 @@ export default function CrmLeadCreatePage() {
               <button
                 type="button"
                 className="btn btn-danger"
-                onClick={() => navigate('/crm/leads')}
+                onClick={() => navigate(isEditMode ? `/crm/leads/${id}` : '/crm/leads')}
               >
                 Discard & Leave
               </button>

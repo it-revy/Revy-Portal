@@ -140,21 +140,25 @@ select.form-control,
   appearance: none;
   -webkit-appearance: none;
   -moz-appearance: none;
-  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none'%3e%3cpath d='M6 8l4 4 4-4' stroke='%23475569' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3e%3c/svg%3e");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 0.75rem center;
   background-size: 16px 16px;
   padding-right: 2.25rem !important;
   cursor: pointer;
+  height: var(--control-height-md, 38px);
+  line-height: normal;
+  border-radius: var(--crm-radius, 6px);
+  box-sizing: border-box;
 }
 
 /* Compact filter select variant */
 .crm-select-sm,
 select.form-control.crm-select-sm {
-  height: 36px;
-  padding: 0.35rem 0.75rem;
-  padding-right: 2rem !important;
-  font-size: 0.825rem;
+  height: var(--control-height-sm, 34px);
+  padding: 0 2rem 0 0.75rem !important;
+  font-size: var(--font-size-sm, 0.875rem);
+  line-height: normal;
 }
 
 /* Styled Textareas */

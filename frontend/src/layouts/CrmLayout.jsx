@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Navigate, Link } from 'react-router-dom';
+import { Navigate, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import CrmSidebar from '../components/CrmSidebar';
 import Header from '../components/Header';
@@ -9,6 +9,7 @@ import ErrorBoundary from '../components/ErrorBoundary';
 export default function CrmLayout({ children, requiredPermission = null, requiredRole = null }) {
 
   const { user, loading, hasPermission, hasRole, hasModuleAccess, isGlobalAdmin } = useAuth();
+  const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try {
@@ -123,7 +124,7 @@ export default function CrmLayout({ children, requiredPermission = null, require
           sidebarCollapsed={sidebarCollapsed}
           onToggleCollapse={toggleSidebarCollapse}
         />
-        <ErrorBoundary level="module" title="CRM Workspace Error">
+        <ErrorBoundary level="module" title="CRM Workspace Error" resetKey={location.pathname}>
           {children}
         </ErrorBoundary>
       </div>

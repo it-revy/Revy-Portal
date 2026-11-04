@@ -37,12 +37,26 @@ class Account(Base):
     email = Column(String(255), nullable=True)
     address = Column(Text, nullable=True)
     site_name = Column(String(255), nullable=True)
+    business_area = Column(String(50), nullable=True)  # Biogas, WWT
+    country = Column(String(100), nullable=True)
+    state = Column(String(100), nullable=True)
+    city = Column(String(100), nullable=True)
+    billing_address = Column(Text, nullable=True)
+    shipping_address = Column(Text, nullable=True)
+    gst_number = Column(String(30), nullable=True)
+    pan_number = Column(String(20), nullable=True)
+    parent_account_id = Column(String(36), ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     contacts = relationship("Contact", back_populates="account", cascade="all, delete-orphan")
     leads = relationship("Lead", back_populates="account")
+    parent_account = relationship("Account", remote_side=[id], backref="sub_accounts")
+    created_by = relationship("User", foreign_keys=[created_by_id])
+    updated_by = relationship("User", foreign_keys=[updated_by_id])
 
 
 class Contact(Base):
@@ -55,12 +69,20 @@ class Contact(Base):
     email = Column(String(255), nullable=True, index=True)
     mobile_number = Column(String(50), nullable=True, index=True)
     designation = Column(String(100), nullable=True)
+    first_name = Column(String(100), nullable=True)
+    last_name = Column(String(100), nullable=True)
+    whatsapp_number = Column(String(30), nullable=True)
+    is_primary = Column(Boolean, default=False, nullable=False)
+    created_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     account = relationship("Account", back_populates="contacts")
     leads = relationship("Lead", back_populates="contact")
+    created_by = relationship("User", foreign_keys=[created_by_id])
+    updated_by = relationship("User", foreign_keys=[updated_by_id])
 
 
 class LeadRequirementType(Base):
@@ -130,6 +152,10 @@ class Opportunity(Base):
     status = Column(String(50), nullable=False, default="Open", index=True)  # Open, Won, Lost
     stage = Column(String(50), nullable=False, default="Qualify", index=True)  # Qualify, Develop, Propose, Close
     loss_reason = Column(Text, nullable=True)
+    won_reason = Column(Text, nullable=True)
+    closed_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    reopened_at = Column(DateTime, nullable=True)
+    reopened_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     business_area = Column(String(50), nullable=True, default="Biogas")  # Biogas, Wastewater Treatment (WWT), R&D Lab, Other
     expected_close_date = Column(Date, nullable=True, index=True)
     actual_close_date = Column(DateTime, nullable=True)
@@ -154,6 +180,8 @@ class Opportunity(Base):
     assigned_to = relationship("User", foreign_keys=[assigned_to_user_id])
     created_by = relationship("User", foreign_keys=[created_by_id])
     updated_by = relationship("User", foreign_keys=[updated_by_id])
+    closed_by = relationship("User", foreign_keys=[closed_by_id])
+    reopened_by = relationship("User", foreign_keys=[reopened_by_id])
 
     consulting_engagements = relationship("ConsultingEngagement", back_populates="opportunity")
     sample_submissions = relationship("SampleSubmission", back_populates="opportunity")
@@ -214,11 +242,14 @@ class Lead(Base):
     lifecycle_status = Column(String(50), nullable=False, default="Enquiry", index=True)
     legacy_lifecycle_status = Column(String(50), nullable=True)
     remarks = Column(Text, nullable=True)
+    disqualification_reason = Column(Text, nullable=True)
 
-    # Lead Qualification Links
+    # Lead Qualification & Conversion Links
     opportunity_id = Column(String(36), ForeignKey("crm_opportunities.id", ondelete="SET NULL"), nullable=True, index=True)
     qualified_at = Column(DateTime, nullable=True)
     qualified_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    converted_at = Column(DateTime, nullable=True)
+    converted_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     next_follow_up_date = Column(Date, nullable=True, index=True)
     next_follow_up_action = Column(Text, nullable=True)
@@ -249,6 +280,7 @@ class Lead(Base):
     created_by = relationship("User", foreign_keys=[created_by_id])
     updated_by = relationship("User", foreign_keys=[updated_by_id])
     qualified_by = relationship("User", foreign_keys=[qualified_by_id])
+    converted_by = relationship("User", foreign_keys=[converted_by_id])
     opportunity = relationship("Opportunity", foreign_keys=[opportunity_id], backref="originating_lead_ref")
     requirement_types = relationship(
         "LeadRequirementType",
@@ -268,6 +300,18 @@ class Lead(Base):
         cascade="all, delete-orphan",
         order_by="desc(LeadCommunicationHistory.communication_date)"
     )
+    nurturing_process = relationship(
+        "LeadNurturingProcess",
+        back_populates="lead",
+        uselist=False,
+        cascade="all, delete-orphan"
+    )
+    nurturing_activities = relationship(
+        "NurturingActivity",
+        back_populates="lead",
+        cascade="all, delete-orphan",
+        order_by="NurturingActivity.stage_number"
+    )
 
 
 class LeadCommunicationHistory(Base):
@@ -283,12 +327,140 @@ class LeadCommunicationHistory(Base):
     outcome = Column(Text, nullable=True)
     next_action = Column(Text, nullable=True)
     follow_up_date = Column(Date, nullable=True)
-    
+
+    # Unified Timeline & Nurturing Integration Fields
+    subject = Column(String(255), nullable=True)
+    interaction_source = Column(String(50), nullable=False, default="Manual")  # Manual, Lead Nurturing, Customer Response, Lead Status Change, System Event
+    nurturing_activity_id = Column(String(36), ForeignKey("crm_nurturing_activities.id", ondelete="SET NULL"), nullable=True, unique=True, index=True)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
     created_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     lead = relationship("Lead", back_populates="communications")
     created_by = relationship("User", foreign_keys=[created_by_id])
+    nurturing_activity = relationship("NurturingActivity", back_populates="interaction")
+
+    @property
+    def interaction_type(self):
+        return self.channel
+
+    @property
+    def description(self):
+        return self.summary
+
+    @property
+    def interaction_at(self):
+        return self.communication_date
+
+
+class LeadNurturingProcess(Base):
+    __tablename__ = "crm_lead_nurturing"
+    __table_args__ = (
+        UniqueConstraint("lead_id", name="uq_crm_lead_nurturing_lead_id"),
+    )
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    nurturing_id = Column(String(50), unique=True, index=True, nullable=False)  # NUR-00001
+    lead_id = Column(String(36), ForeignKey("leads.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    assigned_to_user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    current_stage = Column(Integer, nullable=False, default=1)
+    nurturing_status = Column(String(50), nullable=False, default="Active", index=True)  # Active, Paused, Completed, Cancelled
+    started_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    next_activity_date = Column(Date, nullable=True, index=True)
+    next_activity_id = Column(String(36), nullable=True)
+    last_activity_at = Column(DateTime, nullable=True)
+    paused_at = Column(DateTime, nullable=True)
+    pause_reason = Column(Text, nullable=True)
+    stopped_at = Column(DateTime, nullable=True)
+    stop_reason = Column(Text, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    restart_count = Column(Integer, nullable=False, default=0)
+    review_outcome = Column(String(50), nullable=True)
+    review_notes = Column(Text, nullable=True)
+    created_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    lead = relationship("Lead", back_populates="nurturing_process")
+    assigned_to = relationship("User", foreign_keys=[assigned_to_user_id])
+    created_by = relationship("User", foreign_keys=[created_by_id])
+    updated_by = relationship("User", foreign_keys=[updated_by_id])
+    activities = relationship(
+        "NurturingActivity",
+        back_populates="nurturing_process",
+        cascade="all, delete-orphan",
+        order_by="NurturingActivity.stage_number"
+    )
+
+    @property
+    def process_status(self):
+        return self.nurturing_status
+
+    @process_status.setter
+    def process_status(self, val):
+        self.nurturing_status = val
+
+    @property
+    def current_stage_order(self):
+        return self.current_stage
+
+
+class NurturingActivity(Base):
+    __tablename__ = "crm_nurturing_activities"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    activity_id = Column(String(50), unique=True, index=True, nullable=False)  # ACT-00001
+    nurturing_id = Column(String(36), ForeignKey("crm_lead_nurturing.id", ondelete="CASCADE"), nullable=False, index=True)
+    lead_id = Column(String(36), ForeignKey("leads.id", ondelete="CASCADE"), nullable=False, index=True)
+    stage_number = Column(Integer, nullable=False, index=True)
+    activity_type = Column(String(50), nullable=False)  # Email, Phone Call, Meeting, Review, Waiting Period, Note, Other
+    subject = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    scheduled_at = Column(DateTime, nullable=False)
+    due_date = Column(Date, nullable=False, index=True)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True, index=True)
+    activity_status = Column(String(50), nullable=False, default="Pending", index=True)  # Pending, In Progress, Completed, Overdue, Skipped, Cancelled
+    outcome = Column(String(100), nullable=True)
+    notes = Column(Text, nullable=True)
+    recipient = Column(String(255), nullable=True)
+    email_message_reference = Column(String(255), nullable=True)
+    skip_reason = Column(Text, nullable=True)
+    reschedule_reason = Column(Text, nullable=True)
+    callback_requested = Column(Boolean, default=False, nullable=False)
+    callback_date = Column(Date, nullable=True)
+    meeting_datetime = Column(DateTime, nullable=True)
+    customer_response_date = Column(DateTime, nullable=True)
+    customer_response_channel = Column(String(50), nullable=True)
+    customer_response_notes = Column(Text, nullable=True)
+    created_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    completed_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    nurturing_process = relationship("LeadNurturingProcess", back_populates="activities")
+    lead = relationship("Lead", back_populates="nurturing_activities")
+    created_by = relationship("User", foreign_keys=[created_by_id])
+    completed_by = relationship("User", foreign_keys=[completed_by_id])
+    interaction = relationship("LeadCommunicationHistory", back_populates="nurturing_activity", uselist=False)
+
+    @property
+    def stage_order(self):
+        return self.stage_number
+
+    @property
+    def activity_title(self):
+        return self.subject
+
+    @property
+    def due_at(self):
+        return self.due_date
+
+    @property
+    def completion_notes(self):
+        return self.notes
 
 
 class CrmSequence(Base):
@@ -589,3 +761,24 @@ class OpportunityQuotation(Base):
     sent_by = relationship("User", foreign_keys=[sent_by_id])
     created_by = relationship("User", foreign_keys=[created_by_id])
     updated_by = relationship("User", foreign_keys=[updated_by_id])
+
+
+class CrmIdempotencyRecord(Base):
+    __tablename__ = "crm_idempotency_records"
+    __table_args__ = (
+        UniqueConstraint("user_id", "client_request_id", name="uq_crm_idempotency_user_request"),
+        Index("ix_crm_idempotency_user_req", "user_id", "client_request_id"),
+    )
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    client_request_id = Column(String(100), nullable=False, index=True)
+    lead_id = Column(String(36), ForeignKey("leads.id", ondelete="SET NULL"), nullable=True, index=True)
+    status = Column(String(20), nullable=False, default="PROCESSING")  # PROCESSING, COMPLETED, FAILED
+    response_code = Column(Integer, nullable=True, default=201)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    user = relationship("User", foreign_keys=[user_id])
+    lead = relationship("Lead", foreign_keys=[lead_id])

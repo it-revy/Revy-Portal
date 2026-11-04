@@ -134,7 +134,26 @@ class AccountCreate(BaseModel):
     email: Optional[str] = Field(None, max_length=255)
     address: Optional[str] = None
     location: Optional[str] = Field(None, max_length=255)
+    businessArea: Optional[str] = Field(None, description="Biogas or WWT")
+    country: Optional[str] = Field(None, max_length=100)
+    state: Optional[str] = Field(None, max_length=100)
+    city: Optional[str] = Field(None, max_length=100)
+    billingAddress: Optional[str] = None
+    shippingAddress: Optional[str] = None
+    gstNumber: Optional[str] = Field(None, max_length=30)
+    panNumber: Optional[str] = Field(None, max_length=20)
+    parentAccountId: Optional[str] = None
     confirmDuplicate: bool = False
+
+    @field_validator("businessArea")
+    @classmethod
+    def validate_account_business_area(cls, v: Optional[str]) -> Optional[str]:
+        if not v or not v.strip():
+            return None
+        clean = v.strip()
+        if clean not in ("Biogas", "WWT"):
+            raise ValueError("Business Area must be 'Biogas' or 'WWT'.")
+        return clean
 
     @field_validator("name")
     @classmethod
@@ -169,8 +188,27 @@ class AccountUpdate(BaseModel):
     email: Optional[str] = Field(None, max_length=255)
     address: Optional[str] = None
     location: Optional[str] = Field(None, max_length=255)
+    businessArea: Optional[str] = Field(None, description="Biogas or WWT")
+    country: Optional[str] = Field(None, max_length=100)
+    state: Optional[str] = Field(None, max_length=100)
+    city: Optional[str] = Field(None, max_length=100)
+    billingAddress: Optional[str] = None
+    shippingAddress: Optional[str] = None
+    gstNumber: Optional[str] = Field(None, max_length=30)
+    panNumber: Optional[str] = Field(None, max_length=20)
+    parentAccountId: Optional[str] = None
     isActive: Optional[bool] = None
     confirmDuplicate: bool = False
+
+    @field_validator("businessArea")
+    @classmethod
+    def validate_account_business_area(cls, v: Optional[str]) -> Optional[str]:
+        if not v or not v.strip():
+            return None
+        clean = v.strip()
+        if clean not in ("Biogas", "WWT"):
+            raise ValueError("Business Area must be 'Biogas' or 'WWT'.")
+        return clean
 
     @field_validator("name")
     @classmethod
@@ -209,6 +247,19 @@ class AccountItem(BaseModel):
     email: Optional[str] = None
     address: Optional[str] = None
     location: Optional[str] = None
+    businessArea: Optional[str] = None
+    country: Optional[str] = None
+    state: Optional[str] = None
+    city: Optional[str] = None
+    billingAddress: Optional[str] = None
+    shippingAddress: Optional[str] = None
+    gstNumber: Optional[str] = None
+    panNumber: Optional[str] = None
+    parentAccountId: Optional[str] = None
+    parentAccount: Optional[Dict[str, Any]] = None
+    subAccounts: Optional[List[Dict[str, Any]]] = None
+    createdById: Optional[str] = None
+    updatedById: Optional[str] = None
     isActive: bool = True
     contactCount: int = 0
     leadCount: int = 0
@@ -262,20 +313,32 @@ class AccountMatchResponse(BaseModel):
 # =========================================================================
 
 class ContactCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255)
+    firstName: Optional[str] = Field(None, max_length=100)
+    lastName: Optional[str] = Field(None, max_length=100)
+    name: Optional[str] = Field(None, max_length=255)
     accountId: Optional[str] = None
     email: Optional[str] = Field(None, max_length=255)
     mobileNumber: Optional[str] = Field(None, max_length=50)
+    whatsappNumber: Optional[str] = Field(None, max_length=30)
     designation: Optional[str] = Field(None, max_length=100)
+    isPrimary: bool = False
     confirmDuplicate: bool = False
 
-    @field_validator("name")
-    @classmethod
-    def validate_contact_name(cls, v: str) -> str:
-        clean = v.strip()
-        if not clean:
-            raise ValueError("Contact name cannot be empty.")
-        return clean
+    @model_validator(mode="after")
+    def compute_contact_name(self) -> "ContactCreate":
+        fn = (self.firstName or "").strip()
+        ln = (self.lastName or "").strip()
+        computed = f"{fn} {ln}".strip()
+        if computed:
+            self.name = computed
+        elif self.name and self.name.strip():
+            self.name = self.name.strip()
+            parts = self.name.split(None, 1)
+            self.firstName = parts[0]
+            self.lastName = parts[1] if len(parts) > 1 else None
+        else:
+            raise ValueError("At least first name or last name is required.")
+        return self
 
     @field_validator("email")
     @classmethod
@@ -296,11 +359,15 @@ class ContactCreate(BaseModel):
 
 
 class ContactUpdate(BaseModel):
+    firstName: Optional[str] = Field(None, max_length=100)
+    lastName: Optional[str] = Field(None, max_length=100)
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     accountId: Optional[str] = None
     email: Optional[str] = Field(None, max_length=255)
     mobileNumber: Optional[str] = Field(None, max_length=50)
+    whatsappNumber: Optional[str] = Field(None, max_length=30)
     designation: Optional[str] = Field(None, max_length=100)
+    isPrimary: Optional[bool] = None
     isActive: Optional[bool] = None
     confirmDuplicate: bool = False
 
@@ -338,10 +405,16 @@ class ContactItem(BaseModel):
     accountId: Optional[str] = None
     accountName: Optional[str] = None
     account: Optional[Dict[str, Any]] = None
+    firstName: Optional[str] = None
+    lastName: Optional[str] = None
     name: str
     email: Optional[str] = None
     mobileNumber: Optional[str] = None
+    whatsappNumber: Optional[str] = None
     designation: Optional[str] = None
+    isPrimary: bool = False
+    createdById: Optional[str] = None
+    updatedById: Optional[str] = None
     isActive: bool = True
     opportunityCount: int = 0
     opportunities: Optional[List[Dict[str, Any]]] = None
@@ -465,6 +538,9 @@ def normalize_and_validate_req_types(
 
 
 class LeadCreate(BaseModel):
+    # Idempotency Key (Optional)
+    clientRequestId: Optional[str] = None
+
     # Topic / Title (Optional)
     leadName: Optional[str] = None
 
@@ -664,9 +740,14 @@ class LeadCreate(BaseModel):
         return clean
 
 
+class LeadUnqualifyRequest(BaseModel):
+    reason: str = Field(..., min_length=1, description="Mandatory disqualification reason")
+
+
 class LeadUpdate(BaseModel):
     # Topic / Title
     leadName: Optional[str] = None
+    disqualificationReason: Optional[str] = None
 
     # Section 1 - Contact
     firstName: Optional[str] = None
@@ -854,8 +935,8 @@ class LeadStatusTransitionRequest(BaseModel):
 
 class LeadAccountSummary(BaseModel):
     id: str
-    accountId: str
-    name: str
+    accountId: Optional[str] = None
+    name: Optional[str] = "Unnamed Account"
     industry: Optional[str] = None
     website: Optional[str] = None
     phone: Optional[str] = None
@@ -865,8 +946,8 @@ class LeadAccountSummary(BaseModel):
 
 class LeadContactSummary(BaseModel):
     id: str
-    contactId: str
-    name: str
+    contactId: Optional[str] = None
+    name: Optional[str] = "Unnamed Contact"
     designation: Optional[str] = None
     email: Optional[str] = None
     mobileNumber: Optional[str] = None
@@ -885,14 +966,14 @@ class LeadItem(BaseModel):
     id: str
     leadId: str
     leadName: Optional[str] = None
-    displayName: str
-    businessArea: str
+    displayName: Optional[str] = "Untitled Lead"
+    businessArea: Optional[str] = "Biogas"
     requirementType: Optional[str] = None
     requirementTypes: List[str] = []
     requirementSummary: Optional[str] = None
     requestedProductService: Optional[str] = None
-    leadSource: str
-    lifecycleStatus: str
+    leadSource: Optional[str] = "Website"
+    lifecycleStatus: Optional[str] = "Enquiry"
     communicationChannel: Optional[str] = None
     remarks: Optional[str] = None
     connectedDate: Optional[str] = None
@@ -916,14 +997,15 @@ class LeadItem(BaseModel):
     # Section 2 Direct Company Fields
     companyName: Optional[str] = None
     companyEmail: Optional[str] = None
+    disqualificationReason: Optional[str] = None
 
     # Section 3 & 4 Fields
     rating: Optional[str] = None
-    clientStatus: str = "New"
+    clientStatus: Optional[str] = "New"
     description: Optional[str] = None
     industry: Optional[str] = None
     numberOfEmployees: Optional[int] = None
-    currency: str = "INR"
+    currency: Optional[str] = "INR"
 
     # Section 5 Contact Methods
     contactMethods: List[str] = []
@@ -957,6 +1039,10 @@ class LeadItem(BaseModel):
     qualifiedAt: Optional[str] = None
     qualifiedById: Optional[str] = None
     qualifiedByName: Optional[str] = None
+    convertedAt: Optional[str] = None
+    convertedById: Optional[str] = None
+    convertedByName: Optional[str] = None
+    isConverted: bool = False
 
 
 class LeadListResponse(BaseModel):
@@ -978,6 +1064,45 @@ class LeadDetailResponse(BaseModel):
 # =========================================================================
 # OPPORTUNITY & QUALIFICATION SCHEMAS
 # =========================================================================
+
+class LeadOpportunityCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    accountId: Optional[str] = None
+    contactId: Optional[str] = None
+    originatingLeadId: Optional[str] = None
+    status: Optional[str] = "Open"
+    stage: Optional[str] = "Qualify"
+    lossReason: Optional[str] = None
+    businessArea: Optional[str] = "Biogas"
+    expectedCloseDate: Optional[str] = None
+    currency: Optional[str] = "INR"
+    estimatedValue: Optional[float] = None
+    description: Optional[str] = None
+    requirementSummary: Optional[str] = None
+    requirementTypes: Optional[List[str]] = None
+    assignedToUserId: Optional[str] = None
+    subStatus: Optional[str] = None
+    sub_status: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_lead_opportunity_create(self) -> "LeadOpportunityCreate":
+        if self.estimatedValue is not None and self.estimatedValue < 0:
+            raise ValueError("Estimated amount cannot be negative.")
+
+        canonical_stages = ["Enquiry", "Qualify", "Develop", "Propose/Offer", "Negotiate", "Close"]
+        stg = self.stage
+        if stg == "Propose":
+            stg = "Propose/Offer"
+            self.stage = stg
+        if stg and stg not in canonical_stages:
+            raise ValueError(f"Invalid stage '{stg}'. Permitted stages are: {', '.join(canonical_stages)}")
+
+        stat = (self.status or "Open").strip()
+        if stat not in ("Open", "Won", "Lost"):
+            raise ValueError(f"Invalid status '{stat}'. Permitted statuses are Open, Won, Lost.")
+
+        return self
+
 
 class OpportunityCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
@@ -1091,6 +1216,12 @@ class OpportunityItem(BaseModel):
     status: str = "Open"
     stage: str = "Qualify"
     lossReason: Optional[str] = None
+    wonReason: Optional[str] = None
+    closedById: Optional[str] = None
+    closedByName: Optional[str] = None
+    reopenedAt: Optional[str] = None
+    reopenedById: Optional[str] = None
+    reopenedByName: Optional[str] = None
     subStatus: Optional[str] = None
     sub_status: Optional[str] = None
     businessArea: Optional[str] = "Biogas"
@@ -1133,6 +1264,7 @@ class OpportunityStageTransitionRequest(BaseModel):
     newStage: str = Field(..., description="Target stage: Enquiry, Qualify, Develop, Propose/Offer, Negotiate, Close")
     status: Optional[str] = Field(None, description="Optional target status: Open, Won, or Lost")
     lossReason: Optional[str] = Field(None, description="Required when status is Lost")
+    wonReason: Optional[str] = Field(None, description="Required when status is Won")
     actualCloseDate: Optional[py_date] = None
     remarks: Optional[str] = None
 
@@ -1166,6 +1298,8 @@ class OpportunityStageTransitionRequest(BaseModel):
             pass
         if stat == "Lost" and not (self.lossReason and self.lossReason.strip()):
             raise ValueError("Loss reason is mandatory when marking an opportunity as Lost.")
+        if stat == "Won" and not (self.wonReason and self.wonReason.strip()):
+            raise ValueError("Won reason is mandatory when marking an opportunity as Won.")
 
         return self
 
@@ -1175,6 +1309,7 @@ class OpportunityUpdateRequest(BaseModel):
     stage: Optional[str] = None
     status: Optional[str] = None
     lossReason: Optional[str] = None
+    wonReason: Optional[str] = None
     accountId: Optional[str] = None
     contactId: Optional[str] = None
     currency: Optional[str] = None
@@ -1363,6 +1498,7 @@ class LeadQualifyAccountChoice(BaseModel):
     phone: Optional[str] = None
     industry: Optional[str] = None
     address: Optional[str] = None
+    businessArea: Optional[str] = None
 
 
 class LeadQualifyContactChoice(BaseModel):
@@ -1599,3 +1735,98 @@ class RevenueMetricsResponse(BaseModel):
     lostOpportunityValueByCurrency: Dict[str, float]
     byStage: List[PipelineStageMetrics]
     labelingNotice: str = "Won Opportunity Value represents signed commercial commitments and does not represent collected cash or recognized accounting revenue."
+
+
+# =========================================================================
+# LEAD NURTURING & UNIFIED TIMELINE SCHEMAS
+# =========================================================================
+
+class NurturingActivityCompleteRequest(BaseModel):
+    notes: Optional[str] = Field(None, description="Completion notes or interaction summary")
+    outcome: Optional[str] = Field(None, description="Activity completion outcome")
+    emailMessageReference: Optional[str] = Field(None, description="External email ID, subject or delivery reference")
+
+
+class NurturingActivityRescheduleRequest(BaseModel):
+    newDueDate: py_date = Field(..., description="New scheduled due date (YYYY-MM-DD)")
+    reason: str = Field(..., min_length=1, description="Mandatory reason for rescheduling")
+
+
+class NurturingActivitySkipRequest(BaseModel):
+    reason: str = Field(..., min_length=1, description="Mandatory business reason for skipping this nurturing activity")
+
+
+class CustomerResponseRequest(BaseModel):
+    channel: str = Field(..., description="Communication channel: 'Email', 'Phone / Call', 'WhatsApp', 'In-Person Meeting', etc.")
+    responseNotes: str = Field(..., min_length=1, description="Details and customer feedback received")
+    outcome: str = Field(..., description="Customer interest level or sentiment: 'Interested', 'Not Interested', 'Callback Requested', 'Information Requested', etc.")
+    targetLifecycleStatus: Optional[str] = Field(None, description="Optional approved lifecycle status: 'Negotiation', 'Offer', 'Dormant', etc.")
+    pauseNurturing: bool = Field(True, description="Whether to automatically pause nurturing workflow upon recording response")
+
+
+class NurturingPauseRequest(BaseModel):
+    reason: Optional[str] = Field(None, description="Reason for pausing nurturing")
+
+
+class NurturingResumeRequest(BaseModel):
+    nextDueDate: Optional[py_date] = Field(None, description="Rescheduled next due date (default: today + 5 calendar days)")
+
+
+class NurturingCancelRequest(BaseModel):
+    reason: str = Field(..., min_length=1, description="Mandatory reason for cancelling nurturing")
+
+
+class NurturingActivityItem(BaseModel):
+    id: str
+    activityId: str
+    stageNumber: int
+    subject: str
+    activityType: str
+    description: Optional[str] = None
+    dueDate: Optional[str] = None
+    status: str
+    isOverdue: bool = False
+    completedAt: Optional[str] = None
+    notes: Optional[str] = None
+    outcome: Optional[str] = None
+    skipReason: Optional[str] = None
+    rescheduleReason: Optional[str] = None
+
+
+class NextActivityItem(BaseModel):
+    processStatus: str
+    currentStage: int
+    currentStageName: Optional[str] = None
+    activityId: Optional[str] = None
+    activityCode: Optional[str] = None
+    stageNumber: Optional[int] = None
+    subject: Optional[str] = None
+    activityType: Optional[str] = None
+    description: Optional[str] = None
+    dueDate: Optional[str] = None
+    status: Optional[str] = None
+    isOverdue: bool = False
+    overdueDays: int = 0
+    remainingDays: int = 0
+    owner: Optional[Dict[str, Any]] = None
+    isPaused: Optional[bool] = None
+    pauseReason: Optional[str] = None
+    pausedAt: Optional[str] = None
+    isTerminal: Optional[bool] = None
+    stopReason: Optional[str] = None
+
+
+class NurturingDetailsResponse(BaseModel):
+    success: bool = True
+    nurturing: Dict[str, Any]
+
+
+class NextActivityResponse(BaseModel):
+    success: bool = True
+    nextActivity: Optional[Dict[str, Any]] = None
+
+
+class UnifiedTimelineResponse(BaseModel):
+    success: bool = True
+    count: int
+    timeline: List[Dict[str, Any]]

@@ -163,15 +163,15 @@ const CrmSidebar = ({
           {(!isCollapsed || isMobileOpen) && <span>Leads</span>}
         </NavLink>
 
-        {/* 3. Opportunities */}
+        {/* 3. Sales Funnel */}
         <NavLink
           to="/crm/opportunities"
           onClick={handleLinkClick}
           className={`nav-item ${isOpportunitiesActive ? 'active' : ''}`}
-          title="Opportunities"
+          title="Sales Funnel"
         >
           <Briefcase size={18} />
-          {(!isCollapsed || isMobileOpen) && <span>Opportunities</span>}
+          {(!isCollapsed || isMobileOpen) && <span>Sales Funnel</span>}
         </NavLink>
 
         {/* 4. Accounts */}

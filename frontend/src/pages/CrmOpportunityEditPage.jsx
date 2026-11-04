@@ -9,7 +9,10 @@ import {
   FileText,
   CheckCircle2,
   Lock,
-  ArrowRight
+  ArrowRight,
+  TrendingUp,
+  Briefcase,
+  Building
 } from 'lucide-react';
 import crmService from '../services/crmService';
 import { PageHeader, Button } from '../components/ui';
@@ -434,7 +437,7 @@ export default function CrmOpportunityEditPage() {
         subtitle="Review and confirm stage progressions, commercial terms, and account relationships."
         breadcrumbs={[
           { label: 'CRM', to: '/crm/dashboard' },
-          { label: 'Opportunities', to: '/crm/opportunities' },
+          { label: 'Sales Funnel', to: '/crm/opportunities' },
           { label: formData.opportunityCode || 'Details' },
           { label: 'Edit' }
         ]}

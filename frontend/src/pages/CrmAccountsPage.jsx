@@ -56,6 +56,15 @@ export default function CrmAccountsPage() {
     email: '',
     address: '',
     location: '',
+    businessArea: '',
+    country: '',
+    state: '',
+    city: '',
+    billingAddress: '',
+    shippingAddress: '',
+    gstNumber: '',
+    panNumber: '',
+    parentAccountId: '',
     isActive: true,
     confirmDuplicate: false
   });
@@ -153,6 +162,15 @@ export default function CrmAccountsPage() {
       email: '',
       address: '',
       location: '',
+      businessArea: '',
+      country: '',
+      state: '',
+      city: '',
+      billingAddress: '',
+      shippingAddress: '',
+      gstNumber: '',
+      panNumber: '',
+      parentAccountId: '',
       isActive: true,
       confirmDuplicate: false
     });
@@ -173,6 +191,15 @@ export default function CrmAccountsPage() {
       email: acc.email || '',
       address: acc.address || '',
       location: acc.location || '',
+      businessArea: acc.businessArea || '',
+      country: acc.country || '',
+      state: acc.state || '',
+      city: acc.city || '',
+      billingAddress: acc.billingAddress || '',
+      shippingAddress: acc.shippingAddress || '',
+      gstNumber: acc.gstNumber || '',
+      panNumber: acc.panNumber || '',
+      parentAccountId: acc.parentAccountId || '',
       isActive: acc.isActive !== false,
       confirmDuplicate: false
     });
@@ -237,6 +264,15 @@ export default function CrmAccountsPage() {
       email: modalFormData.email.trim() || undefined,
       address: modalFormData.address.trim() || undefined,
       location: modalFormData.location.trim() || undefined,
+      businessArea: modalFormData.businessArea || undefined,
+      country: modalFormData.country.trim() || undefined,
+      state: modalFormData.state.trim() || undefined,
+      city: modalFormData.city.trim() || undefined,
+      billingAddress: modalFormData.billingAddress.trim() || undefined,
+      shippingAddress: modalFormData.shippingAddress.trim() || undefined,
+      gstNumber: modalFormData.gstNumber.trim() || undefined,
+      panNumber: modalFormData.panNumber.trim() || undefined,
+      parentAccountId: modalFormData.parentAccountId || undefined,
       isActive: modalFormData.isActive,
       confirmDuplicate: Boolean(modalFormData.confirmDuplicate)
     };
@@ -744,6 +780,119 @@ export default function CrmAccountsPage() {
                   />
                 </div>
 
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div className="form-group">
+                    <label className="form-label" style={{ fontWeight: 600 }}>Business Area</label>
+                    <select
+                      className="form-control"
+                      value={modalFormData.businessArea}
+                      onChange={e => setModalFormData({ ...modalFormData, businessArea: e.target.value })}
+                    >
+                      <option value="">Select Business Area</option>
+                      <option value="Biogas">Biogas</option>
+                      <option value="WWT">WWT (Wastewater Treatment)</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label" style={{ fontWeight: 600 }}>Parent Account</label>
+                    <select
+                      className="form-control"
+                      value={modalFormData.parentAccountId}
+                      onChange={e => setModalFormData({ ...modalFormData, parentAccountId: e.target.value })}
+                    >
+                      <option value="">No Parent Account</option>
+                      {accounts
+                        .filter(a => !accountToEdit || a.id !== accountToEdit.id)
+                        .map(a => (
+                          <option key={a.id} value={a.id}>
+                            {a.name} ({a.accountId})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+                  <div className="form-group">
+                    <label className="form-label" style={{ fontWeight: 600 }}>City</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. Pune"
+                      value={modalFormData.city}
+                      onChange={e => setModalFormData({ ...modalFormData, city: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label" style={{ fontWeight: 600 }}>State</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. Maharashtra"
+                      value={modalFormData.state}
+                      onChange={e => setModalFormData({ ...modalFormData, state: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label" style={{ fontWeight: 600 }}>Country</label>
+                    <input
+                      type="text"
+                      className="form-control"
+                      placeholder="e.g. India"
+                      value={modalFormData.country}
+                      onChange={e => setModalFormData({ ...modalFormData, country: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div className="form-group">
+                    <label className="form-label" style={{ fontWeight: 600 }}>GST Number</label>
+                    <input
+                      type="text"
+                      maxLength={30}
+                      className="form-control"
+                      placeholder="e.g. 27AAAAA0000A1Z5"
+                      value={modalFormData.gstNumber}
+                      onChange={e => setModalFormData({ ...modalFormData, gstNumber: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label" style={{ fontWeight: 600 }}>PAN Number</label>
+                    <input
+                      type="text"
+                      maxLength={20}
+                      className="form-control"
+                      placeholder="e.g. AAAAA0000A"
+                      value={modalFormData.panNumber}
+                      onChange={e => setModalFormData({ ...modalFormData, panNumber: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                  <div className="form-group">
+                    <label className="form-label" style={{ fontWeight: 600 }}>Billing Address</label>
+                    <textarea
+                      className="form-control"
+                      rows={2}
+                      placeholder="Official billing address..."
+                      value={modalFormData.billingAddress}
+                      onChange={e => setModalFormData({ ...modalFormData, billingAddress: e.target.value })}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label" style={{ fontWeight: 600 }}>Shipping Address</label>
+                    <textarea
+                      className="form-control"
+                      rows={2}
+                      placeholder="Plant or delivery shipping address..."
+                      value={modalFormData.shippingAddress}
+                      onChange={e => setModalFormData({ ...modalFormData, shippingAddress: e.target.value })}
+                    />
+                  </div>
+                </div>
+
                 <div className="form-group">
                   <label className="form-label" style={{ fontWeight: 600 }}>Street Address</label>
                   <textarea
@@ -858,6 +1007,29 @@ export default function CrmAccountsPage() {
                   <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Client Site Name</div>
                   <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0369a1', marginTop: '2px' }}>
                     {selectedAccountDetail.siteName || '—'}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Business Area</div>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0f172a', marginTop: '2px' }}>
+                    {selectedAccountDetail.businessArea || '—'}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>Parent Account</div>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 500, color: '#0f172a', marginTop: '2px' }}>
+                    {selectedAccountDetail.parentAccount?.name || '—'}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: 'var(--text-muted)', fontWeight: 600 }}>GST / PAN</div>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 500, color: '#0f172a', marginTop: '2px' }}>
+                    {selectedAccountDetail.gstNumber ? `GST: ${selectedAccountDetail.gstNumber}` : ''}
+                    {selectedAccountDetail.gstNumber && selectedAccountDetail.panNumber ? ' • ' : ''}
+                    {selectedAccountDetail.panNumber ? `PAN: ${selectedAccountDetail.panNumber}` : (!selectedAccountDetail.gstNumber ? '—' : '')}
                   </div>
                 </div>
 

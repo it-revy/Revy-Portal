@@ -21,7 +21,7 @@ import {
   Send,
   CheckSquare,
   RotateCcw,
-  FileCheck,
+
   AlertTriangle
 } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
@@ -1100,6 +1100,18 @@ export default function OpportunityDetailModal({
                           </div>
                         </div>
                       </div>
+
+                      {/* If Won, show Won Reason */}
+                      {opportunity.status === 'Won' && opportunity.wonReason && (
+                        <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '0.85rem 1rem', borderRadius: '8px' }}>
+                          <span style={{ fontSize: '0.75rem', color: '#166534', fontWeight: 700, textTransform: 'uppercase' }}>
+                            Won Reason & Commercial Rationale
+                          </span>
+                          <p style={{ margin: '0.25rem 0 0', color: '#15803d', fontSize: '0.9rem', fontWeight: 600 }}>
+                            {opportunity.wonReason}
+                          </p>
+                        </div>
+                      )}
 
                       {/* If Lost, show Loss Reason */}
                       {opportunity.status === 'Lost' && opportunity.lossReason && (

@@ -10,6 +10,7 @@ from app.core.config import settings
 from app.core.logging import setup_logging
 from app.core.database import engine, init_db
 from app.core.exceptions import AppException
+import app.models  # Ensure Employee, User, and all core models are registered in SQLAlchemy registry
 
 # Import Routers
 from app.auth.router import router as auth_router

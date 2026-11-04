@@ -6,7 +6,7 @@ export default function FilterBar({
   children,
   onReset = null,
   resetLabel = 'Reset Filters',
-  hasActiveFilters = false,
+  _hasActiveFilters = false,
   className = '',
   style = {}
 }) {

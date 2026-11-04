@@ -21,10 +21,19 @@ const QUICK_LOSS_REASONS = [
   'Technical Feasibility Failed'
 ];
 
+const QUICK_WON_REASONS = [
+  'Proposal Accepted / Commercial Terms Signed',
+  'Superior Microbial Performance / Pilot Verified',
+  'Repeat Business / Existing Client Relationship',
+  'Best Overall Value / Competitive Pricing',
+  'Technical Solution / Engineering Superiority'
+];
+
 export default function OpportunityStageModal({ isOpen, onClose, opportunity, onSuccess }) {
   const [targetStage, setTargetStage] = useState('Qualify');
   const [targetStatus, setTargetStatus] = useState('Open');
   const [lossReason, setLossReason] = useState('');
+  const [wonReason, setWonReason] = useState('');
   const [actualCloseDate, setActualCloseDate] = useState(new Date().toISOString().split('T')[0]);
   const [remarks, setRemarks] = useState('');
   const [loading, setLoading] = useState(false);
@@ -36,6 +45,7 @@ export default function OpportunityStageModal({ isOpen, onClose, opportunity, on
     setTargetStage(currentStage);
     setTargetStatus(opportunity.status || 'Open');
     setLossReason(opportunity.lossReason || '');
+    setWonReason(opportunity.wonReason || '');
     setActualCloseDate(
       opportunity.actualCloseDate
         ? opportunity.actualCloseDate.split('T')[0]
@@ -62,6 +72,11 @@ export default function OpportunityStageModal({ isOpen, onClose, opportunity, on
       return;
     }
 
+    if (targetStatus === 'Won' && !wonReason.trim()) {
+      setError('Please provide a won reason when marking an opportunity as Won.');
+      return;
+    }
+
     setLoading(true);
     try {
       const payload = {
@@ -74,6 +89,7 @@ export default function OpportunityStageModal({ isOpen, onClose, opportunity, on
         payload.lossReason = lossReason.trim();
         payload.actualCloseDate = actualCloseDate || undefined;
       } else if (targetStatus === 'Won') {
+        payload.wonReason = wonReason.trim();
         payload.actualCloseDate = actualCloseDate || undefined;
       }
 
@@ -271,6 +287,47 @@ export default function OpportunityStageModal({ isOpen, onClose, opportunity, on
               })}
             </div>
           </div>
+
+          {/* If Won, mandatory Won Reason */}
+          {targetStatus === 'Won' && (
+            <div style={{ background: '#f0fdf4', padding: '0.85rem', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 700, color: '#166534', marginBottom: '0.35rem' }}>
+                Won Reason & Commercial Rationale <span style={{ color: 'var(--danger)' }}>*</span>
+              </label>
+
+              {/* Quick Pills */}
+              <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+                {QUICK_WON_REASONS.map((reason) => (
+                  <button
+                    key={reason}
+                    type="button"
+                    onClick={() => setWonReason(reason)}
+                    style={{
+                      fontSize: '0.725rem',
+                      padding: '2px 8px',
+                      borderRadius: '12px',
+                      background: wonReason === reason ? '#16a34a' : '#ffffff',
+                      color: wonReason === reason ? '#ffffff' : '#14532d',
+                      border: '1px solid #86efac',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    {reason}
+                  </button>
+                ))}
+              </div>
+
+              <textarea
+                className="form-control"
+                rows={2}
+                placeholder="Specific commercial justification or contract rationale (required)..."
+                value={wonReason}
+                onChange={(e) => setWonReason(e.target.value)}
+                style={{ width: '100%', fontSize: '0.85rem' }}
+                required
+              />
+            </div>
+          )}
 
           {/* If Lost, mandatory Loss Reason */}
           {targetStatus === 'Lost' && (

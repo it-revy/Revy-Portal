@@ -90,3 +90,25 @@ export function formatISTDate(value) {
     year: 'numeric'
   }).format(date);
 }
+
+/**
+ * Robust date-only formatter for "YYYY-MM-DD" or date strings.
+ * Directly extracts calendar components to eliminate off-by-one shifts across browser timezones.
+ * Example output: "09 Oct 2026"
+ */
+export function formatDateOnly(value) {
+  if (!value) return '—';
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(trimmed);
+    if (match) {
+      const [, y, m, d] = match;
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const monthIdx = parseInt(m, 10) - 1;
+      if (monthIdx >= 0 && monthIdx < 12) {
+        return `${d} ${monthNames[monthIdx]} ${y}`;
+      }
+    }
+  }
+  return formatISTDate(value);
+}
