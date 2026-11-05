@@ -782,3 +782,30 @@ class CrmIdempotencyRecord(Base):
 
     user = relationship("User", foreign_keys=[user_id])
     lead = relationship("Lead", foreign_keys=[lead_id])
+
+
+# =========================================================================
+# PRODUCT & SERVICE CATALOGUE MANAGEMENT MODELS
+# =========================================================================
+from app.crm.catalogue_model import (
+    ServiceCategory,
+    ServiceSubcategory,
+    BillingUnit,
+    ReportingUnit,
+    SampleType,
+    TestingMethod,
+    Currency,
+    TaxConfiguration,
+    TaxRate,
+    Service,
+    ServiceSampleType,
+    ServiceTestingMethod,
+    ServiceReportingParameter,
+    ServicePriceHistory,
+    Package,
+    PackageVersion,
+    PackageComponent,
+    PackageAddOnConfiguration,
+    OpportunityQuotationItem
+)
+

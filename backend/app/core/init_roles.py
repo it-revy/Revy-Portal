@@ -84,6 +84,8 @@ def ensure_roles_and_permissions():
             ("crm.communication.view", "View Communication History", "CRM"),
             ("crm.communication.create", "Add Communication Entries", "CRM"),
             ("crm.user.manage", "Manage CRM User Hub Access and Roles", "CRM"),
+            ("crm.catalogue.manage", "Manage Product and Service Catalogue Masters, Pricing and Packages", "CRM"),
+            ("crm.catalogue.view", "View Active Services, Packages, and Use in Quotations", "CRM"),
         ]
 
         for code, name, mod in standard_permissions:

@@ -13,3 +13,4 @@ export { default as PageHeader } from './PageHeader';
 export { default as FormField } from './FormField';
 export { default as LoadingState } from './LoadingState';
 export { default as ConfirmationDialog } from './ConfirmationDialog';
+export { default as Modal } from '../Modal';

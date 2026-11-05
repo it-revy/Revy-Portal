@@ -13,6 +13,12 @@
   --bg-primary: var(--color-bg-app);
   --bg-secondary: var(--color-surface);
   --bg-app: var(--color-bg-app);
+  --bg-card: var(--color-surface, #ffffff);
+  --card-bg: var(--color-surface, #ffffff);
+  --bg-modal: var(--color-surface, #ffffff);
+  --modal-bg: var(--color-surface, #ffffff);
+  --color-bg-secondary: var(--color-surface-subtle, #f8fafc);
+  --color-surface-card: var(--color-surface, #ffffff);
   --bg-sidebar: var(--color-sidebar-bg);
   --bg-sidebar-hover: var(--color-sidebar-hover);
   --bg-input: var(--color-surface);

@@ -325,14 +325,15 @@ def test_concurrent_duplicate_lead_creation_safety(setup_crm_stage4_environment)
     same_product = f"Enzyme Catalyst Pack {ts}"
 
     def attempt_create_lead(idx):
-        return client.post("/api/v1/crm/leads", json={
-            "leadName": f"Concurrent Lead Attempt {idx}",
-            "businessArea": "WWT",
-            "requirementType": "Direct Product/Service",
-            "requestedProductService": same_product,
-            "contactId": con_id,
-            "accountId": acc_id
-        }, headers=headers)
+        with TestClient(app) as local_client:
+            return local_client.post("/api/v1/crm/leads", json={
+                "leadName": f"Concurrent Lead Attempt {idx}",
+                "businessArea": "WWT",
+                "requirementType": "Direct Product/Service",
+                "requestedProductService": same_product,
+                "contactId": con_id,
+                "accountId": acc_id
+            }, headers=headers)
 
     # Launch 4 concurrent creation attempts
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:

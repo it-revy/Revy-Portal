@@ -27,6 +27,7 @@ import {
 import { useAuth } from '../../../context/AuthContext';
 import crmService from '../../../services/crmService';
 import OpportunityStageModal from './OpportunityStageModal';
+import QuotationCatalogueSelector from '../../../components/crm/QuotationCatalogueSelector';
 
 const STAGES = ['Enquiry', 'Qualify', 'Develop', 'Propose/Offer', 'Negotiate', 'Close'];
 const BUSINESS_AREAS = ['Biogas', 'Wastewater Treatment (WWT)', 'R&D Lab', 'Other'];
@@ -1332,6 +1333,17 @@ export default function OpportunityDetailModal({
                       )}
 
                       {/* Action Bar for Active Quotation */}
+                      {/* Product & Service Catalogue Line Items (Section 10) */}
+                      <QuotationCatalogueSelector
+                        quotationId={activeQuotation.id}
+                        currency={activeQuotation.currency}
+                        readOnly={activeQuotation.status !== 'Draft'}
+                        onTotalChanged={(newTotal) => {
+                          if (newTotal > 0 && activeQuotation.status === 'Draft' && Number(activeQuotation.amount) !== newTotal) {
+                            setActiveQuotation(prev => prev ? ({ ...prev, amount: newTotal }) : null);
+                          }
+                        }}
+                      />
                       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
                         {activeQuotation.status === 'Draft' && (
                           <>

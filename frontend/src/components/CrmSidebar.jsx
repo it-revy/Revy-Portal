@@ -13,7 +13,11 @@ import {
   Building2,
   Contact,
   ShieldCheck,
-  Briefcase
+  Briefcase,
+  FlaskConical,
+  Package as PackageIcon,
+  FolderTree,
+  Sliders
 } from 'lucide-react';
 
 const CrmSidebar = ({
@@ -49,6 +53,11 @@ const CrmSidebar = ({
   const isAccountsActive = location.pathname.startsWith('/crm/accounts');
   const isContactsActive = location.pathname.startsWith('/crm/contacts');
   const isUserHubActive = location.pathname === '/crm/user-hub' || location.pathname === '/crm/users';
+  const isServicesActive = location.pathname.startsWith('/crm/catalogue/services');
+  const isPackagesActive = location.pathname.startsWith('/crm/catalogue/packages');
+  const isCategoriesActive = location.pathname.startsWith('/crm/catalogue/categories');
+  const isMastersActive = location.pathname.startsWith('/crm/catalogue/masters');
+  const canManageCatalogue = globalAdminActive || hasRole('CRM_ADMIN') || hasPermission('crm.catalogue.manage');
 
   const navContent = (
     <>
@@ -195,6 +204,68 @@ const CrmSidebar = ({
           <Contact size={18} />
           {(!isCollapsed || isMobileOpen) && <span>Contacts</span>}
         </NavLink>
+
+        {/* Product & Service Management Section */}
+        {(!isCollapsed || isMobileOpen) && (
+          <div style={{
+            fontSize: '0.68rem',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            color: '#64748b',
+            padding: '0.9rem 0.5rem 0.2rem',
+            fontWeight: 700
+          }}>
+            Product & Service Catalogue
+          </div>
+        )}
+
+        {/* 6. Services */}
+        <NavLink
+          to="/crm/catalogue/services"
+          onClick={handleLinkClick}
+          className={`nav-item ${isServicesActive ? 'active' : ''}`}
+          title="Laboratory Services"
+        >
+          <FlaskConical size={18} />
+          {(!isCollapsed || isMobileOpen) && <span>Services</span>}
+        </NavLink>
+
+        {/* 7. Packages */}
+        <NavLink
+          to="/crm/catalogue/packages"
+          onClick={handleLinkClick}
+          className={`nav-item ${isPackagesActive ? 'active' : ''}`}
+          title="Service Packages & Bundles"
+        >
+          <PackageIcon size={18} />
+          {(!isCollapsed || isMobileOpen) && <span>Packages</span>}
+        </NavLink>
+
+        {/* 8. Categories (Admin) */}
+        {canManageCatalogue && (
+          <NavLink
+            to="/crm/catalogue/categories"
+            onClick={handleLinkClick}
+            className={`nav-item ${isCategoriesActive ? 'active' : ''}`}
+            title="Categories & Subcategories"
+          >
+            <FolderTree size={18} />
+            {(!isCollapsed || isMobileOpen) && <span>Categories</span>}
+          </NavLink>
+        )}
+
+        {/* 9. Master Data (Admin) */}
+        {canManageCatalogue && (
+          <NavLink
+            to="/crm/catalogue/masters"
+            onClick={handleLinkClick}
+            className={`nav-item ${isMastersActive ? 'active' : ''}`}
+            title="Catalogue Master Data (Billing, Units, Samples, Tax, Currencies)"
+          >
+            <Sliders size={18} />
+            {(!isCollapsed || isMobileOpen) && <span>Master Data</span>}
+          </NavLink>
+        )}
 
         {/* Separate Section: CRM Administration (strictly CRM Admin and Global Admins) */}
         {canAccessUserHub && (

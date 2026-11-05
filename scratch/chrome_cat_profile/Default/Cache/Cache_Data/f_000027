@@ -1,0 +1,541 @@
+const React = __vite__cjsImport0_react;const _jsxDEV = __vite__cjsImport16_react_jsxDevRuntime["jsxDEV"];import __vite__cjsImport0_react from "/node_modules/.vite/deps/react.js?v=33df25fb";
+import { Route, Navigate } from "/node_modules/.vite/deps/react-router-dom.js?v=33df25fb";
+import EmployeeDailyPage from "/src/pages/EmployeeDailyPage.jsx";
+import AdminDashboardPage from "/src/pages/AdminDashboardPage.jsx";
+import DailyEntryPage from "/src/pages/DailyEntryPage.jsx";
+import BreakfastOrdersPage from "/src/pages/BreakfastOrdersPage.jsx";
+import AdditionalOrdersPage from "/src/pages/AdditionalOrdersPage.jsx";
+import BreakfastMoneyPage from "/src/pages/BreakfastMoneyPage.jsx";
+import FinanceManagerPage from "/src/pages/FinanceManagerPage.jsx";
+import EmployeeManagementPage from "/src/pages/EmployeeManagementPage.jsx";
+import PublicHolidaysPage from "/src/pages/PublicHolidaysPage.jsx";
+import ReportsPage from "/src/pages/ReportsPage.jsx";
+import CEOViewPage from "/src/pages/CEOViewPage.jsx";
+import AuditLogsPage from "/src/pages/AuditLogsPage.jsx";
+import SettingsPage from "/src/pages/SettingsPage.jsx";
+import BMSLayout from "/src/layouts/BMSLayout.jsx";
+var _jsxFileName = "E:/IT Development/REVY Portal/Revy-Portal/frontend/src/modules/bms/routes.jsx";
+import __vite__cjsImport16_react_jsxDevRuntime from "/node_modules/.vite/deps/react_jsx-dev-runtime.js?v=33df25fb";
+export function getBMSRoutes() {
+	return [
+		/* @__PURE__ */ _jsxDEV(
+			Route,
+			// Canonical BMS Routes
+			{
+				path: "/bms/response",
+				element: /* @__PURE__ */ _jsxDEV(BMSLayout, { children: /* @__PURE__ */ _jsxDEV(EmployeeDailyPage, {}, void 0, false, {
+					fileName: _jsxFileName,
+					lineNumber: 27,
+					columnNumber: 11
+				}, this) }, void 0, false, {
+					fileName: _jsxFileName,
+					lineNumber: 26,
+					columnNumber: 9
+				}, this)
+			},
+			"bms-response",
+			false,
+			{
+				fileName: _jsxFileName,
+				lineNumber: 22,
+				columnNumber: 5
+			},
+			this
+		),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/bms/today",
+			element: /* @__PURE__ */ _jsxDEV(BMSLayout, { children: /* @__PURE__ */ _jsxDEV(EmployeeDailyPage, {}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 36,
+				columnNumber: 11
+			}, this) }, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 35,
+				columnNumber: 9
+			}, this)
+		}, "bms-today", false, {
+			fileName: _jsxFileName,
+			lineNumber: 31,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/bms/dashboard",
+			element: /* @__PURE__ */ _jsxDEV(BMSLayout, {
+				requiredPermission: "breakfast.view",
+				children: /* @__PURE__ */ _jsxDEV(AdminDashboardPage, {}, void 0, false, {
+					fileName: _jsxFileName,
+					lineNumber: 45,
+					columnNumber: 11
+				}, this)
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 44,
+				columnNumber: 9
+			}, this)
+		}, "bms-dashboard", false, {
+			fileName: _jsxFileName,
+			lineNumber: 40,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/bms/daily-entry",
+			element: /* @__PURE__ */ _jsxDEV(BMSLayout, {
+				requiredPermission: "breakfast.view",
+				children: /* @__PURE__ */ _jsxDEV(DailyEntryPage, {}, void 0, false, {
+					fileName: _jsxFileName,
+					lineNumber: 54,
+					columnNumber: 11
+				}, this)
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 53,
+				columnNumber: 9
+			}, this)
+		}, "bms-daily-entry", false, {
+			fileName: _jsxFileName,
+			lineNumber: 49,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/bms/orders",
+			element: /* @__PURE__ */ _jsxDEV(BMSLayout, {
+				requiredPermission: "breakfast.orders.view",
+				children: /* @__PURE__ */ _jsxDEV(BreakfastOrdersPage, {}, void 0, false, {
+					fileName: _jsxFileName,
+					lineNumber: 63,
+					columnNumber: 11
+				}, this)
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 62,
+				columnNumber: 9
+			}, this)
+		}, "bms-orders", false, {
+			fileName: _jsxFileName,
+			lineNumber: 58,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/bms/additional-orders",
+			element: /* @__PURE__ */ _jsxDEV(BMSLayout, {
+				requiredPermission: "breakfast.view",
+				children: /* @__PURE__ */ _jsxDEV(AdditionalOrdersPage, {}, void 0, false, {
+					fileName: _jsxFileName,
+					lineNumber: 72,
+					columnNumber: 11
+				}, this)
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 71,
+				columnNumber: 9
+			}, this)
+		}, "bms-additional-orders", false, {
+			fileName: _jsxFileName,
+			lineNumber: 67,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/bms/money",
+			element: /* @__PURE__ */ _jsxDEV(BMSLayout, {
+				requiredPermission: "breakfast.money.view",
+				children: /* @__PURE__ */ _jsxDEV(BreakfastMoneyPage, {}, void 0, false, {
+					fileName: _jsxFileName,
+					lineNumber: 81,
+					columnNumber: 11
+				}, this)
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 80,
+				columnNumber: 9
+			}, this)
+		}, "bms-money", false, {
+			fileName: _jsxFileName,
+			lineNumber: 76,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/bms/breakfast-money",
+			element: /* @__PURE__ */ _jsxDEV(Navigate, {
+				to: "/bms/money",
+				replace: true
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 88,
+				columnNumber: 16
+			}, this)
+		}, "bms-breakfast-money", false, {
+			fileName: _jsxFileName,
+			lineNumber: 85,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/bms/finance",
+			element: /* @__PURE__ */ _jsxDEV(BMSLayout, {
+				requiredPermission: "finance.breakfast_fund.view",
+				children: /* @__PURE__ */ _jsxDEV(FinanceManagerPage, {}, void 0, false, {
+					fileName: _jsxFileName,
+					lineNumber: 95,
+					columnNumber: 11
+				}, this)
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 94,
+				columnNumber: 9
+			}, this)
+		}, "bms-finance", false, {
+			fileName: _jsxFileName,
+			lineNumber: 90,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/bms/employees",
+			element: /* @__PURE__ */ _jsxDEV(BMSLayout, {
+				requiredPermission: "breakfast.view",
+				children: /* @__PURE__ */ _jsxDEV(EmployeeManagementPage, {}, void 0, false, {
+					fileName: _jsxFileName,
+					lineNumber: 104,
+					columnNumber: 11
+				}, this)
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 103,
+				columnNumber: 9
+			}, this)
+		}, "bms-employees", false, {
+			fileName: _jsxFileName,
+			lineNumber: 99,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/bms/holidays",
+			element: /* @__PURE__ */ _jsxDEV(BMSLayout, {
+				requiredPermission: "breakfast.view",
+				children: /* @__PURE__ */ _jsxDEV(PublicHolidaysPage, {}, void 0, false, {
+					fileName: _jsxFileName,
+					lineNumber: 113,
+					columnNumber: 11
+				}, this)
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 112,
+				columnNumber: 9
+			}, this)
+		}, "bms-holidays", false, {
+			fileName: _jsxFileName,
+			lineNumber: 108,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/bms/reports",
+			element: /* @__PURE__ */ _jsxDEV(BMSLayout, {
+				requiredPermission: "breakfast.report",
+				children: /* @__PURE__ */ _jsxDEV(ReportsPage, {}, void 0, false, {
+					fileName: _jsxFileName,
+					lineNumber: 122,
+					columnNumber: 11
+				}, this)
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 121,
+				columnNumber: 9
+			}, this)
+		}, "bms-reports", false, {
+			fileName: _jsxFileName,
+			lineNumber: 117,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/bms/ceo-view",
+			element: /* @__PURE__ */ _jsxDEV(BMSLayout, {
+				requiredRole: "CEO",
+				children: /* @__PURE__ */ _jsxDEV(CEOViewPage, {}, void 0, false, {
+					fileName: _jsxFileName,
+					lineNumber: 131,
+					columnNumber: 11
+				}, this)
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 130,
+				columnNumber: 9
+			}, this)
+		}, "bms-ceo-view", false, {
+			fileName: _jsxFileName,
+			lineNumber: 126,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/bms/audit-logs",
+			element: /* @__PURE__ */ _jsxDEV(BMSLayout, {
+				requiredPermission: "breakfast.view",
+				children: /* @__PURE__ */ _jsxDEV(AuditLogsPage, {}, void 0, false, {
+					fileName: _jsxFileName,
+					lineNumber: 140,
+					columnNumber: 11
+				}, this)
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 139,
+				columnNumber: 9
+			}, this)
+		}, "bms-audit-logs", false, {
+			fileName: _jsxFileName,
+			lineNumber: 135,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/bms/settings",
+			element: /* @__PURE__ */ _jsxDEV(BMSLayout, {
+				requiredPermission: "breakfast.view",
+				children: /* @__PURE__ */ _jsxDEV(SettingsPage, {}, void 0, false, {
+					fileName: _jsxFileName,
+					lineNumber: 149,
+					columnNumber: 11
+				}, this)
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 148,
+				columnNumber: 9
+			}, this)
+		}, "bms-settings", false, {
+			fileName: _jsxFileName,
+			lineNumber: 144,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(
+			Route,
+			// Backward-Compatibility Redirects for Legacy URLs
+			{
+				path: "/today",
+				element: /* @__PURE__ */ _jsxDEV(Navigate, {
+					to: "/bms/response",
+					replace: true
+				}, void 0, false, {
+					fileName: _jsxFileName,
+					lineNumber: 155,
+					columnNumber: 54
+				}, this)
+			},
+			"legacy-today",
+			false,
+			{
+				fileName: _jsxFileName,
+				lineNumber: 155,
+				columnNumber: 5
+			},
+			this
+		),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/response",
+			element: /* @__PURE__ */ _jsxDEV(Navigate, {
+				to: "/bms/response",
+				replace: true
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 156,
+				columnNumber: 60
+			}, this)
+		}, "legacy-response", false, {
+			fileName: _jsxFileName,
+			lineNumber: 156,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/breakfast-response",
+			element: /* @__PURE__ */ _jsxDEV(Navigate, {
+				to: "/bms/response",
+				replace: true
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 157,
+				columnNumber: 80
+			}, this)
+		}, "legacy-breakfast-response", false, {
+			fileName: _jsxFileName,
+			lineNumber: 157,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/admin/dashboard",
+			element: /* @__PURE__ */ _jsxDEV(Navigate, {
+				to: "/bms/dashboard",
+				replace: true
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 158,
+				columnNumber: 74
+			}, this)
+		}, "legacy-admin-dashboard", false, {
+			fileName: _jsxFileName,
+			lineNumber: 158,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/admin/daily-entry",
+			element: /* @__PURE__ */ _jsxDEV(Navigate, {
+				to: "/bms/daily-entry",
+				replace: true
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 159,
+				columnNumber: 78
+			}, this)
+		}, "legacy-admin-daily-entry", false, {
+			fileName: _jsxFileName,
+			lineNumber: 159,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/admin/orders",
+			element: /* @__PURE__ */ _jsxDEV(Navigate, {
+				to: "/bms/orders",
+				replace: true
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 160,
+				columnNumber: 68
+			}, this)
+		}, "legacy-admin-orders", false, {
+			fileName: _jsxFileName,
+			lineNumber: 160,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/admin/additional-orders",
+			element: /* @__PURE__ */ _jsxDEV(Navigate, {
+				to: "/bms/additional-orders",
+				replace: true
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 161,
+				columnNumber: 90
+			}, this)
+		}, "legacy-admin-additional-orders", false, {
+			fileName: _jsxFileName,
+			lineNumber: 161,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/admin/breakfast-money",
+			element: /* @__PURE__ */ _jsxDEV(Navigate, {
+				to: "/bms/money",
+				replace: true
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 162,
+				columnNumber: 86
+			}, this)
+		}, "legacy-admin-breakfast-money", false, {
+			fileName: _jsxFileName,
+			lineNumber: 162,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/finance/fund-requests",
+			element: /* @__PURE__ */ _jsxDEV(Navigate, {
+				to: "/bms/finance",
+				replace: true
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 163,
+				columnNumber: 86
+			}, this)
+		}, "legacy-finance-fund-requests", false, {
+			fileName: _jsxFileName,
+			lineNumber: 163,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/employees",
+			element: /* @__PURE__ */ _jsxDEV(Navigate, {
+				to: "/bms/employees",
+				replace: true
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 164,
+				columnNumber: 62
+			}, this)
+		}, "legacy-employees", false, {
+			fileName: _jsxFileName,
+			lineNumber: 164,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/admin/holidays",
+			element: /* @__PURE__ */ _jsxDEV(Navigate, {
+				to: "/bms/holidays",
+				replace: true
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 165,
+				columnNumber: 72
+			}, this)
+		}, "legacy-admin-holidays", false, {
+			fileName: _jsxFileName,
+			lineNumber: 165,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/reports",
+			element: /* @__PURE__ */ _jsxDEV(Navigate, {
+				to: "/bms/reports",
+				replace: true
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 166,
+				columnNumber: 58
+			}, this)
+		}, "legacy-reports", false, {
+			fileName: _jsxFileName,
+			lineNumber: 166,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/ceo-dashboard",
+			element: /* @__PURE__ */ _jsxDEV(Navigate, {
+				to: "/bms/ceo-view",
+				replace: true
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 167,
+				columnNumber: 70
+			}, this)
+		}, "legacy-ceo-dashboard", false, {
+			fileName: _jsxFileName,
+			lineNumber: 167,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/audit-logs",
+			element: /* @__PURE__ */ _jsxDEV(Navigate, {
+				to: "/bms/audit-logs",
+				replace: true
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 168,
+				columnNumber: 64
+			}, this)
+		}, "legacy-audit-logs", false, {
+			fileName: _jsxFileName,
+			lineNumber: 168,
+			columnNumber: 5
+		}, this),
+		/* @__PURE__ */ _jsxDEV(Route, {
+			path: "/settings",
+			element: /* @__PURE__ */ _jsxDEV(Navigate, {
+				to: "/bms/settings",
+				replace: true
+			}, void 0, false, {
+				fileName: _jsxFileName,
+				lineNumber: 169,
+				columnNumber: 60
+			}, this)
+		}, "legacy-settings", false, {
+			fileName: _jsxFileName,
+			lineNumber: 169,
+			columnNumber: 5
+		}, this)
+	];
+}
+export default getBMSRoutes;
+
+//# sourceMappingURL=data:application/json;base64,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QUFEO0lBQVUsSUFBRztJQUFhO0dBQVM7Ozs7O0VBQUksR0FBN0c7Ozs7U0FBNkc7RUFDeEgsd0JBQUMsT0FBRDtHQUEwQyxNQUFLO0dBQXlCLFNBQVMsd0JBQUMsVUFBRDtJQUFVLElBQUc7SUFBZTtHQUFTOzs7OztFQUFJLEdBQS9HOzs7O1NBQStHO0VBQzFILHdCQUFDLE9BQUQ7R0FBOEIsTUFBSztHQUFhLFNBQVMsd0JBQUMsVUFBRDtJQUFVLElBQUc7SUFBaUI7R0FBUzs7Ozs7RUFBSSxHQUF6Rjs7OztTQUF5RjtFQUNwRyx3QkFBQyxPQUFEO0dBQW1DLE1BQUs7R0FBa0IsU0FBUyx3QkFBQyxVQUFEO0lBQVUsSUFBRztJQUFnQjtHQUFTOzs7OztFQUFJLEdBQWxHOzs7O1NBQWtHO0VBQzdHLHdCQUFDLE9BQUQ7R0FBNEIsTUFBSztHQUFXLFNBQVMsd0JBQUMsVUFBRDtJQUFVLElBQUc7SUFBZTtHQUFTOzs7OztFQUFJLEdBQW5GOzs7O1NBQW1GO0VBQzlGLHdCQUFDLE9BQUQ7R0FBa0MsTUFBSztHQUFpQixTQUFTLHdCQUFDLFVBQUQ7SUFBVSxJQUFHO0lBQWdCO0dBQVM7Ozs7O0VBQUksR0FBaEc7Ozs7U0FBZ0c7RUFDM0csd0JBQUMsT0FBRDtHQUErQixNQUFLO0dBQWMsU0FBUyx3QkFBQyxVQUFEO0lBQVUsSUFBRztJQUFrQjtHQUFTOzs7OztFQUFJLEdBQTVGOzs7O1NBQTRGO0VBQ3ZHLHdCQUFDLE9BQUQ7R0FBNkIsTUFBSztHQUFZLFNBQVMsd0JBQUMsVUFBRDtJQUFVLElBQUc7SUFBZ0I7R0FBUzs7Ozs7RUFBSSxHQUF0Rjs7OztTQUFzRjtDQUNuRztBQUNGO0FBRUEsZUFBZSIsIm5hbWVzIjpbXSwic291cmNlcyI6WyJyb3V0ZXMuanN4Il0sInZlcnNpb24iOjMsInNvdXJjZXNDb250ZW50IjpbImltcG9ydCBSZWFjdCBmcm9tICdyZWFjdCc7XHJcbmltcG9ydCB7IFJvdXRlLCBOYXZpZ2F0ZSB9IGZyb20gJ3JlYWN0LXJvdXRlci1kb20nO1xyXG5cclxuaW1wb3J0IEVtcGxveWVlRGFpbHlQYWdlIGZyb20gJy4uLy4uL3BhZ2VzL0VtcGxveWVlRGFpbHlQYWdlJztcclxuaW1wb3J0IEFkbWluRGFzaGJvYXJkUGFnZSBmcm9tICcuLi8uLi9wYWdlcy9BZG1pbkRhc2hib2FyZFBhZ2UnO1xyXG5pbXBvcnQgRGFpbHlFbnRyeVBhZ2UgZnJvbSAnLi4vLi4vcGFnZXMvRGFpbHlFbnRyeVBhZ2UnO1xyXG5pbXBvcnQgQnJlYWtmYXN0T3JkZXJzUGFnZSBmcm9tICcuLi8uLi9wYWdlcy9CcmVha2Zhc3RPcmRlcnNQYWdlJztcclxuaW1wb3J0IEFkZGl0aW9uYWxPcmRlcnNQYWdlIGZyb20gJy4uLy4uL3BhZ2VzL0FkZGl0aW9uYWxPcmRlcnNQYWdlJztcclxuaW1wb3J0IEJyZWFrZmFzdE1vbmV5UGFnZSBmcm9tICcuLi8uLi9wYWdlcy9CcmVha2Zhc3RNb25leVBhZ2UnO1xyXG5pbXBvcnQgRmluYW5jZU1hbmFnZXJQYWdlIGZyb20gJy4uLy4uL3BhZ2VzL0ZpbmFuY2VNYW5hZ2VyUGFnZSc7XHJcbmltcG9ydCBFbXBsb3llZU1hbmFnZW1lbnRQYWdlIGZyb20gJy4uLy4uL3BhZ2VzL0VtcGxveWVlTWFuYWdlbWVudFBhZ2UnO1xyXG5pbXBvcnQgUHVibGljSG9saWRheXNQYWdlIGZyb20gJy4uLy4uL3BhZ2VzL1B1YmxpY0hvbGlkYXlzUGFnZSc7XHJcbmltcG9ydCBSZXBvcnRzUGFnZSBmcm9tICcuLi8uLi9wYWdlcy9SZXBvcnRzUGFnZSc7XHJcbmltcG9ydCBDRU9WaWV3UGFnZSBmcm9tICcuLi8uLi9wYWdlcy9DRU9WaWV3UGFnZSc7XHJcbmltcG9ydCBBdWRpdExvZ3NQYWdlIGZyb20gJy4uLy4uL3BhZ2VzL0F1ZGl0TG9nc1BhZ2UnO1xyXG5pbXBvcnQgU2V0dGluZ3NQYWdlIGZyb20gJy4uLy4uL3BhZ2VzL1NldHRpbmdzUGFnZSc7XHJcbmltcG9ydCBCTVNMYXlvdXQgZnJvbSAnLi4vLi4vbGF5b3V0cy9CTVNMYXlvdXQnO1xyXG5cclxuZXhwb3J0IGZ1bmN0aW9uIGdldEJNU1JvdXRlcygpIHtcclxuICByZXR1cm4gW1xyXG4gICAgLy8gQ2Fub25pY2FsIEJNUyBSb3V0ZXNcclxuICAgIDxSb3V0ZVxyXG4gICAgICBrZXk9XCJibXMtcmVzcG9uc2VcIlxyXG4gICAgICBwYXRoPVwiL2Jtcy9yZXNwb25zZVwiXHJcbiAgICAgIGVsZW1lbnQ9e1xyXG4gICAgICAgIDxCTVNMYXlvdXQ+XHJcbiAgICAgICAgICA8RW1wbG95ZWVEYWlseVBhZ2UgLz5cclxuICAgICAgICA8L0JNU0xheW91dD5cclxuICAgICAgfVxyXG4gICAgLz4sXHJcbiAgICA8Um91dGVcclxuICAgICAga2V5PVwiYm1zLXRvZGF5XCJcclxuICAgICAgcGF0aD1cIi9ibXMvdG9kYXlcIlxyXG4gICAgICBlbGVtZW50PXtcclxuICAgICAgICA8Qk1TTGF5b3V0PlxyXG4gICAgICAgICAgPEVtcGxveWVlRGFpbHlQYWdlIC8+XHJcbiAgICAgICAgPC9CTVNMYXlvdXQ+XHJcbiAgICAgIH1cclxuICAgIC8+LFxyXG4gICAgPFJvdXRlXHJcbiAgICAgIGtleT1cImJtcy1kYXNoYm9hcmRcIlxyXG4gICAgICBwYXRoPVwiL2Jtcy9kYXNoYm9hcmRcIlxyXG4gICAgICBlbGVtZW50PXtcclxuICAgICAgICA8Qk1TTGF5b3V0IHJlcXVpcmVkUGVybWlzc2lvbj1cImJyZWFrZmFzdC52aWV3XCI+XHJcbiAgICAgICAgICA8QWRtaW5EYXNoYm9hcmRQYWdlIC8+XHJcbiAgICAgICAgPC9CTVNMYXlvdXQ+XHJcbiAgICAgIH1cclxuICAgIC8+LFxyXG4gICAgPFJvdXRlXHJcbiAgICAgIGtleT1cImJtcy1kYWlseS1lbnRyeVwiXHJcbiAgICAgIHBhdGg9XCIvYm1zL2RhaWx5LWVudHJ5XCJcclxuICAgICAgZWxlbWVudD17XHJcbiAgICAgICAgPEJNU0xheW91dCByZXF1aXJlZFBlcm1pc3Npb249XCJicmVha2Zhc3Qudmlld1wiPlxyXG4gICAgICAgICAgPERhaWx5RW50cnlQYWdlIC8+XHJcbiAgICAgICAgPC9CTVNMYXlvdXQ+XHJcbiAgICAgIH1cclxuICAgIC8+LFxyXG4gICAgPFJvdXRlXHJcbiAgICAgIGtleT1cImJtcy1vcmRlcnNcIlxyXG4gICAgICBwYXRoPVwiL2Jtcy9vcmRlcnNcIlxyXG4gICAgICBlbGVtZW50PXtcclxuICAgICAgICA8Qk1TTGF5b3V0IHJlcXVpcmVkUGVybWlzc2lvbj1cImJyZWFrZmFzdC5vcmRlcnMudmlld1wiPlxyXG4gICAgICAgICAgPEJyZWFrZmFzdE9yZGVyc1BhZ2UgLz5cclxuICAgICAgICA8L0JNU0xheW91dD5cclxuICAgICAgfVxyXG4gICAgLz4sXHJcbiAgICA8Um91dGVcclxuICAgICAga2V5PVwiYm1zLWFkZGl0aW9uYWwtb3JkZXJzXCJcclxuICAgICAgcGF0aD1cIi9ibXMvYWRkaXRpb25hbC1vcmRlcnNcIlxyXG4gICAgICBlbGVtZW50PXtcclxuICAgICAgICA8Qk1TTGF5b3V0IHJlcXVpcmVkUGVybWlzc2lvbj1cImJyZWFrZmFzdC52aWV3XCI+XHJcbiAgICAgICAgICA8QWRkaXRpb25hbE9yZGVyc1BhZ2UgLz5cclxuICAgICAgICA8L0JNU0xheW91dD5cclxuICAgICAgfVxyXG4gICAgLz4sXHJcbiAgICA8Um91dGVcclxuICAgICAga2V5PVwiYm1zLW1vbmV5XCJcclxuICAgICAgcGF0aD1cIi9ibXMvbW9uZXlcIlxyXG4gICAgICBlbGVtZW50PXtcclxuICAgICAgICA8Qk1TTGF5b3V0IHJlcXVpcmVkUGVybWlzc2lvbj1cImJyZWFrZmFzdC5tb25leS52aWV3XCI+XHJcbiAgICAgICAgICA8QnJlYWtmYXN0TW9uZXlQYWdlIC8+XHJcbiAgICAgICAgPC9CTVNMYXlvdXQ+XHJcbiAgICAgIH1cclxuICAgIC8+LFxyXG4gICAgPFJvdXRlXHJcbiAgICAgIGtleT1cImJtcy1icmVha2Zhc3QtbW9uZXlcIlxyXG4gICAgICBwYXRoPVwiL2Jtcy9icmVha2Zhc3QtbW9uZXlcIlxyXG4gICAgICBlbGVtZW50PXs8TmF2aWdhdGUgdG89XCIvYm1zL21vbmV5XCIgcmVwbGFjZSAvPn1cclxuICAgIC8+LFxyXG4gICAgPFJvdXRlXHJcbiAgICAgIGtleT1cImJtcy1maW5hbmNlXCJcclxuICAgICAgcGF0aD1cIi9ibXMvZmluYW5jZVwiXHJcbiAgICAgIGVsZW1lbnQ9e1xyXG4gICAgICAgIDxCTVNMYXlvdXQgcmVxdWlyZWRQZXJtaXNzaW9uPVwiZmluYW5jZS5icmVha2Zhc3RfZnVuZC52aWV3XCI+XHJcbiAgICAgICAgICA8RmluYW5jZU1hbmFnZXJQYWdlIC8+XHJcbiAgICAgICAgPC9CTVNMYXlvdXQ+XHJcbiAgICAgIH1cclxuICAgIC8+LFxyXG4gICAgPFJvdXRlXHJcbiAgICAgIGtleT1cImJtcy1lbXBsb3llZXNcIlxyXG4gICAgICBwYXRoPVwiL2Jtcy9lbXBsb3llZXNcIlxyXG4gICAgICBlbGVtZW50PXtcclxuICAgICAgICA8Qk1TTGF5b3V0IHJlcXVpcmVkUGVybWlzc2lvbj1cImJyZWFrZmFzdC52aWV3XCI+XHJcbiAgICAgICAgICA8RW1wbG95ZWVNYW5hZ2VtZW50UGFnZSAvPlxyXG4gICAgICAgIDwvQk1TTGF5b3V0PlxyXG4gICAgICB9XHJcbiAgICAvPixcclxuICAgIDxSb3V0ZVxyXG4gICAgICBrZXk9XCJibXMtaG9saWRheXNcIlxyXG4gICAgICBwYXRoPVwiL2Jtcy9ob2xpZGF5c1wiXHJcbiAgICAgIGVsZW1lbnQ9e1xyXG4gICAgICAgIDxCTVNMYXlvdXQgcmVxdWlyZWRQZXJtaXNzaW9uPVwiYnJlYWtmYXN0LnZpZXdcIj5cclxuICAgICAgICAgIDxQdWJsaWNIb2xpZGF5c1BhZ2UgLz5cclxuICAgICAgICA8L0JNU0xheW91dD5cclxuICAgICAgfVxyXG4gICAgLz4sXHJcbiAgICA8Um91dGVcclxuICAgICAga2V5PVwiYm1zLXJlcG9ydHNcIlxyXG4gICAgICBwYXRoPVwiL2Jtcy9yZXBvcnRzXCJcclxuICAgICAgZWxlbWVudD17XHJcbiAgICAgICAgPEJNU0xheW91dCByZXF1aXJlZFBlcm1pc3Npb249XCJicmVha2Zhc3QucmVwb3J0XCI+XHJcbiAgICAgICAgICA8UmVwb3J0c1BhZ2UgLz5cclxuICAgICAgICA8L0JNU0xheW91dD5cclxuICAgICAgfVxyXG4gICAgLz4sXHJcbiAgICA8Um91dGVcclxuICAgICAga2V5PVwiYm1zLWNlby12aWV3XCJcclxuICAgICAgcGF0aD1cIi9ibXMvY2VvLXZpZXdcIlxyXG4gICAgICBlbGVtZW50PXtcclxuICAgICAgICA8Qk1TTGF5b3V0IHJlcXVpcmVkUm9sZT1cIkNFT1wiPlxyXG4gICAgICAgICAgPENFT1ZpZXdQYWdlIC8+XHJcbiAgICAgICAgPC9CTVNMYXlvdXQ+XHJcbiAgICAgIH1cclxuICAgIC8+LFxyXG4gICAgPFJvdXRlXHJcbiAgICAgIGtleT1cImJtcy1hdWRpdC1sb2dzXCJcclxuICAgICAgcGF0aD1cIi9ibXMvYXVkaXQtbG9nc1wiXHJcbiAgICAgIGVsZW1lbnQ9e1xyXG4gICAgICAgIDxCTVNMYXlvdXQgcmVxdWlyZWRQZXJtaXNzaW9uPVwiYnJlYWtmYXN0LnZpZXdcIj5cclxuICAgICAgICAgIDxBdWRpdExvZ3NQYWdlIC8+XHJcbiAgICAgICAgPC9CTVNMYXlvdXQ+XHJcbiAgICAgIH1cclxuICAgIC8+LFxyXG4gICAgPFJvdXRlXHJcbiAgICAgIGtleT1cImJtcy1zZXR0aW5nc1wiXHJcbiAgICAgIHBhdGg9XCIvYm1zL3NldHRpbmdzXCJcclxuICAgICAgZWxlbWVudD17XHJcbiAgICAgICAgPEJNU0xheW91dCByZXF1aXJlZFBlcm1pc3Npb249XCJicmVha2Zhc3Qudmlld1wiPlxyXG4gICAgICAgICAgPFNldHRpbmdzUGFnZSAvPlxyXG4gICAgICAgIDwvQk1TTGF5b3V0PlxyXG4gICAgICB9XHJcbiAgICAvPixcclxuXHJcbiAgICAvLyBCYWNrd2FyZC1Db21wYXRpYmlsaXR5IFJlZGlyZWN0cyBmb3IgTGVnYWN5IFVSTHNcclxuICAgIDxSb3V0ZSBrZXk9XCJsZWdhY3ktdG9kYXlcIiBwYXRoPVwiL3RvZGF5XCIgZWxlbWVudD17PE5hdmlnYXRlIHRvPVwiL2Jtcy9yZXNwb25zZVwiIHJlcGxhY2UgLz59IC8+LFxyXG4gICAgPFJvdXRlIGtleT1cImxlZ2FjeS1yZXNwb25zZVwiIHBhdGg9XCIvcmVzcG9uc2VcIiBlbGVtZW50PXs8TmF2aWdhdGUgdG89XCIvYm1zL3Jlc3BvbnNlXCIgcmVwbGFjZSAvPn0gLz4sXHJcbiAgICA8Um91dGUga2V5PVwibGVnYWN5LWJyZWFrZmFzdC1yZXNwb25zZVwiIHBhdGg9XCIvYnJlYWtmYXN0LXJlc3BvbnNlXCIgZWxlbWVudD17PE5hdmlnYXRlIHRvPVwiL2Jtcy9yZXNwb25zZVwiIHJlcGxhY2UgLz59IC8+LFxyXG4gICAgPFJvdXRlIGtleT1cImxlZ2FjeS1hZG1pbi1kYXNoYm9hcmRcIiBwYXRoPVwiL2FkbWluL2Rhc2hib2FyZFwiIGVsZW1lbnQ9ezxOYXZpZ2F0ZSB0bz1cIi9ibXMvZGFzaGJvYXJkXCIgcmVwbGFjZSAvPn0gLz4sXHJcbiAgICA8Um91dGUga2V5PVwibGVnYWN5LWFkbWluLWRhaWx5LWVudHJ5XCIgcGF0aD1cIi9hZG1pbi9kYWlseS1lbnRyeVwiIGVsZW1lbnQ9ezxOYXZpZ2F0ZSB0bz1cIi9ibXMvZGFpbHktZW50cnlcIiByZXBsYWNlIC8+fSAvPixcclxuICAgIDxSb3V0ZSBrZXk9XCJsZWdhY3ktYWRtaW4tb3JkZXJzXCIgcGF0aD1cIi9hZG1pbi9vcmRlcnNcIiBlbGVtZW50PXs8TmF2aWdhdGUgdG89XCIvYm1zL29yZGVyc1wiIHJlcGxhY2UgLz59IC8+LFxyXG4gICAgPFJvdXRlIGtleT1cImxlZ2FjeS1hZG1pbi1hZGRpdGlvbmFsLW9yZGVyc1wiIHBhdGg9XCIvYWRtaW4vYWRkaXRpb25hbC1vcmRlcnNcIiBlbGVtZW50PXs8TmF2aWdhdGUgdG89XCIvYm1zL2FkZGl0aW9uYWwtb3JkZXJzXCIgcmVwbGFjZSAvPn0gLz4sXHJcbiAgICA8Um91dGUga2V5PVwibGVnYWN5LWFkbWluLWJyZWFrZmFzdC1tb25leVwiIHBhdGg9XCIvYWRtaW4vYnJlYWtmYXN0LW1vbmV5XCIgZWxlbWVudD17PE5hdmlnYXRlIHRvPVwiL2Jtcy9tb25leVwiIHJlcGxhY2UgLz59IC8+LFxyXG4gICAgPFJvdXRlIGtleT1cImxlZ2FjeS1maW5hbmNlLWZ1bmQtcmVxdWVzdHNcIiBwYXRoPVwiL2ZpbmFuY2UvZnVuZC1yZXF1ZXN0c1wiIGVsZW1lbnQ9ezxOYXZpZ2F0ZSB0bz1cIi9ibXMvZmluYW5jZVwiIHJlcGxhY2UgLz59IC8+LFxyXG4gICAgPFJvdXRlIGtleT1cImxlZ2FjeS1lbXBsb3llZXNcIiBwYXRoPVwiL2VtcGxveWVlc1wiIGVsZW1lbnQ9ezxOYXZpZ2F0ZSB0bz1cIi9ibXMvZW1wbG95ZWVzXCIgcmVwbGFjZSAvPn0gLz4sXHJcbiAgICA8Um91dGUga2V5PVwibGVnYWN5LWFkbWluLWhvbGlkYXlzXCIgcGF0aD1cIi9hZG1pbi9ob2xpZGF5c1wiIGVsZW1lbnQ9ezxOYXZpZ2F0ZSB0bz1cIi9ibXMvaG9saWRheXNcIiByZXBsYWNlIC8+fSAvPixcclxuICAgIDxSb3V0ZSBrZXk9XCJsZWdhY3ktcmVwb3J0c1wiIHBhdGg9XCIvcmVwb3J0c1wiIGVsZW1lbnQ9ezxOYXZpZ2F0ZSB0bz1cIi9ibXMvcmVwb3J0c1wiIHJlcGxhY2UgLz59IC8+LFxyXG4gICAgPFJvdXRlIGtleT1cImxlZ2FjeS1jZW8tZGFzaGJvYXJkXCIgcGF0aD1cIi9jZW8tZGFzaGJvYXJkXCIgZWxlbWVudD17PE5hdmlnYXRlIHRvPVwiL2Jtcy9jZW8tdmlld1wiIHJlcGxhY2UgLz59IC8+LFxyXG4gICAgPFJvdXRlIGtleT1cImxlZ2FjeS1hdWRpdC1sb2dzXCIgcGF0aD1cIi9hdWRpdC1sb2dzXCIgZWxlbWVudD17PE5hdmlnYXRlIHRvPVwiL2Jtcy9hdWRpdC1sb2dzXCIgcmVwbGFjZSAvPn0gLz4sXHJcbiAgICA8Um91dGUga2V5PVwibGVnYWN5LXNldHRpbmdzXCIgcGF0aD1cIi9zZXR0aW5nc1wiIGVsZW1lbnQ9ezxOYXZpZ2F0ZSB0bz1cIi9ibXMvc2V0dGluZ3NcIiByZXBsYWNlIC8+fSAvPlxyXG4gIF07XHJcbn1cclxuXHJcbmV4cG9ydCBkZWZhdWx0IGdldEJNU1JvdXRlcztcclxuIl19

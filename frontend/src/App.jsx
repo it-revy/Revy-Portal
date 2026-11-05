@@ -21,6 +21,16 @@ import CrmOpportunityEditPage from './pages/CrmOpportunityEditPage';
 import CrmContactsPage from './pages/CrmContactsPage';
 import CrmUserHubPage from './pages/CrmUserHubPage';
 
+// CRM Product & Service Catalogue Pages
+import ServicesPage from './pages/crm/catalogue/ServicesPage';
+import ServiceDetailPage from './pages/crm/catalogue/ServiceDetailPage';
+import ServiceFormPage from './pages/crm/catalogue/ServiceFormPage';
+import PackagesPage from './pages/crm/catalogue/PackagesPage';
+import PackageDetailPage from './pages/crm/catalogue/PackageDetailPage';
+import PackageFormPage from './pages/crm/catalogue/PackageFormPage';
+import CategoriesPage from './pages/crm/catalogue/CategoriesPage';
+import MastersPage from './pages/crm/catalogue/MastersPage';
+
 function AppRoutes() {
   const { user, hasPermission, hasRole, hasModuleAccess, loading } = useAuth();
 
@@ -216,6 +226,88 @@ function AppRoutes() {
       <Route
         path="/crm/users"
         element={<Navigate to="/crm/user-hub" replace />}
+      />
+
+      {/* CRM Catalogue Management Routes */}
+      <Route
+        path="/crm/catalogue/services"
+        element={
+          <CrmLayout>
+            <ServicesPage />
+          </CrmLayout>
+        }
+      />
+      <Route
+        path="/crm/catalogue/services/new"
+        element={
+          <CrmLayout requiredPermission="crm.catalogue.manage" requiredRole="CRM_ADMIN">
+            <ServiceFormPage />
+          </CrmLayout>
+        }
+      />
+      <Route
+        path="/crm/catalogue/services/:id/edit"
+        element={
+          <CrmLayout requiredPermission="crm.catalogue.manage" requiredRole="CRM_ADMIN">
+            <ServiceFormPage />
+          </CrmLayout>
+        }
+      />
+      <Route
+        path="/crm/catalogue/services/:id"
+        element={
+          <CrmLayout>
+            <ServiceDetailPage />
+          </CrmLayout>
+        }
+      />
+      <Route
+        path="/crm/catalogue/packages"
+        element={
+          <CrmLayout>
+            <PackagesPage />
+          </CrmLayout>
+        }
+      />
+      <Route
+        path="/crm/catalogue/packages/new"
+        element={
+          <CrmLayout requiredPermission="crm.catalogue.manage" requiredRole="CRM_ADMIN">
+            <PackageFormPage />
+          </CrmLayout>
+        }
+      />
+      <Route
+        path="/crm/catalogue/packages/:id/new-version"
+        element={
+          <CrmLayout requiredPermission="crm.catalogue.manage" requiredRole="CRM_ADMIN">
+            <PackageFormPage />
+          </CrmLayout>
+        }
+      />
+      <Route
+        path="/crm/catalogue/packages/:id"
+        element={
+          <CrmLayout>
+            <PackageDetailPage />
+          </CrmLayout>
+        }
+      />
+      <Route
+        path="/crm/catalogue/categories"
+        element={
+          <CrmLayout requiredPermission="crm.catalogue.manage" requiredRole="CRM_ADMIN">
+            <CategoriesPage />
+          </CrmLayout>
+        }
+      />
+      <Route
+        path="/crm/catalogue/masters"
+        element={
+          <CrmLayout requiredPermission="crm.catalogue.manage" requiredRole="CRM_ADMIN">
+            <MastersPage />
+          </CrmLayout>
+        }
       />
 
       {/* ========================================================================= */}

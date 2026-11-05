@@ -646,7 +646,7 @@
 }
 
 /* ==========================================================================
-   8. MODALS & DRAWERS
+   8. MODALS & DRAWERS (Clean, Solid-Surface Enterprise Design)
    ========================================================================== */
 .revy-modal-backdrop,
 .modal-backdrop,
@@ -656,35 +656,43 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background-color: rgba(15, 23, 42, 0.55);
-  backdrop-filter: blur(4px);
+  background-color: rgba(15, 23, 42, 0.65) !important;
+  background: rgba(15, 23, 42, 0.65) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: var(--z-modal);
-  padding: var(--space-4);
+  z-index: var(--z-modal, 1000);
+  padding: var(--space-4, 1rem);
 }
 
 .revy-modal-card,
 .modal-content,
-.crm-modal-container {
-  background-color: #ffffff;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-xl);
+.crm-modal-container,
+.crm-modal {
+  background-color: #ffffff !important;
+  background: #ffffff !important;
+  opacity: 1 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.08);
   width: 100%;
   max-width: 560px;
   max-height: 90vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
   animation: revyModalIn 150ms ease-out;
 }
 
 @keyframes revyModalIn {
   from {
     opacity: 0;
-    transform: scale(0.97) translateY(4px);
+    transform: scale(0.98) translateY(4px);
   }
   to {
     opacity: 1;
@@ -693,29 +701,38 @@
 }
 
 .revy-modal-header,
-.crm-modal-header {
+.crm-modal-header,
+.modal-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--space-4) var(--space-5);
-  border-bottom: 1px solid var(--color-border);
-  background-color: var(--color-surface);
+  padding: var(--space-4, 1rem) var(--space-5, 1.25rem);
+  border-bottom: 1px solid var(--color-border, #e2e8f0);
+  background-color: #ffffff !important;
+  background: #ffffff !important;
+  flex-shrink: 0;
 }
 
 .revy-modal-body,
-.crm-modal-body {
-  padding: var(--space-5);
+.crm-modal-body,
+.modal-body {
+  padding: var(--space-5, 1.25rem);
+  background-color: #ffffff !important;
+  background: #ffffff !important;
   overflow-y: auto;
   flex: 1;
 }
 
 .revy-modal-footer,
-.crm-modal-footer {
+.crm-modal-footer,
+.modal-footer {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: var(--space-2);
-  padding: var(--space-4) var(--space-5);
-  border-top: 1px solid var(--color-border);
-  background-color: var(--color-surface-subtle);
+  gap: var(--space-2, 0.5rem);
+  padding: var(--space-4, 1rem) var(--space-5, 1.25rem);
+  border-top: 1px solid var(--color-border, #e2e8f0);
+  background-color: var(--color-surface-subtle, #f8fafc) !important;
+  background: var(--color-surface-subtle, #f8fafc) !important;
+  flex-shrink: 0;
 }

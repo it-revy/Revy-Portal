@@ -248,7 +248,7 @@ def ensure_modules_and_memberships():
         crm_sales_mgr_role = roles_by_module_and_code.get(("CRM", "CRM_SALES_MANAGER"))
         if crm_sales_mgr_role:
             crm_sales_mgr_role.permissions = [
-                p for p in all_perms.values() if p.module == "CRM" and p.code != "crm.user.manage"
+                p for p in all_perms.values() if p.module == "CRM" and p.code not in ("crm.user.manage", "crm.catalogue.manage")
             ]
 
         crm_sales_exec_role = roles_by_module_and_code.get(("CRM", "CRM_SALES_EXECUTIVE"))
@@ -258,7 +258,8 @@ def ensure_modules_and_memberships():
                     "crm.dashboard.view", "crm.lead.view", "crm.lead.create", "crm.lead.edit",
                     "crm.lead.status.update", "crm.account.view", "crm.account.create", "crm.account.edit",
                     "crm.contact.view", "crm.contact.create", "crm.contact.edit", "crm.communication.view",
-                    "crm.communication.create"
+                    "crm.communication.create",
+                    "crm.catalogue.view"
                 ] if c in all_perms
             ]
 
@@ -268,7 +269,7 @@ def ensure_modules_and_memberships():
                 all_perms[c] for c in [
                     "crm.dashboard.view", "crm.lead.view", "crm.lead.create", "crm.lead.edit",
                     "crm.account.view", "crm.account.edit", "crm.contact.view", "crm.contact.edit",
-                    "crm.communication.view", "crm.communication.create"
+                    "crm.communication.view", "crm.communication.create", "crm.catalogue.view"
                 ] if c in all_perms
             ]
 

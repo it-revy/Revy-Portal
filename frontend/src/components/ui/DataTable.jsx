@@ -3,7 +3,7 @@ import EmptyState from '../EmptyState';
 import Pagination from './Pagination';
 
 export default function DataTable({
-  columns = null, // array of { key, label, render, align, width, style }
+  columns = null, // array of { key, accessor, label, header, render, align, width, minWidth, style, cellStyle }
   data = null,    // array of items
   loading = false,
   emptyTitle = 'No data available',
@@ -21,29 +21,33 @@ export default function DataTable({
           children
         ) : (
           <table className="revy-table">
-            {columns && (
+            {Array.isArray(columns) && columns.length > 0 && (
               <thead>
                 <tr>
-                  {columns.map(col => (
-                    <th
-                      key={col.key || col.label}
-                      style={{
-                        textAlign: col.align || 'left',
-                        width: col.width || 'auto',
-                        minWidth: col.minWidth || 'auto',
-                        ...col.style
-                      }}
-                    >
-                      {col.label}
-                    </th>
-                  ))}
+                  {columns.map((col, cIdx) => {
+                    const colKey = col.key || col.accessor || col.id || col.label || col.header || cIdx;
+                    const colHeader = col.label ?? col.header ?? col.title ?? '';
+                    return (
+                      <th
+                        key={colKey}
+                        style={{
+                          textAlign: col.align || 'left',
+                          width: col.width || 'auto',
+                          minWidth: col.minWidth || 'auto',
+                          ...col.style
+                        }}
+                      >
+                        {colHeader}
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
             )}
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={columns ? columns.length : 1} style={{ textAlign: 'center', padding: '3rem 1rem' }}>
+                  <td colSpan={Array.isArray(columns) && columns.length > 0 ? columns.length : 1} style={{ textAlign: 'center', padding: '3rem 1rem' }}>
                     <div style={{ display: 'inline-flex', alignItems: 'center', gap: '0.75rem', color: 'var(--color-text-secondary)' }}>
                       <span
                         style={{
@@ -59,28 +63,73 @@ export default function DataTable({
                     </div>
                   </td>
                 </tr>
-              ) : !data || data.length === 0 ? (
+              ) : !Array.isArray(data) || data.length === 0 ? (
                 <tr>
-                  <td colSpan={columns ? columns.length : 1} style={{ padding: '2rem 1rem' }}>
+                  <td colSpan={Array.isArray(columns) && columns.length > 0 ? columns.length : 1} style={{ padding: '2rem 1rem' }}>
                     <EmptyState title={emptyTitle} message={emptyMessage} actionButton={emptyAction} />
                   </td>
                 </tr>
               ) : (
-                data.map((row, idx) => (
-                  <tr key={row.id || row.key || idx}>
-                    {columns.map(col => (
-                      <td
-                        key={col.key || col.label}
-                        style={{
-                          textAlign: col.align || 'left',
-                          ...col.cellStyle
-                        }}
-                      >
-                        {col.render ? col.render(row[col.key], row, idx) : row[col.key]}
-                      </td>
-                    ))}
-                  </tr>
-                ))
+                data.map((row, idx) => {
+                  if (!row || typeof row !== 'object') {
+                    return null;
+                  }
+                  const rowKey = row.id || row.key || row.code || row.serviceCode || row.packageCode || idx;
+
+                  return (
+                    <tr key={rowKey}>
+                      {columns.map((col, cIdx) => {
+                        const key = col.key || col.accessor;
+                        const colKey = key || col.id || col.label || col.header || cIdx;
+                        const cellValue = key ? row[key] : undefined;
+
+                        let cellContent;
+                        if (typeof col.render === 'function') {
+                          // Standard contract: col.render(cellValue, row, idx)
+                          // Also resilient to legacy columns where render expects (row, idx)
+                          try {
+                            if (!key || key === 'actions' || (key === 'id' && (col.header === 'Actions' || col.label === 'Actions'))) {
+                              cellContent = col.render(cellValue, row, idx);
+                              // If render returned undefined because it accessed properties on cellValue instead of row
+                              if (cellContent === undefined) {
+                                cellContent = col.render(row, row, idx);
+                              }
+                            } else {
+                              cellContent = col.render(cellValue, row, idx);
+                              if (cellContent === undefined && row && typeof cellValue !== 'object') {
+                                // If render expected full row object instead of cellValue
+                                const retryContent = col.render(row, row, idx);
+                                if (retryContent !== undefined) {
+                                  cellContent = retryContent;
+                                }
+                              }
+                            }
+                          } catch (renderError) {
+                            try {
+                              cellContent = col.render(row, row, idx);
+                            } catch {
+                              cellContent = cellValue ?? '—';
+                            }
+                          }
+                        } else {
+                          cellContent = cellValue ?? '—';
+                        }
+
+                        return (
+                          <td
+                            key={colKey}
+                            style={{
+                              textAlign: col.align || 'left',
+                              ...col.cellStyle
+                            }}
+                          >
+                            {cellContent ?? '—'}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
