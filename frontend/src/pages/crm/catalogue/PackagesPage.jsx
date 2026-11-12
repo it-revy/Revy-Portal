@@ -125,13 +125,12 @@ export default function PackagesPage() {
     {
       key: 'categoryName',
       accessor: 'categoryName',
-      label: 'Category / Subcategory',
-      header: 'Category / Subcategory',
+      label: 'Category',
+      header: 'Category',
       render: (catVal, row) => (
-        <div style={{ fontSize: '0.82rem' }}>
-          <div style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{catVal || row?.categoryName || 'General Laboratory'}</div>
-          <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>{row?.subcategoryName || 'Standard Bundle'}</div>
-        </div>
+        <span style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+          {catVal || row?.categoryName || 'General Laboratory'}
+        </span>
       )
     },
     {

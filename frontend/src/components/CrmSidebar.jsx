@@ -247,7 +247,7 @@ const CrmSidebar = ({
             to="/crm/catalogue/categories"
             onClick={handleLinkClick}
             className={`nav-item ${isCategoriesActive ? 'active' : ''}`}
-            title="Categories & Subcategories"
+            title="Service Categories"
           >
             <FolderTree size={18} />
             {(!isCollapsed || isMobileOpen) && <span>Categories</span>}

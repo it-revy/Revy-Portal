@@ -1,4 +1,5 @@
 from datetime import date as py_date
+from decimal import Decimal
 from typing import List, Optional, Any, Dict
 from fastapi import APIRouter, Depends, Query, Request, status, HTTPException
 from sqlalchemy.orm import Session
@@ -11,7 +12,6 @@ from app.core.dependencies import (
 )
 from app.crm.catalogue_model import (
     ServiceCategory,
-    ServiceSubcategory,
     BillingUnit,
     ReportingUnit,
     SampleType,
@@ -27,9 +27,6 @@ from app.crm.catalogue_schema import (
     ServiceCategoryCreate,
     ServiceCategoryUpdate,
     ServiceCategoryResponse,
-    ServiceSubcategoryCreate,
-    ServiceSubcategoryUpdate,
-    ServiceSubcategoryResponse,
     BillingUnitCreate,
     BillingUnitUpdate,
     BillingUnitResponse,
@@ -191,67 +188,20 @@ def delete_category(
     return {"success": True, "message": "Category soft-deleted successfully."}
 
 
-# Subcategories
+# Subcategories (Deprecated - Main Category directly maps to Services)
 @router.get("/subcategories")
 def list_subcategories(
     category_id: Optional[str] = Query(None),
     include_inactive: bool = Query(False),
-    db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(require_catalogue_read)
 ):
-    service = CatalogueService(db)
-    items = service.list_subcategories(category_id=category_id, include_inactive=include_inactive)
-    serialized = [ServiceSubcategoryResponse.model_validate(s) for s in items]
     return {
         "success": True,
-        "total": len(items),
-        "subcategories": serialized,
-        "items": serialized,
-        "data": serialized
+        "total": 0,
+        "subcategories": [],
+        "items": [],
+        "data": []
     }
-
-
-@router.post("/subcategories")
-def create_subcategory(
-    payload: ServiceSubcategoryCreate,
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_catalogue_admin)
-):
-    service = CatalogueService(db)
-    subcat = service.create_subcategory(current_user, payload, request)
-    return {
-        "success": True,
-        "subcategory": ServiceSubcategoryResponse.model_validate(subcat)
-    }
-
-
-@router.put("/subcategories/{subcategory_id}")
-def update_subcategory(
-    subcategory_id: str,
-    payload: ServiceSubcategoryUpdate,
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_catalogue_admin)
-):
-    service = CatalogueService(db)
-    subcat = service.update_subcategory(current_user, subcategory_id, payload, request)
-    return {
-        "success": True,
-        "subcategory": ServiceSubcategoryResponse.model_validate(subcat)
-    }
-
-
-@router.delete("/subcategories/{subcategory_id}")
-def delete_subcategory(
-    subcategory_id: str,
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_catalogue_admin)
-):
-    service = CatalogueService(db)
-    service.soft_delete_subcategory(current_user, subcategory_id, request)
-    return {"success": True, "message": "Subcategory soft-deleted successfully."}
 
 
 # =========================================================================
@@ -579,10 +529,12 @@ def update_tax_configuration(
 @router.get("/services")
 def list_services(
     categoryId: Optional[str] = Query(None),
-    subcategoryId: Optional[str] = Query(None),
+    billingUnitId: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
     isActive: Optional[bool] = Query(None),
     isAddonEligible: Optional[bool] = Query(None),
+    minPrice: Optional[Decimal] = Query(None),
+    maxPrice: Optional[Decimal] = Query(None),
     page: int = Query(1, ge=1),
     pageSize: int = Query(25, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -591,10 +543,12 @@ def list_services(
     service = CatalogueService(db)
     items, total = service.list_services(
         category_id=categoryId,
-        subcategory_id=subcategoryId,
         search=search,
         is_active=isActive,
         is_addon_eligible=isAddonEligible,
+        billing_unit_id=billingUnitId,
+        min_price=minPrice,
+        max_price=maxPrice,
         page=page,
         page_size=pageSize
     )

@@ -16,7 +16,6 @@ from app.audit.service import AuditService
 from app.core.dependencies import CurrentUser
 from app.crm.catalogue_model import (
     ServiceCategory,
-    ServiceSubcategory,
     BillingUnit,
     ReportingUnit,
     SampleType,
@@ -38,8 +37,6 @@ from app.crm.catalogue_model import (
 from app.crm.catalogue_schema import (
     ServiceCategoryCreate,
     ServiceCategoryUpdate,
-    ServiceSubcategoryCreate,
-    ServiceSubcategoryUpdate,
     BillingUnitCreate,
     BillingUnitUpdate,
     ReportingUnitCreate,
@@ -155,7 +152,7 @@ class CatalogueService:
     # CATEGORIES & SUBCATEGORIES
     # =========================================================================
     def list_categories(self, include_inactive: bool = False) -> List[ServiceCategory]:
-        q = self.db.query(ServiceCategory).filter(ServiceCategory.is_deleted == False)
+        q = self.db.query(ServiceCategory).options(joinedload(ServiceCategory.services)).filter(ServiceCategory.is_deleted == False)
         if not include_inactive:
             q = q.filter(ServiceCategory.is_active == True)
         return q.order_by(ServiceCategory.code).all()
@@ -243,15 +240,15 @@ class CatalogueService:
 
     def soft_delete_category(self, actor: CurrentUser, category_id: str, request: Any = None):
         cat = self.get_category(category_id)
-        # Cannot soft delete if it has subcategories
-        subcat_count = self.db.query(ServiceSubcategory).filter(
-            ServiceSubcategory.category_id == cat.id,
-            ServiceSubcategory.is_deleted == False
+        # Cannot soft delete if it has services
+        service_count = self.db.query(Service).filter(
+            Service.category_id == cat.id,
+            Service.is_deleted == False
         ).count()
-        if subcat_count > 0:
+        if service_count > 0:
             raise ValidationError(
-                f"Main category '{cat.name}' cannot be deleted while it contains {subcat_count} subcategories. "
-                "Delete or remove all subcategories first."
+                f"Main category '{cat.name}' cannot be deleted while it contains {service_count} service(s). "
+                "Delete or reassign all services first."
             )
 
         cat.is_deleted = True
@@ -260,121 +257,9 @@ class CatalogueService:
         self.db.commit()
         self._audit(actor, "CRM_CATALOGUE_CATEGORY_DELETED", "ServiceCategory", cat.id, {"code": cat.code}, request)
 
-    # --- Subcategories ---
-    def list_subcategories(self, category_id: Optional[str] = None, include_inactive: bool = False) -> List[ServiceSubcategory]:
-        q = self.db.query(ServiceSubcategory).filter(ServiceSubcategory.is_deleted == False)
-        if category_id:
-            q = q.filter(ServiceSubcategory.category_id == category_id)
-        if not include_inactive:
-            q = q.filter(ServiceSubcategory.is_active == True)
-        return q.order_by(ServiceSubcategory.code).all()
-
-    def get_subcategory(self, subcategory_id: str) -> ServiceSubcategory:
-        subcat = self.db.query(ServiceSubcategory).filter(
-            ServiceSubcategory.id == subcategory_id,
-            ServiceSubcategory.is_deleted == False
-        ).first()
-        if not subcat:
-            raise NotFoundError(f"Subcategory '{subcategory_id}' not found.")
-        return subcat
-
-    def create_subcategory(self, actor: CurrentUser, payload: ServiceSubcategoryCreate, request: Any = None) -> ServiceSubcategory:
-        category = self.get_category(payload.categoryId)
-        if not category.is_active:
-            raise ValidationError(f"Cannot add subcategory to inactive main category '{category.name}'.")
-
-        existing = self.db.query(ServiceSubcategory).filter(ServiceSubcategory.code == payload.code).first()
-        if existing:
-            if existing.is_deleted:
-                existing.is_deleted = False
-                existing.category_id = category.id
-                existing.name = payload.name.strip()
-                existing.description = payload.description.strip() if payload.description else None
-                existing.is_active = payload.isActive
-                existing.updated_by_id = str(actor.id) if actor.id else None
-                self.db.commit()
-                self.db.refresh(existing)
-                self._audit(actor, "CRM_CATALOGUE_SUBCATEGORY_RESTORED", "ServiceSubcategory", existing.id, {"code": existing.code}, request)
-                return existing
-            raise ConflictError(f"Subcategory with code '{payload.code}' already exists.")
-
-        subcat = ServiceSubcategory(
-            category_id=category.id,
-            code=payload.code.strip().upper(),
-            name=payload.name.strip(),
-            description=payload.description.strip() if payload.description else None,
-            is_active=payload.isActive,
-            is_deleted=False,
-            created_by_id=str(actor.id) if actor.id else None,
-            updated_by_id=str(actor.id) if actor.id else None
-        )
-        self.db.add(subcat)
-        self.db.commit()
-        self.db.refresh(subcat)
-        self._audit(actor, "CRM_CATALOGUE_SUBCATEGORY_CREATED", "ServiceSubcategory", subcat.id, {"code": subcat.code, "name": subcat.name}, request)
-        return subcat
-
-    def update_subcategory(self, actor: CurrentUser, subcategory_id: str, payload: ServiceSubcategoryUpdate, request: Any = None) -> ServiceSubcategory:
-        subcat = self.get_subcategory(subcategory_id)
-
-        # Deactivation guard: cannot deactivate subcategory while it has active services
-        if payload.isActive is False and subcat.is_active is True:
-            active_services_count = self.db.query(Service).filter(
-                Service.subcategory_id == subcat.id,
-                Service.is_active == True,
-                Service.is_deleted == False
-            ).count()
-            if active_services_count > 0:
-                raise ValidationError(
-                    f"Subcategory '{subcat.name}' cannot be deactivated because it has {active_services_count} active service(s). "
-                    "Deactivate all associated services first."
-                )
-
-        changes = {}
-        if payload.categoryId is not None and payload.categoryId != subcat.category_id:
-            new_cat = self.get_category(payload.categoryId)
-            if not new_cat.is_active:
-                raise ValidationError(f"Cannot move subcategory to inactive main category '{new_cat.name}'.")
-            changes["category_id"] = {"old": subcat.category_id, "new": new_cat.id}
-            subcat.category_id = new_cat.id
-
-        if payload.name is not None and payload.name.strip() != subcat.name:
-            changes["name"] = {"old": subcat.name, "new": payload.name.strip()}
-            subcat.name = payload.name.strip()
-
-        if payload.description is not None and payload.description != subcat.description:
-            changes["description"] = {"old": subcat.description, "new": payload.description}
-            subcat.description = payload.description
-
-        if payload.isActive is not None and payload.isActive != subcat.is_active:
-            changes["is_active"] = {"old": subcat.is_active, "new": payload.isActive}
-            subcat.is_active = payload.isActive
-
-        subcat.updated_by_id = str(actor.id) if actor.id else None
-        self.db.commit()
-        self.db.refresh(subcat)
-        self._audit(actor, "CRM_CATALOGUE_SUBCATEGORY_UPDATED", "ServiceSubcategory", subcat.id, changes, request)
-        return subcat
-
-    def soft_delete_subcategory(self, actor: CurrentUser, subcategory_id: str, request: Any = None):
-        subcat = self.get_subcategory(subcategory_id)
-        # Cannot delete subcategory while it has active services
-        active_count = self.db.query(Service).filter(
-            Service.subcategory_id == subcat.id,
-            Service.is_active == True,
-            Service.is_deleted == False
-        ).count()
-        if active_count > 0:
-            raise ValidationError(
-                f"Subcategory '{subcat.name}' cannot be deleted because it has {active_count} active service(s). "
-                "Deactivate all associated services first."
-            )
-
-        subcat.is_deleted = True
-        subcat.is_active = False
-        subcat.updated_by_id = str(actor.id) if actor.id else None
-        self.db.commit()
-        self._audit(actor, "CRM_CATALOGUE_SUBCATEGORY_DELETED", "ServiceSubcategory", subcat.id, {"code": subcat.code}, request)
+    # --- Subcategories (Deprecated - Main Category directly manages Services) ---
+    def list_subcategories(self, category_id: Optional[str] = None, include_inactive: bool = False) -> List[Any]:
+        return []
 
     # =========================================================================
     # MASTER DATA (BILLING UNITS, REPORTING UNITS, SAMPLE TYPES, METHODS, CURRENCIES)
@@ -652,10 +537,12 @@ class CatalogueService:
         self.db.flush()
 
         for r_in in payload.rates:
+            c_name = getattr(r_in, "componentName", None) or getattr(r_in, "rateName", "") or ""
+            r_pct = getattr(r_in, "ratePercentage", None) if getattr(r_in, "ratePercentage", None) is not None else getattr(r_in, "percentage", Decimal("0.0"))
             rate = TaxRate(
                 configuration_id=tc.id,
-                component_name=r_in.componentName.strip().upper(),
-                rate_percentage=r_in.ratePercentage,
+                component_name=c_name.strip().upper(),
+                rate_percentage=r_pct,
                 is_active=True
             )
             self.db.add(rate)
@@ -680,10 +567,12 @@ class CatalogueService:
             # Replace rates
             self.db.query(TaxRate).filter(TaxRate.configuration_id == tc.id).delete()
             for r_in in payload.rates:
+                c_name = getattr(r_in, "componentName", None) or getattr(r_in, "rateName", "") or ""
+                r_pct = getattr(r_in, "ratePercentage", None) if getattr(r_in, "ratePercentage", None) is not None else getattr(r_in, "percentage", Decimal("0.0"))
                 rate = TaxRate(
                     configuration_id=tc.id,
-                    component_name=r_in.componentName.strip().upper(),
-                    rate_percentage=r_in.ratePercentage,
+                    component_name=c_name.strip().upper(),
+                    rate_percentage=r_pct,
                     is_active=True
                 )
                 self.db.add(rate)
@@ -700,10 +589,12 @@ class CatalogueService:
     def list_services(
         self,
         category_id: Optional[str] = None,
-        subcategory_id: Optional[str] = None,
         search: Optional[str] = None,
         is_active: Optional[bool] = None,
         is_addon_eligible: Optional[bool] = None,
+        billing_unit_id: Optional[str] = None,
+        min_price: Optional[Decimal] = None,
+        max_price: Optional[Decimal] = None,
         page: int = 1,
         page_size: int = 25
     ) -> Tuple[List[Service], int]:
@@ -711,12 +602,16 @@ class CatalogueService:
 
         if category_id:
             q = q.filter(Service.category_id == category_id)
-        if subcategory_id:
-            q = q.filter(Service.subcategory_id == subcategory_id)
+        if billing_unit_id:
+            q = q.filter(Service.billing_unit_id == billing_unit_id)
         if is_active is not None:
             q = q.filter(Service.is_active == is_active)
         if is_addon_eligible is not None:
             q = q.filter(Service.is_addon_eligible == is_addon_eligible)
+        if min_price is not None:
+            q = q.filter(Service.standard_price >= min_price)
+        if max_price is not None:
+            q = q.filter(Service.standard_price <= max_price)
         if search and search.strip():
             term = f"%{search.strip()}%"
             q = q.filter(or_(
@@ -729,7 +624,6 @@ class CatalogueService:
         offset = (max(1, page) - 1) * page_size
         items = q.options(
             joinedload(Service.category),
-            joinedload(Service.subcategory),
             joinedload(Service.billing_unit),
             joinedload(Service.currency),
             joinedload(Service.sample_types).joinedload(ServiceSampleType.sample_type),
@@ -743,7 +637,6 @@ class CatalogueService:
     def get_service(self, service_id: str, as_of_date: Optional[py_date] = None) -> Service:
         svc = self.db.query(Service).options(
             joinedload(Service.category),
-            joinedload(Service.subcategory),
             joinedload(Service.billing_unit),
             joinedload(Service.currency),
             joinedload(Service.sample_types).joinedload(ServiceSampleType.sample_type),
@@ -780,17 +673,10 @@ class CatalogueService:
         return Decimal(str(svc.standard_price)) if svc else Decimal("0.0")
 
     def create_service(self, actor: CurrentUser, payload: ServiceCreate, request: Any = None) -> Service:
-        # Rule 1 & 2: A service must have one main category and one subcategory, and subcategory must belong to category
+        # Rule 1: A service must belong to an active main category
         category = self.get_category(payload.categoryId)
-        subcategory = self.get_subcategory(payload.subcategoryId)
-        if subcategory.category_id != category.id:
-            raise ValidationError(f"Subcategory '{subcategory.name}' does not belong to category '{category.name}'.")
-
-        # Rule 3: Inactive categories cannot receive new service assignments
         if not category.is_active:
             raise ValidationError(f"Cannot create service in inactive main category '{category.name}'.")
-        if not subcategory.is_active:
-            raise ValidationError(f"Cannot create service in inactive subcategory '{subcategory.name}'.")
 
         # Rule 4: Each service must have exactly one billing unit
         billing_unit = self.db.query(BillingUnit).filter(BillingUnit.id == payload.billingUnitId).first()
@@ -819,7 +705,6 @@ class CatalogueService:
             name=payload.name.strip(),
             description=payload.description.strip() if payload.description else None,
             category_id=category.id,
-            subcategory_id=subcategory.id,
             billing_unit_id=billing_unit.id,
             currency_id=currency.id,
             minimum_billing_quantity=payload.minimumBillingQuantity,
@@ -907,20 +792,13 @@ class CatalogueService:
             changes["description"] = {"old": svc.description, "new": payload.description}
             svc.description = payload.description
 
-        # Category and Subcategory reassignment
-        new_cat_id = payload.categoryId or svc.category_id
-        new_subcat_id = payload.subcategoryId or svc.subcategory_id
-        if payload.categoryId or payload.subcategoryId:
-            cat = self.get_category(new_cat_id)
-            subcat = self.get_subcategory(new_subcat_id)
-            if subcat.category_id != cat.id:
-                raise ValidationError(f"Subcategory '{subcat.name}' does not belong to category '{cat.name}'.")
+        # Category reassignment
+        if payload.categoryId and payload.categoryId != svc.category_id:
+            cat = self.get_category(payload.categoryId)
             if not cat.is_active:
                 raise ValidationError(f"Cannot assign inactive category '{cat.name}'.")
-            if not subcat.is_active:
-                raise ValidationError(f"Cannot assign inactive subcategory '{subcat.name}'.")
+            changes["category_id"] = {"old": svc.category_id, "new": cat.id}
             svc.category_id = cat.id
-            svc.subcategory_id = subcat.id
 
         if payload.billingUnitId is not None and payload.billingUnitId != svc.billing_unit_id:
             bu = self.db.query(BillingUnit).filter(BillingUnit.id == payload.billingUnitId).first()
@@ -1077,7 +955,6 @@ class CatalogueService:
         offset = (max(1, page) - 1) * page_size
         items = q.options(
             joinedload(Package.category),
-            joinedload(Package.subcategory),
             joinedload(Package.currency),
             joinedload(Package.versions).joinedload(PackageVersion.components).joinedload(PackageComponent.service),
             joinedload(Package.versions).joinedload(PackageVersion.addon_configurations).joinedload(PackageAddOnConfiguration.addon_service)
@@ -1088,7 +965,6 @@ class CatalogueService:
     def get_package(self, package_id: str) -> Package:
         pkg = self.db.query(Package).options(
             joinedload(Package.category),
-            joinedload(Package.subcategory),
             joinedload(Package.currency),
             joinedload(Package.versions).joinedload(PackageVersion.components).joinedload(PackageComponent.service),
             joinedload(Package.versions).joinedload(PackageVersion.addon_configurations).joinedload(PackageAddOnConfiguration.addon_service)
@@ -1127,7 +1003,6 @@ class CatalogueService:
             name=payload.name.strip(),
             description=payload.description.strip() if payload.description else None,
             category_id=payload.categoryId,
-            subcategory_id=payload.subcategoryId,
             currency_id=currency.id,
             fixed_package_price=payload.fixedPackagePrice,
             current_version=1,
@@ -1284,8 +1159,6 @@ class CatalogueService:
 
         if payload.categoryId is not None:
             pkg.category_id = payload.categoryId
-        if payload.subcategoryId is not None:
-            pkg.subcategory_id = payload.subcategoryId
 
         if payload.isActive is not None and payload.isActive != pkg.is_active:
             changes["is_active"] = {"old": pkg.is_active, "new": payload.isActive}

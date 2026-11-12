@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   PageHeader,
@@ -19,7 +19,8 @@ import {
   RefreshCw,
   Eye,
   Edit,
-  AlertCircle
+  AlertCircle,
+  X
 } from 'lucide-react';
 import catalogueService, { normalizeArrayResponse } from '../../../services/catalogueService';
 import { useAuth } from '../../../context/AuthContext';
@@ -35,66 +36,42 @@ export default function ServicesPage() {
   const [error, setError] = useState(null);
   const [services, setServices] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [subcategories, setSubcategories] = useState([]);
-  const [subcategoriesError, setSubcategoriesError] = useState(null);
+  const [billingUnits, setBillingUnits] = useState([]);
   const [totalItems, setTotalItems] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
 
   // Filters
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('ALL');
-  const [selectedSubcategory, setSelectedSubcategory] = useState('ALL');
   const [selectedStatus, setSelectedStatus] = useState('ALL');
+  const [selectedBillingUnit, setSelectedBillingUnit] = useState('ALL');
+  const [minPrice, setMinPrice] = useState('');
+  const [maxPrice, setMaxPrice] = useState('');
   const [page, setPage] = useState(1);
   const pageSize = 15;
 
-  // Load Categories on mount
+  // Load Metadata (Categories & Billing Units)
   useEffect(() => {
     let isMounted = true;
     async function loadMeta() {
       try {
-        const catRes = await catalogueService.getCategories({ includeInactive: true });
+        const [catRes, unitRes] = await Promise.all([
+          catalogueService.getCategories({ includeInactive: true }),
+          catalogueService.getBillingUnits({ includeInactive: true })
+        ]);
         if (isMounted) {
           setCategories(normalizeArrayResponse(catRes, 'categories'));
+          setBillingUnits(normalizeArrayResponse(unitRes, 'billingUnits'));
         }
       } catch (err) {
-        console.error('Failed to load categories', err);
-        if (isMounted) {
-          setCategories([]);
-        }
+        console.error('Failed to load catalogue metadata:', err);
       }
     }
     loadMeta();
     return () => { isMounted = false; };
   }, []);
 
-  // Update subcategories dropdown when category filter changes
-  useEffect(() => {
-    let isMounted = true;
-    async function loadSubcategories() {
-      try {
-        setSubcategoriesError(null);
-        const params = { includeInactive: true };
-        if (selectedCategory && selectedCategory !== 'ALL') {
-          params.categoryId = selectedCategory;
-        }
-        const res = await catalogueService.getSubcategories(params);
-        if (isMounted) {
-          setSubcategories(normalizeArrayResponse(res, 'subcategories'));
-        }
-      } catch (err) {
-        console.error('Failed to load subcategories', err);
-        if (isMounted) {
-          setSubcategories([]);
-          setSubcategoriesError('Failed to load subcategories');
-        }
-      }
-    }
-    loadSubcategories();
-    setSelectedSubcategory('ALL');
-    return () => { isMounted = false; };
-  }, [selectedCategory]);
-
+  // Fetch Services from backend with filter cohesion
   const fetchServices = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -104,7 +81,9 @@ export default function ServicesPage() {
         pageSize,
         search: search.trim() || undefined,
         categoryId: selectedCategory !== 'ALL' ? selectedCategory : undefined,
-        subcategoryId: selectedSubcategory !== 'ALL' ? selectedSubcategory : undefined,
+        billingUnitId: selectedBillingUnit !== 'ALL' ? selectedBillingUnit : undefined,
+        minPrice: minPrice !== '' ? Number(minPrice) : undefined,
+        maxPrice: maxPrice !== '' ? Number(maxPrice) : undefined,
         isActive: selectedStatus === 'ALL' ? undefined : (selectedStatus === 'ACTIVE')
       };
       const res = await catalogueService.getServices(params);
@@ -114,7 +93,7 @@ export default function ServicesPage() {
       setTotalItems(total);
       setTotalPages(Math.max(1, Math.ceil(total / pageSize)));
     } catch (err) {
-      console.error('Failed to fetch services', err);
+      console.error('Failed to fetch services:', err);
       setError(err.response?.data?.message || 'Failed to fetch services from catalogue.');
       setServices([]);
       setTotalItems(0);
@@ -122,18 +101,37 @@ export default function ServicesPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, selectedCategory, selectedSubcategory, selectedStatus]);
+  }, [page, search, selectedCategory, selectedBillingUnit, minPrice, maxPrice, selectedStatus]);
 
   useEffect(() => {
     fetchServices();
   }, [fetchServices]);
 
+  const handleClearFilters = () => {
+    setSearch('');
+    setSelectedCategory('ALL');
+    setSelectedStatus('ALL');
+    setSelectedBillingUnit('ALL');
+    setMinPrice('');
+    setMaxPrice('');
+    setPage(1);
+  };
+
+  const hasActiveFilters = Boolean(
+    search.trim() ||
+    selectedCategory !== 'ALL' ||
+    selectedStatus !== 'ALL' ||
+    selectedBillingUnit !== 'ALL' ||
+    minPrice !== '' ||
+    maxPrice !== ''
+  );
+
   const columns = [
     {
       key: 'serviceCode',
       accessor: 'serviceCode',
-      label: 'Code',
-      header: 'Code',
+      label: 'Service Code',
+      header: 'Service Code',
       render: (code, row) => {
         const itemCode = code || row?.serviceCode || row?.code || '—';
         return (
@@ -155,7 +153,7 @@ export default function ServicesPage() {
           <div>
             <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{svcName}</div>
             {note && (
-              <span style={{ fontSize: '0.72rem', color: '#f59e0b', background: '#fef3c7', padding: '1px 6px', borderRadius: '4px', fontWeight: 600 }}>
+              <span style={{ fontSize: '0.72rem', color: '#b45309', background: '#fef3c7', padding: '1px 6px', borderRadius: '4px', fontWeight: 600, display: 'inline-block', marginTop: '2px' }}>
                 Note: {note}
               </span>
             )}
@@ -166,13 +164,12 @@ export default function ServicesPage() {
     {
       key: 'categoryName',
       accessor: 'categoryName',
-      label: 'Category / Subcategory',
-      header: 'Category / Subcategory',
+      label: 'Main Category',
+      header: 'Main Category',
       render: (catVal, row) => (
-        <div style={{ fontSize: '0.82rem' }}>
-          <div style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{catVal || row?.categoryName || '—'}</div>
-          <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>{row?.subcategoryName || '—'}</div>
-        </div>
+        <span style={{ fontSize: '0.85rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+          {catVal || row?.categoryName || '—'}
+        </span>
       )
     },
     {
@@ -203,16 +200,6 @@ export default function ServicesPage() {
           </div>
         );
       }
-    },
-    {
-      key: 'minimumBillingQuantity',
-      accessor: 'minimumBillingQuantity',
-      label: 'Min Qty',
-      header: 'Min Qty',
-      align: 'center',
-      render: (qtyVal, row) => (
-        <div style={{ textAlign: 'center' }}>{qtyVal || row?.minimumBillingQuantity || 1}</div>
-      )
     },
     {
       key: 'isActive',
@@ -261,37 +248,30 @@ export default function ServicesPage() {
     }
   ];
 
-  const safeCategories = Array.isArray(categories) ? categories : [];
-  const safeSubcategories = Array.isArray(subcategories) ? subcategories : [];
-
-  const categoryOptions = [
+  // Options for dropdowns (shows only the four active categories)
+  const safeCategories = Array.isArray(categories) ? categories.filter(c => c.isActive && !c.isDeleted) : [];
+  const categoryOptions = useMemo(() => [
     { value: 'ALL', label: 'All Categories' },
     ...safeCategories.map(c => ({ value: c.id, label: `${c.code} — ${c.name}` }))
-  ];
+  ], [safeCategories]);
 
-  let subcategoryPlaceholder = 'All Subcategories';
-  if (subcategoriesError) {
-    subcategoryPlaceholder = 'Error loading subcategories';
-  } else if (selectedCategory !== 'ALL' && safeSubcategories.length === 0) {
-    subcategoryPlaceholder = 'No subcategories found';
-  }
-
-  const subcategoryOptions = [
-    { value: 'ALL', label: subcategoryPlaceholder },
-    ...safeSubcategories.map(sc => ({ value: sc.id, label: `${sc.code} — ${sc.name}` }))
-  ];
+  const safeBillingUnits = Array.isArray(billingUnits) ? billingUnits : [];
+  const billingUnitOptions = useMemo(() => [
+    { value: 'ALL', label: 'All Units' },
+    ...safeBillingUnits.map(u => ({ value: u.id, label: `${u.code} (${u.name})` }))
+  ], [safeBillingUnits]);
 
   const statusOptions = [
-    { value: 'ALL', label: 'All Statuses' },
-    { value: 'ACTIVE', label: 'Active Only' },
-    { value: 'INACTIVE', label: 'Inactive Only' }
+    { value: 'ALL', label: 'All Status' },
+    { value: 'ACTIVE', label: 'Active' },
+    { value: 'INACTIVE', label: 'Inactive' }
   ];
 
   return (
     <div className="page-body">
       <PageHeader
         title="Laboratory Services Catalogue"
-        subtitle="Authoritative R&D renewable energy testing services, parameter suites, and standard pricing."
+        subtitle="Manage laboratory services, test parameters, and commercial rates."
         icon={FlaskConical}
         breadcrumbs={[
           { label: 'Portal', to: '/portal' },
@@ -340,12 +320,17 @@ export default function ServicesPage() {
         </div>
       )}
 
-      <FilterBar>
-        <div style={{ flex: 1, minWidth: '240px', maxWidth: '400px' }}>
+      {/* Practical Compact Filter Toolbar (Search | Category | Status | Billing Unit | Min Price | Max Price | Clear) */}
+      <FilterBar onReset={hasActiveFilters ? handleClearFilters : null} resetLabel="Clear Filters">
+        <div style={{ width: '240px', minWidth: '180px' }}>
           <SearchInput
-            placeholder="Search code, service name, description..."
+            placeholder="Search code, name, description..."
             value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            onChange={(e) => {
+              const val = typeof e === 'string' ? e : (e?.target?.value ?? '');
+              setSearch(val);
+              setPage(1);
+            }}
             onClear={() => { setSearch(''); setPage(1); }}
           />
         </div>
@@ -359,16 +344,6 @@ export default function ServicesPage() {
           />
         </FilterField>
 
-        <FilterField label="Subcategory">
-          <Select
-            size="md"
-            value={selectedSubcategory}
-            onChange={(e) => { setSelectedSubcategory(e.target.value); setPage(1); }}
-            options={subcategoryOptions}
-            disabled={Boolean(subcategoriesError) || (selectedCategory !== 'ALL' && safeSubcategories.length === 0)}
-          />
-        </FilterField>
-
         <FilterField label="Status">
           <Select
             size="md"
@@ -377,8 +352,42 @@ export default function ServicesPage() {
             options={statusOptions}
           />
         </FilterField>
+
+        <FilterField label="Billing Unit">
+          <Select
+            size="md"
+            value={selectedBillingUnit}
+            onChange={(e) => { setSelectedBillingUnit(e.target.value); setPage(1); }}
+            options={billingUnitOptions}
+          />
+        </FilterField>
+
+        <FilterField label="Min Price">
+          <input
+            type="number"
+            className="revy-input"
+            style={{ width: '90px', height: '36px', fontSize: '0.85rem' }}
+            placeholder="₹ Min"
+            value={minPrice}
+            onChange={(e) => { setMinPrice(e.target.value); setPage(1); }}
+            min="0"
+          />
+        </FilterField>
+
+        <FilterField label="Max Price">
+          <input
+            type="number"
+            className="revy-input"
+            style={{ width: '90px', height: '36px', fontSize: '0.85rem' }}
+            placeholder="₹ Max"
+            value={maxPrice}
+            onChange={(e) => { setMaxPrice(e.target.value); setPage(1); }}
+            min="0"
+          />
+        </FilterField>
       </FilterBar>
 
+      {/* Services Data Table Card */}
       <Card noPadding>
         {loading ? (
           <div style={{ padding: '3rem', textAlign: 'center' }}>
@@ -393,7 +402,7 @@ export default function ServicesPage() {
               emptyMessage={
                 error
                   ? `Failed to load services: ${error}`
-                  : (selectedCategory !== 'ALL' || selectedSubcategory !== 'ALL' || search)
+                  : hasActiveFilters
                   ? 'No laboratory services found matching the active filters.'
                   : 'No laboratory services found in the catalogue.'
               }

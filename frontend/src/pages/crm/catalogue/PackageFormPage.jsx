@@ -33,14 +33,12 @@ export default function PackageFormPage() {
   // Masters
   const [availableServices, setAvailableServices] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [subcategories, setSubcategories] = useState([]);
   const [currencies, setCurrencies] = useState([]);
 
   // Base Package fields
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState('');
-  const [subcategoryId, setSubcategoryId] = useState('');
   const [currencyId, setCurrencyId] = useState('');
   const [fixedPackagePrice, setFixedPackagePrice] = useState('');
   const [isActive, setIsActive] = useState(true);
@@ -64,7 +62,7 @@ export default function PackageFormPage() {
       try {
         const [svcRes, catRes, currRes] = await Promise.all([
           catalogueService.getServices({ pageSize: 100, isActive: true }),
-          catalogueService.getCategories({ includeInactive: false }),
+          catalogueService.getCategories({ includeInactive: true }),
           catalogueService.getCurrencies({ includeInactive: false })
         ]);
 
@@ -84,19 +82,6 @@ export default function PackageFormPage() {
     loadMasters();
   }, [isNewVersionMode]);
 
-  useEffect(() => {
-    if (categoryId) {
-      catalogueService.getSubcategories({ categoryId, includeInactive: false })
-        .then(res => setSubcategories(normalizeArrayResponse(res, 'subcategories')))
-        .catch(err => {
-          console.error('Failed to load subcategories', err);
-          setSubcategories([]);
-        });
-    } else {
-      setSubcategories([]);
-    }
-  }, [categoryId]);
-
   // Load existing package for new-version mode
   useEffect(() => {
     if (isNewVersionMode) {
@@ -108,7 +93,6 @@ export default function PackageFormPage() {
           setName(p.name);
           setDescription(p.description || '');
           setCategoryId(p.categoryId || '');
-          setSubcategoryId(p.subcategoryId || '');
           setCurrencyId(p.currencyId);
           setFixedPackagePrice(p.fixedPackagePrice);
           setCurrentVersionNumber(p.currentVersion || 1);
@@ -247,7 +231,6 @@ export default function PackageFormPage() {
           name: name.trim(),
           description: description.trim() || undefined,
           categoryId: categoryId || undefined,
-          subcategoryId: subcategoryId || undefined,
           currencyId,
           fixedPackagePrice: parseFloat(fixedPackagePrice),
           isActive,
@@ -346,29 +329,14 @@ export default function PackageFormPage() {
               />
             </FormField>
 
-            <FormField label="Main Category">
+            <FormField label="Category">
               <Select
                 value={categoryId}
                 disabled={isNewVersionMode}
-                onChange={e => {
-                  setCategoryId(e.target.value);
-                  setSubcategoryId('');
-                }}
+                onChange={e => setCategoryId(e.target.value)}
                 options={[
                   { value: '', label: 'General Laboratory (Optional)' },
                   ...categories.map(c => ({ value: c.id, label: `${c.code} — ${c.name}` }))
-                ]}
-              />
-            </FormField>
-
-            <FormField label="Subcategory">
-              <Select
-                value={subcategoryId}
-                disabled={isNewVersionMode || !categoryId}
-                onChange={e => setSubcategoryId(e.target.value)}
-                options={[
-                  { value: '', label: 'General Bundle (Optional)' },
-                  ...subcategories.map(sc => ({ value: sc.id, label: `${sc.code} — ${sc.name}` }))
                 ]}
               />
             </FormField>

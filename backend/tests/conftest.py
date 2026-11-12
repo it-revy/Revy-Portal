@@ -136,6 +136,17 @@ def setup_test_database():
                     if col not in existing_opp:
                         conn.exec_driver_sql(f"ALTER TABLE crm_opportunities ADD COLUMN {col} {col_type}")
                 conn.commit()
+
+            srv_cols = conn.exec_driver_sql("PRAGMA table_info(crm_services)").fetchall()
+            if srv_cols and any(c[1] == 'subcategory_id' for c in srv_cols):
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_quotation_items")
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_package_components")
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_package_versions")
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_packages")
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_service_price_history")
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_services")
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_service_subcategories")
+                conn.commit()
         except Exception:
             pass
     init_db()

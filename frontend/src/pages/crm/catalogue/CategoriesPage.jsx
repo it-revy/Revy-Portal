@@ -1,26 +1,21 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../../../context/AuthContext';
 import {
-  FolderTree,
+  Folder,
   Plus,
   Edit2,
   Trash2,
   Power,
-  ChevronRight,
-  Folder,
-  Layers,
-  AlertTriangle,
-  Info,
   CheckCircle2,
   XCircle,
-  HelpCircle
+  Filter,
+  X
 } from 'lucide-react';
 import catalogueService from '../../../services/catalogueService';
 import {
   PageHeader,
   Card,
   Button,
-  DataTable,
   StatusBadge,
   FormField,
   SearchInput,
@@ -34,33 +29,22 @@ export default function CategoriesPage() {
   const isAdmin = hasRole('CRM_ADMIN') || hasRole('IT_ADMIN') || hasRole('DIRECTOR');
 
   const [categories, setCategories] = useState([]);
-  const [subcategories, setSubcategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
 
-  // Selected Category filter
-  const [selectedCategoryId, setSelectedCategoryId] = useState('ALL');
+  // Filters (strictly separated state to prevent type errors)
   const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
 
-  // Modals
+  // Main Category Modal State
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState(null);
   const [categoryFormData, setCategoryFormData] = useState({
     code: '',
     name: '',
     description: '',
-    displayOrder: 0
-  });
-
-  const [subcategoryModalOpen, setSubcategoryModalOpen] = useState(false);
-  const [editingSubcategory, setEditingSubcategory] = useState(null);
-  const [subcategoryFormData, setSubcategoryFormData] = useState({
-    categoryId: '',
-    code: '',
-    name: '',
-    description: '',
-    displayOrder: 0
+    isActive: true
   });
 
   const [submitting, setSubmitting] = useState(false);
@@ -76,25 +60,20 @@ export default function CategoriesPage() {
     onConfirm: null
   });
 
-  // Load Data
+  // Load Main Categories
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [catsRes, subcatsRes] = await Promise.all([
-        catalogueService.getCategories({ includeInactive: true }),
-        catalogueService.getSubcategories({ includeInactive: true })
-      ]);
-
-      if (catsRes.data?.success) {
-        setCategories(catsRes.data.categories || []);
-      }
-      if (subcatsRes.data?.success) {
-        setSubcategories(subcatsRes.data.subcategories || []);
+      const res = await catalogueService.getCategories({ includeInactive: true });
+      if (res.data?.success) {
+        setCategories(res.data.categories || []);
+      } else if (Array.isArray(res.data)) {
+        setCategories(res.data);
       }
     } catch (err) {
       console.error('Failed to load categories:', err);
-      setError(err.response?.data?.message || 'Failed to load category hierarchy.');
+      setError(err.response?.data?.message || 'Failed to load catalogue categories.');
     } finally {
       setLoading(false);
     }
@@ -104,13 +83,47 @@ export default function CategoriesPage() {
     fetchData();
   }, [fetchData]);
 
-  // Flash messages helper
   const flashSuccess = (msg) => {
     setSuccessMsg(msg);
     setTimeout(() => setSuccessMsg(null), 4000);
   };
 
-  // Main Category Handlers
+  // Safe handler for search input change
+  const handleSearchChange = (e) => {
+    const value = typeof e === 'string' ? e : (e?.target?.value ?? '');
+    setSearchTerm(value);
+  };
+
+  const handleClearFilters = () => {
+    setSearchTerm('');
+    setStatusFilter('ALL');
+  };
+
+  // Defensive filtering logic
+  const filteredCategories = useMemo(() => {
+    const normalizedSearch = String(searchTerm ?? '').trim().toLowerCase();
+
+    return categories.filter(cat => {
+      // Status filter
+      if (statusFilter === 'ACTIVE' && !cat.isActive) return false;
+      if (statusFilter === 'INACTIVE' && cat.isActive) return false;
+
+      // Search filter
+      if (normalizedSearch) {
+        const code = String(cat.code ?? '').toLowerCase();
+        const name = String(cat.name ?? '').toLowerCase();
+        const desc = String(cat.description ?? '').toLowerCase();
+        const matches = code.includes(normalizedSearch) ||
+                        name.includes(normalizedSearch) ||
+                        desc.includes(normalizedSearch);
+        if (!matches) return false;
+      }
+
+      return true;
+    });
+  }, [categories, searchTerm, statusFilter]);
+
+  // Modal Handlers
   const handleOpenCategoryModal = (cat = null) => {
     setEditingCategory(cat);
     if (cat) {
@@ -118,14 +131,14 @@ export default function CategoriesPage() {
         code: cat.code || '',
         name: cat.name || '',
         description: cat.description || '',
-        displayOrder: cat.displayOrder || 0
+        isActive: cat.isActive !== false
       });
     } else {
       setCategoryFormData({
         code: '',
         name: '',
         description: '',
-        displayOrder: categories.length + 1
+        isActive: true
       });
     }
     setModalError(null);
@@ -133,7 +146,8 @@ export default function CategoriesPage() {
   };
 
   const handleSaveCategory = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
+
     if (!categoryFormData.code.trim() || !categoryFormData.name.trim()) {
       setModalError('Category code and name are required.');
       return;
@@ -147,17 +161,17 @@ export default function CategoriesPage() {
         await catalogueService.updateCategory(editingCategory.id, {
           name: categoryFormData.name.trim(),
           description: categoryFormData.description.trim() || null,
-          displayOrder: Number(categoryFormData.displayOrder) || 0
+          isActive: categoryFormData.isActive
         });
-        flashSuccess(`Main Category "${categoryFormData.name}" updated successfully.`);
+        flashSuccess(`Category "${categoryFormData.name}" updated successfully.`);
       } else {
         await catalogueService.createCategory({
           code: categoryFormData.code.trim().toUpperCase(),
           name: categoryFormData.name.trim(),
           description: categoryFormData.description.trim() || null,
-          displayOrder: Number(categoryFormData.displayOrder) || 0
+          isActive: categoryFormData.isActive
         });
-        flashSuccess(`Main Category "${categoryFormData.name}" created successfully.`);
+        flashSuccess(`Category "${categoryFormData.name}" created successfully.`);
       }
       setCategoryModalOpen(false);
       fetchData();
@@ -173,7 +187,7 @@ export default function CategoriesPage() {
     const actionName = nextStatus ? 'activate' : 'deactivate';
     setConfirmDialog({
       isOpen: true,
-      title: `${nextStatus ? 'Activate' : 'Deactivate'} Main Category`,
+      title: `${nextStatus ? 'Activate' : 'Deactivate'} Category`,
       message: `Are you sure you want to ${actionName} "${cat.name}" (${cat.code})? Inactive categories cannot be selected when creating new laboratory services.`,
       confirmVariant: nextStatus ? 'primary' : 'warning',
       confirmText: nextStatus ? 'Activate' : 'Deactivate',
@@ -191,23 +205,10 @@ export default function CategoriesPage() {
   };
 
   const handleDeleteCategory = (cat) => {
-    const subCount = subcategories.filter(s => s.categoryId === cat.id && !s.isDeleted).length;
-    if (subCount > 0) {
-      setConfirmDialog({
-        isOpen: true,
-        title: 'Cannot Delete Main Category',
-        message: `Cannot delete Main Category "${cat.name}". It contains ${subCount} associated subcategories. Delete or reassign all subcategories before removing this category.`,
-        confirmVariant: 'primary',
-        confirmText: 'Understood',
-        onConfirm: () => setConfirmDialog(prev => ({ ...prev, isOpen: false }))
-      });
-      return;
-    }
-
     setConfirmDialog({
       isOpen: true,
-      title: 'Soft-Delete Main Category',
-      message: `Are you sure you want to soft-delete Main Category "${cat.name}" (${cat.code})? This action preserves historical laboratory service records.`,
+      title: 'Soft-Delete Category',
+      message: `Are you sure you want to soft-delete Category "${cat.name}" (${cat.code})? Note: Categories with active laboratory services cannot be deleted.`,
       confirmVariant: 'danger',
       confirmText: 'Delete Category',
       onConfirm: async () => {
@@ -223,131 +224,13 @@ export default function CategoriesPage() {
     });
   };
 
-  // Subcategory Handlers
-  const handleOpenSubcategoryModal = (subcat = null, defaultCatId = null) => {
-    setEditingSubcategory(subcat);
-    if (subcat) {
-      setSubcategoryFormData({
-        categoryId: subcat.categoryId || '',
-        code: subcat.code || '',
-        name: subcat.name || '',
-        description: subcat.description || '',
-        displayOrder: subcat.displayOrder || 0
-      });
-    } else {
-      setSubcategoryFormData({
-        categoryId: defaultCatId || (selectedCategoryId !== 'ALL' ? selectedCategoryId : (categories[0]?.id || '')),
-        code: '',
-        name: '',
-        description: '',
-        displayOrder: 1
-      });
-    }
-    setModalError(null);
-    setSubcategoryModalOpen(true);
-  };
-
-  const handleSaveSubcategory = async (e) => {
-    e.preventDefault();
-    if (!subcategoryFormData.categoryId) {
-      setModalError('Parent Main Category is required.');
-      return;
-    }
-    if (!subcategoryFormData.code.trim() || !subcategoryFormData.name.trim()) {
-      setModalError('Subcategory code and name are required.');
-      return;
-    }
-
-    setSubmitting(true);
-    setModalError(null);
-
-    try {
-      if (editingSubcategory) {
-        await catalogueService.updateSubcategory(editingSubcategory.id, {
-          name: subcategoryFormData.name.trim(),
-          description: subcategoryFormData.description.trim() || null,
-          displayOrder: Number(subcategoryFormData.displayOrder) || 0
-        });
-        flashSuccess(`Subcategory "${subcategoryFormData.name}" updated successfully.`);
-      } else {
-        await catalogueService.createSubcategory({
-          categoryId: subcategoryFormData.categoryId,
-          code: subcategoryFormData.code.trim().toUpperCase(),
-          name: subcategoryFormData.name.trim(),
-          description: subcategoryFormData.description.trim() || null,
-          displayOrder: Number(subcategoryFormData.displayOrder) || 0
-        });
-        flashSuccess(`Subcategory "${subcategoryFormData.name}" created successfully.`);
-      }
-      setSubcategoryModalOpen(false);
-      fetchData();
-    } catch (err) {
-      setModalError(err.response?.data?.message || err.response?.data?.detail || 'Failed to save subcategory.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleToggleSubcategoryActive = (subcat) => {
-    const nextStatus = !subcat.isActive;
-    const actionName = nextStatus ? 'activate' : 'deactivate';
-    setConfirmDialog({
-      isOpen: true,
-      title: `${nextStatus ? 'Activate' : 'Deactivate'} Subcategory`,
-      message: `Are you sure you want to ${actionName} "${subcat.name}" (${subcat.code})? Inactive subcategories cannot be selected for new laboratory services.`,
-      confirmVariant: nextStatus ? 'primary' : 'warning',
-      confirmText: nextStatus ? 'Activate' : 'Deactivate',
-      onConfirm: async () => {
-        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
-        try {
-          await catalogueService.updateSubcategory(subcat.id, { isActive: nextStatus });
-          flashSuccess(`Subcategory "${subcat.name}" is now ${nextStatus ? 'Active' : 'Inactive'}.`);
-          fetchData();
-        } catch (err) {
-          alert(err.response?.data?.message || err.response?.data?.detail || 'Failed to update subcategory status.');
-        }
-      }
-    });
-  };
-
-  const handleDeleteSubcategory = (subcat) => {
-    setConfirmDialog({
-      isOpen: true,
-      title: 'Soft-Delete Subcategory',
-      message: `Are you sure you want to soft-delete Subcategory "${subcat.name}" (${subcat.code})?\n\nNote: If this subcategory has active laboratory services, deletion will be blocked by system governance rules.`,
-      confirmVariant: 'danger',
-      confirmText: 'Delete Subcategory',
-      onConfirm: async () => {
-        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
-        try {
-          await catalogueService.deleteSubcategory(subcat.id);
-          flashSuccess(`Subcategory "${subcat.name}" soft-deleted.`);
-          fetchData();
-        } catch (err) {
-          alert(err.response?.data?.message || err.response?.data?.detail || 'Failed to delete subcategory.');
-        }
-      }
-    });
-  };
-
-  // Filtered subcategories
-  const filteredSubcategories = subcategories.filter(sub => {
-    if (selectedCategoryId !== 'ALL' && sub.categoryId !== selectedCategoryId) return false;
-    if (searchTerm) {
-      const q = searchTerm.toLowerCase();
-      const matchName = sub.name?.toLowerCase().includes(q);
-      const matchCode = sub.code?.toLowerCase().includes(q);
-      const matchDesc = sub.description?.toLowerCase().includes(q);
-      return matchName || matchCode || matchDesc;
-    }
-    return true;
-  });
+  const hasActiveFilters = searchTerm !== '' || statusFilter !== 'ALL';
 
   return (
     <div className="page-body">
       <PageHeader
-        title="Category Architecture"
-        subtitle="Manage the 2-level laboratory taxonomy: Main Category → Subcategory. Preserves historical references and audit compliance."
+        title="Service Categories"
+        subtitle="Manage laboratory service categories. Direct hierarchy: Main Category → Services."
         breadcrumbs={[
           { label: 'CRM', to: '/crm/dashboard' },
           { label: 'Catalogue', to: '/crm/catalogue/services' },
@@ -355,22 +238,13 @@ export default function CategoriesPage() {
         ]}
         actions={
           isAdmin && (
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
-              <Button
-                variant="secondary"
-                icon={Plus}
-                onClick={() => handleOpenSubcategoryModal(null, selectedCategoryId !== 'ALL' ? selectedCategoryId : null)}
-              >
-                New Subcategory
-              </Button>
-              <Button
-                variant="primary"
-                icon={Plus}
-                onClick={() => handleOpenCategoryModal(null)}
-              >
-                New Main Category
-              </Button>
-            </div>
+            <Button
+              variant="primary"
+              icon={Plus}
+              onClick={() => handleOpenCategoryModal(null)}
+            >
+              Add Category
+            </Button>
           )
         }
       />
@@ -411,228 +285,150 @@ export default function CategoriesPage() {
         </div>
       )}
 
-      {/* Main Categories Overview Cards */}
-      <div style={{ marginBottom: '1.5rem' }}>
-        <h3 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <Folder size={18} />
-          <span>Main Categories ({categories.length})</span>
-        </h3>
-
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
-          gap: '1rem'
-        }}>
-          {categories.map(cat => {
-            const count = subcategories.filter(s => s.categoryId === cat.id && !s.isDeleted).length;
-            const isSelected = selectedCategoryId === cat.id;
-
-            return (
-              <Card
-                key={cat.id}
-                style={{
-                  cursor: 'pointer',
-                  border: isSelected ? '2px solid var(--accent-primary)' : '1px solid var(--border-color)',
-                  background: isSelected ? '#f8fafc' : 'var(--bg-card)',
-                  transition: 'all 0.15s ease'
-                }}
-                onClick={() => setSelectedCategoryId(isSelected ? 'ALL' : cat.id)}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <span style={{
-                      fontWeight: 700,
-                      fontSize: '0.8rem',
-                      background: 'var(--bg-secondary)',
-                      padding: '2px 8px',
-                      borderRadius: '4px',
-                      color: 'var(--text-primary)'
-                    }}>
-                      {cat.code}
-                    </span>
-                    <StatusBadge status={cat.isActive ? 'Active' : 'Inactive'} />
-                  </div>
-
-                  {isAdmin && (
-                    <div style={{ display: 'flex', gap: '0.25rem' }} onClick={e => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        className="btn-icon"
-                        title="Edit Main Category"
-                        onClick={() => handleOpenCategoryModal(cat)}
-                        style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
-                      >
-                        <Edit2 size={15} />
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-icon"
-                        title={cat.isActive ? 'Deactivate' : 'Activate'}
-                        onClick={() => handleToggleCategoryActive(cat)}
-                        style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', color: cat.isActive ? '#059669' : '#dc2626' }}
-                      >
-                        <Power size={15} />
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-icon"
-                        title="Delete Category"
-                        onClick={() => handleDeleteCategory(cat)}
-                        style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626' }}
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                <div style={{ fontWeight: 600, fontSize: '1rem', color: 'var(--text-primary)', marginBottom: '0.25rem' }}>
-                  {cat.name}
-                </div>
-                {cat.description && (
-                  <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '0.75rem', lineHeight: '1.3' }}>
-                    {cat.description}
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border-color)', paddingTop: '0.5rem', marginTop: '0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  <span>{count} Subcategories</span>
-                  <span style={{ color: isSelected ? 'var(--accent-primary)' : 'inherit', fontWeight: isSelected ? 600 : 400 }}>
-                    {isSelected ? '✓ Filtered' : 'Click to filter'}
-                  </span>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Subcategories Table Section */}
+      {/* Main Categories Standard Data Table Card */}
       <Card>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.75rem' }}>
-          <div>
-            <h3 style={{ fontSize: '1.05rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <Layers size={18} />
-              <span>
-                Subcategories {selectedCategoryId !== 'ALL' ? `(${categories.find(c => c.id === selectedCategoryId)?.name})` : ''}
-              </span>
-            </h3>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-              Showing {filteredSubcategories.length} of {subcategories.length} subcategories
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-            {selectedCategoryId !== 'ALL' && (
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => setSelectedCategoryId('ALL')}
-              >
-                Clear Category Filter
-              </Button>
-            )}
-            <div style={{ width: '240px' }}>
+        {/* Compact Filter Toolbar */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: '0.75rem',
+          marginBottom: '1rem',
+          paddingBottom: '0.75rem',
+          borderBottom: '1px solid var(--border-color)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <div style={{ width: '260px' }}>
               <SearchInput
                 value={searchTerm}
-                onChange={setSearchTerm}
-                placeholder="Search subcategory..."
+                onChange={handleSearchChange}
+                onClear={() => setSearchTerm('')}
+                placeholder="Search category code or name..."
               />
             </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Status:</span>
+              <select
+                className="crm-select"
+                style={{ height: '36px', minWidth: '130px', fontSize: '0.85rem' }}
+                value={statusFilter}
+                onChange={e => setStatusFilter(e.target.value)}
+              >
+                <option value="ALL">All Status</option>
+                <option value="ACTIVE">Active</option>
+                <option value="INACTIVE">Inactive</option>
+              </select>
+            </div>
+
+            {hasActiveFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={X}
+                onClick={handleClearFilters}
+              >
+                Clear
+              </Button>
+            )}
+          </div>
+
+          <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+            Showing <strong>{filteredCategories.length}</strong> of {categories.length} categories
           </div>
         </div>
 
         {loading ? (
-          <LoadingState message="Loading subcategories..." />
-        ) : filteredSubcategories.length === 0 ? (
+          <LoadingState message="Loading categories..." />
+        ) : filteredCategories.length === 0 ? (
           <div style={{ padding: '2.5rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-            <Layers size={36} style={{ margin: '0 auto 0.75rem', opacity: 0.4 }} />
-            <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>No Subcategories Found</div>
-            <div style={{ fontSize: '0.8rem' }}>Create subcategories under main categories to organize laboratory services.</div>
+            <Folder size={36} style={{ margin: '0 auto 0.75rem', opacity: 0.4 }} />
+            <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>No Categories Found</div>
+            <div style={{ fontSize: '0.8rem', marginTop: '0.25rem' }}>
+              {hasActiveFilters ? 'Try adjusting your search or status filter.' : 'Click "Add Category" above to create your first category.'}
+            </div>
           </div>
         ) : (
           <div className="table-responsive">
             <table className="crm-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
               <thead>
                 <tr style={{ borderBottom: '2px solid var(--border-color)', textAlign: 'left', background: 'var(--bg-secondary)' }}>
-                  <th style={{ padding: '10px 12px' }}>Subcategory Code</th>
-                  <th style={{ padding: '10px 12px' }}>Subcategory Name</th>
-                  <th style={{ padding: '10px 12px' }}>Parent Main Category</th>
+                  <th style={{ padding: '10px 12px', width: '120px' }}>Code</th>
+                  <th style={{ padding: '10px 12px', width: '280px' }}>Category Name</th>
+                  <th style={{ padding: '10px 12px', width: '120px', textAlign: 'center' }}>Service Count</th>
                   <th style={{ padding: '10px 12px' }}>Description</th>
-                  <th style={{ padding: '10px 12px', textAlign: 'center' }}>Status</th>
-                  {isAdmin && <th style={{ padding: '10px 12px', textAlign: 'right' }}>Actions</th>}
+                  <th style={{ padding: '10px 12px', width: '100px', textAlign: 'center' }}>Status</th>
+                  {isAdmin && <th style={{ padding: '10px 12px', width: '120px', textAlign: 'right' }}>Actions</th>}
                 </tr>
               </thead>
               <tbody>
-                {filteredSubcategories.map(sub => {
-                  const parentCat = categories.find(c => c.id === sub.categoryId);
-                  return (
-                    <tr key={sub.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontWeight: 600, color: 'var(--text-primary)' }}>
-                        {sub.code}
+                {filteredCategories.map(cat => (
+                  <tr key={cat.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                    <td style={{ padding: '10px 12px', fontFamily: 'monospace', fontWeight: 700, color: 'var(--text-primary)' }}>
+                      {cat.code}
+                    </td>
+                    <td style={{ padding: '10px 12px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                      {cat.name}
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                      <span className="badge badge-neutral" style={{ fontSize: '0.8rem', fontWeight: 700, padding: '2px 8px' }}>
+                        {cat.serviceCount ?? cat.activeServicesCount ?? 0}
+                      </span>
+                    </td>
+                    <td style={{ padding: '10px 12px', color: 'var(--text-secondary)', fontSize: '0.825rem' }}>
+                      {cat.description || '—'}
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'center' }}>
+                      <StatusBadge status={cat.isActive ? 'Active' : 'Inactive'} />
+                    </td>
+                    {isAdmin && (
+                      <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                        <div style={{ display: 'inline-flex', gap: '0.35rem' }}>
+                          <button
+                            type="button"
+                            className="btn-icon"
+                            title="Edit Category"
+                            onClick={() => handleOpenCategoryModal(cat)}
+                            style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
+                          >
+                            <Edit2 size={15} />
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-icon"
+                            title={cat.isActive ? 'Deactivate Category' : 'Activate Category'}
+                            onClick={() => handleToggleCategoryActive(cat)}
+                            style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', color: cat.isActive ? '#059669' : '#dc2626' }}
+                          >
+                            <Power size={15} />
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-icon"
+                            title="Delete Category"
+                            onClick={() => handleDeleteCategory(cat)}
+                            style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626' }}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
                       </td>
-                      <td style={{ padding: '10px 12px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                        {sub.name}
-                      </td>
-                      <td style={{ padding: '10px 12px' }}>
-                        <span style={{ fontSize: '0.8rem', background: '#e0f2fe', color: '#0369a1', padding: '2px 8px', borderRadius: '4px', fontWeight: 500 }}>
-                          {parentCat ? `${parentCat.code} — ${parentCat.name}` : sub.categoryId}
-                        </span>
-                      </td>
-                      <td style={{ padding: '10px 12px', color: 'var(--text-secondary)', fontSize: '0.8rem', maxWidth: '300px' }}>
-                        {sub.description || '—'}
-                      </td>
-                      <td style={{ padding: '10px 12px', textAlign: 'center' }}>
-                        <StatusBadge status={sub.isActive ? 'Active' : 'Inactive'} />
-                      </td>
-                      {isAdmin && (
-                        <td style={{ padding: '10px 12px', textAlign: 'right' }}>
-                          <div style={{ display: 'inline-flex', gap: '0.35rem' }}>
-                            <button
-                              type="button"
-                              className="btn-icon"
-                              title="Edit Subcategory"
-                              onClick={() => handleOpenSubcategoryModal(sub)}
-                              style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)' }}
-                            >
-                              <Edit2 size={15} />
-                            </button>
-                            <button
-                              type="button"
-                              className="btn-icon"
-                              title={sub.isActive ? 'Deactivate Subcategory' : 'Activate Subcategory'}
-                              onClick={() => handleToggleSubcategoryActive(sub)}
-                              style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', color: sub.isActive ? '#059669' : '#dc2626' }}
-                            >
-                              <Power size={15} />
-                            </button>
-                            <button
-                              type="button"
-                              className="btn-icon"
-                              title="Delete Subcategory"
-                              onClick={() => handleDeleteSubcategory(sub)}
-                              style={{ padding: '4px', background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626' }}
-                            >
-                              <Trash2 size={15} />
-                            </button>
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
+                    )}
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         )}
       </Card>
 
-      {/* Main Category Modal */}
+      {/* Main Category Create / Edit Modal */}
       <Modal
         isOpen={categoryModalOpen}
         onClose={() => setCategoryModalOpen(false)}
-        title={editingCategory ? `Edit Main Category (${editingCategory.code})` : 'Create Main Category'}
-        subtitle="Configure laboratory service main category details and display hierarchy"
+        title={editingCategory ? `Edit Category (${editingCategory.code})` : 'Add Category'}
+        subtitle={editingCategory ? 'Update category details and status' : 'Create a new laboratory service category'}
         maxWidth="500px"
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', width: '100%' }}>
@@ -652,7 +448,7 @@ export default function CategoriesPage() {
             </div>
           )}
 
-          <FormField label="Category Code" required hint="Stable prefix for service codes (e.g. LAB-01, WWT)">
+          <FormField label="Category Code" required hint="Unique category identifier (e.g. LAB-01)">
             <input
               type="text"
               className="crm-input"
@@ -685,102 +481,20 @@ export default function CategoriesPage() {
             />
           </FormField>
 
-          <FormField label="Display Order">
-            <input
-              type="number"
-              className="crm-input"
-              value={categoryFormData.displayOrder}
-              onChange={e => setCategoryFormData(prev => ({ ...prev, displayOrder: e.target.value }))}
-              min="0"
-            />
-          </FormField>
-        </form>
-      </Modal>
-
-      {/* Subcategory Modal */}
-      <Modal
-        isOpen={subcategoryModalOpen}
-        onClose={() => setSubcategoryModalOpen(false)}
-        title={editingSubcategory ? `Edit Subcategory (${editingSubcategory.code})` : 'Create Subcategory'}
-        subtitle="Configure subcategory parameters and parent category mapping"
-        maxWidth="520px"
-        footer={
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', width: '100%' }}>
-            <Button variant="secondary" type="button" onClick={() => setSubcategoryModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button variant="primary" type="button" disabled={submitting} onClick={handleSaveSubcategory}>
-              {submitting ? 'Saving...' : (editingSubcategory ? 'Save Changes' : 'Create Subcategory')}
-            </Button>
-          </div>
-        }
-      >
-        <form onSubmit={handleSaveSubcategory} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {modalError && (
-            <div style={{ padding: '0.65rem 0.85rem', background: '#fef2f2', border: '1px solid #fecaca', color: '#991b1b', borderRadius: '4px', fontSize: '0.85rem' }}>
-              {modalError}
+          {editingCategory && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.5rem' }}>
+              <input
+                type="checkbox"
+                id="catIsActive"
+                checked={categoryFormData.isActive}
+                onChange={e => setCategoryFormData(prev => ({ ...prev, isActive: e.target.checked }))}
+                style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+              />
+              <label htmlFor="catIsActive" style={{ fontSize: '0.9rem', color: 'var(--text-primary)', cursor: 'pointer' }}>
+                Category is Active (available for new service creation)
+              </label>
             </div>
           )}
-
-          <FormField label="Parent Main Category" required>
-            <select
-              className="crm-select"
-              value={subcategoryFormData.categoryId}
-              onChange={e => setSubcategoryFormData(prev => ({ ...prev, categoryId: e.target.value }))}
-              disabled={!!editingSubcategory}
-              required
-            >
-              <option value="">Select Main Category...</option>
-              {categories.filter(c => c.isActive || (editingSubcategory && c.id === editingSubcategory.categoryId)).map(c => (
-                <option key={c.id} value={c.id}>
-                  {c.code} — {c.name} {!c.isActive ? '(Inactive)' : ''}
-                </option>
-              ))}
-            </select>
-          </FormField>
-
-          <FormField label="Subcategory Code" required hint="Unique subcategory code (e.g. PHY-01, BIO-02)">
-            <input
-              type="text"
-              className="crm-input"
-              value={subcategoryFormData.code}
-              onChange={e => setSubcategoryFormData(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
-              disabled={!!editingSubcategory}
-              placeholder="e.g. PHY-01"
-              required
-            />
-          </FormField>
-
-          <FormField label="Subcategory Name" required>
-            <input
-              type="text"
-              className="crm-input"
-              value={subcategoryFormData.name}
-              onChange={e => setSubcategoryFormData(prev => ({ ...prev, name: e.target.value }))}
-              placeholder="e.g. Physical Parameters"
-              required
-            />
-          </FormField>
-
-          <FormField label="Description">
-            <textarea
-              className="crm-textarea"
-              rows={3}
-              value={subcategoryFormData.description}
-              onChange={e => setSubcategoryFormData(prev => ({ ...prev, description: e.target.value }))}
-              placeholder="Brief description of subcategory scope..."
-            />
-          </FormField>
-
-          <FormField label="Display Order">
-            <input
-              type="number"
-              className="crm-input"
-              value={subcategoryFormData.displayOrder}
-              onChange={e => setSubcategoryFormData(prev => ({ ...prev, displayOrder: e.target.value }))}
-              min="0"
-            />
-          </FormField>
         </form>
       </Modal>
 

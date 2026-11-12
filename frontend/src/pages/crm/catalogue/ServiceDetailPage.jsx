@@ -188,7 +188,7 @@ export default function ServiceDetailPage() {
     <div className="page-body">
       <PageHeader
         title={`${service.serviceCode} — ${service.name}`}
-        subtitle={`Category: ${service.categoryName || '—'} > ${service.subcategoryName || '—'}`}
+        subtitle={service.categoryName ? `Category: ${service.categoryCode ? `${service.categoryCode} — ` : ''}${service.categoryName}` : ''}
         icon={FlaskConical}
         breadcrumbs={[
           { label: 'Portal', to: '/portal' },
@@ -266,19 +266,10 @@ export default function ServiceDetailPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
             <div>
               <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>
-                Main Category
+                Category
               </span>
               <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginTop: '2px' }}>
                 {service.categoryCode} — {service.categoryName}
-              </div>
-            </div>
-
-            <div>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>
-                Subcategory
-              </span>
-              <div style={{ fontWeight: 600, color: 'var(--text-primary)', marginTop: '2px' }}>
-                {service.subcategoryCode} — {service.subcategoryName}
               </div>
             </div>
 

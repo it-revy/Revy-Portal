@@ -31,7 +31,6 @@ export default function ServiceFormPage() {
 
   // Master Data Options
   const [categories, setCategories] = useState([]);
-  const [subcategories, setSubcategories] = useState([]);
   const [billingUnits, setBillingUnits] = useState([]);
   const [reportingUnits, setReportingUnits] = useState([]);
   const [sampleTypes, setSampleTypes] = useState([]);
@@ -42,7 +41,6 @@ export default function ServiceFormPage() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [categoryId, setCategoryId] = useState('');
-  const [subcategoryId, setSubcategoryId] = useState('');
   const [billingUnitId, setBillingUnitId] = useState('');
   const [currencyId, setCurrencyId] = useState('');
   const [minimumBillingQuantity, setMinimumBillingQuantity] = useState(1);
@@ -68,7 +66,7 @@ export default function ServiceFormPage() {
     async function loadMasters() {
       try {
         const [catRes, buRes, ruRes, stRes, tmRes, currRes] = await Promise.all([
-          catalogueService.getCategories({ includeInactive: false }),
+          catalogueService.getCategories({ includeInactive: true }),
           catalogueService.getBillingUnits({ includeInactive: false }),
           catalogueService.getReportingUnits({ includeInactive: false }),
           catalogueService.getSampleTypes({ includeInactive: false }),
@@ -102,23 +100,7 @@ export default function ServiceFormPage() {
     loadMasters();
   }, [isEditMode]);
 
-  // 2. Fetch Subcategories when Category changes
-  useEffect(() => {
-    if (categoryId) {
-      catalogueService.getSubcategories({ categoryId, includeInactive: false })
-        .then(res => {
-          setSubcategories(normalizeArrayResponse(res, 'subcategories'));
-        })
-        .catch(err => {
-          console.error('Failed to load subcategories for category', err);
-          setSubcategories([]);
-        });
-    } else {
-      setSubcategories([]);
-    }
-  }, [categoryId]);
-
-  // 3. Load existing service for edit
+  // 2. Load existing service for edit
   useEffect(() => {
     if (isEditMode) {
       async function loadService() {
@@ -129,7 +111,6 @@ export default function ServiceFormPage() {
           setName(s.name);
           setDescription(s.description || '');
           setCategoryId(s.categoryId);
-          setSubcategoryId(s.subcategoryId);
           setBillingUnitId(s.billingUnitId);
           setCurrencyId(s.currencyId);
           setMinimumBillingQuantity(s.minimumBillingQuantity || 1);
@@ -220,8 +201,7 @@ export default function ServiceFormPage() {
   const validateForm = () => {
     const errors = {};
     if (!name.trim()) errors.name = 'Service name is mandatory.';
-    if (!categoryId) errors.categoryId = 'Main category is required.';
-    if (!subcategoryId) errors.subcategoryId = 'Subcategory is required.';
+    if (!categoryId) errors.categoryId = 'Category is required.';
     if (!billingUnitId) errors.billingUnitId = 'Billing unit is required.';
     if (!currencyId) errors.currencyId = 'Currency is required.';
 
@@ -261,7 +241,6 @@ export default function ServiceFormPage() {
       name: name.trim(),
       description: description.trim() || undefined,
       categoryId,
-      subcategoryId,
       billingUnitId,
       currencyId,
       minimumBillingQuantity: parseInt(minimumBillingQuantity, 10),
@@ -363,28 +342,15 @@ export default function ServiceFormPage() {
               />
             </FormField>
 
-            <FormField label="Main Category" required error={validationErrors.categoryId}>
+            <FormField label="Category" required error={validationErrors.categoryId}>
               <Select
                 value={categoryId}
-                onChange={e => {
-                  setCategoryId(e.target.value);
-                  setSubcategoryId('');
-                }}
+                onChange={e => setCategoryId(e.target.value)}
                 options={[
-                  { value: '', label: 'Select Main Category' },
-                  ...categories.map(c => ({ value: c.id, label: `${c.code} — ${c.name}` }))
-                ]}
-              />
-            </FormField>
-
-            <FormField label="Subcategory" required error={validationErrors.subcategoryId}>
-              <Select
-                value={subcategoryId}
-                disabled={!categoryId}
-                onChange={e => setSubcategoryId(e.target.value)}
-                options={[
-                  { value: '', label: categoryId ? 'Select Subcategory' : 'Select Main Category first' },
-                  ...subcategories.map(sc => ({ value: sc.id, label: `${sc.code} — ${sc.name}` }))
+                  { value: '', label: 'Select Category' },
+                  ...categories
+                    .filter(c => isEditMode ? (!c.isDeleted || c.id === categoryId) : (c.isActive && !c.isDeleted))
+                    .map(c => ({ value: c.id, label: `${c.code} — ${c.name}` }))
                 ]}
               />
             </FormField>

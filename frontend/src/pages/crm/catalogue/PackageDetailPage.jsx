@@ -303,18 +303,10 @@ export default function PackageDetailPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
             <div>
               <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>
-                Main Category
+                Category
               </span>
               <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
                 {pkg.categoryName || 'General Laboratory'}
-              </div>
-            </div>
-            <div>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textTransform: 'uppercase', fontWeight: 600 }}>
-                Subcategory
-              </span>
-              <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                {pkg.subcategoryName || 'Standard Bundle'}
               </div>
             </div>
             <div>

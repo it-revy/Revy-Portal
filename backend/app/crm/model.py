@@ -789,7 +789,6 @@ class CrmIdempotencyRecord(Base):
 # =========================================================================
 from app.crm.catalogue_model import (
     ServiceCategory,
-    ServiceSubcategory,
     BillingUnit,
     ReportingUnit,
     SampleType,

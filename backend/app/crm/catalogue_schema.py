@@ -128,7 +128,7 @@ class ServiceCategoryResponse(CamelResponseModel):
     isDeleted: bool
     createdAt: datetime
     updatedAt: datetime
-    subcategories: List[ServiceSubcategoryResponse] = []
+    serviceCount: Optional[int] = 0
     activeServicesCount: Optional[int] = 0
 
     @model_validator(mode="before")
@@ -141,7 +141,10 @@ class ServiceCategoryResponse(CamelResponseModel):
                 camel = to_camel_case(col.name)
                 d[camel] = val
                 d[col.name] = val
-            d["subcategories"] = getattr(data, "subcategories", []) or []
+            if hasattr(data, "services"):
+                cnt = sum(1 for s in (data.services or []) if s.is_active and not s.is_deleted)
+                d["activeServicesCount"] = cnt
+                d["serviceCount"] = cnt
             return d
         return data
 
@@ -282,16 +285,52 @@ class CurrencyResponse(CamelResponseModel):
 # =========================================================================
 
 class TaxRateInput(BaseModel):
-    rateName: str = Field(..., max_length=50)
-    percentage: Decimal = Field(..., ge=0)
+    rateName: Optional[str] = None
+    componentName: Optional[str] = None
+    percentage: Optional[Decimal] = None
+    ratePercentage: Optional[Decimal] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_input(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if not data.get("rateName") and data.get("componentName"):
+                data["rateName"] = data["componentName"]
+            if data.get("percentage") is None and data.get("ratePercentage") is not None:
+                data["percentage"] = data["ratePercentage"]
+        return data
 
 
 class TaxRateResponse(CamelResponseModel):
     id: str
-    taxConfigurationId: str
+    taxConfigurationId: Optional[str] = None
     rateName: str
     percentage: Decimal
     isActive: bool
+
+    @model_validator(mode="before")
+    @classmethod
+    def convert_tax_rate_orm(cls, data: Any) -> Any:
+        if hasattr(data, "__table__"):
+            d = {}
+            for col in data.__table__.columns:
+                val = getattr(data, col.name)
+                camel = to_camel_case(col.name)
+                d[camel] = val
+                d[col.name] = val
+            d["taxConfigurationId"] = getattr(data, "configuration_id", None)
+            d["rateName"] = getattr(data, "component_name", "")
+            d["percentage"] = getattr(data, "rate_percentage", Decimal("0.0"))
+            return d
+        if isinstance(data, dict):
+            if "taxConfigurationId" not in data and "configuration_id" in data:
+                data["taxConfigurationId"] = data["configuration_id"]
+            if "rateName" not in data and "component_name" in data:
+                data["rateName"] = data["component_name"]
+            if "percentage" not in data and "rate_percentage" in data:
+                data["percentage"] = data["rate_percentage"]
+            return data
+        return data
 
 
 class TaxConfigurationCreate(BaseModel):
@@ -338,8 +377,29 @@ class TaxConfigurationResponse(CamelResponseModel):
                 d[col.name] = val
             rates = getattr(data, "rates", []) or []
             d["rates"] = rates
-            d["totalTaxPercentage"] = getattr(data, "total_percentage", sum(Decimal(str(r.percentage)) for r in rates))
+            explicit_total = getattr(data, "total_percentage", None)
+            if explicit_total is not None:
+                d["totalTaxPercentage"] = Decimal(str(explicit_total))
+            else:
+                total = Decimal("0.0")
+                for r in rates:
+                    val = getattr(r, "rate_percentage", getattr(r, "percentage", None))
+                    if val is not None:
+                        total += Decimal(str(val))
+                d["totalTaxPercentage"] = total
             return d
+        if isinstance(data, dict):
+            if "totalTaxPercentage" not in data:
+                rates = data.get("rates", []) or []
+                total = Decimal("0.0")
+                for r in rates:
+                    if isinstance(r, dict):
+                        val = r.get("rate_percentage", r.get("percentage", 0))
+                    else:
+                        val = getattr(r, "rate_percentage", getattr(r, "percentage", 0))
+                    total += Decimal(str(val or 0))
+                data["totalTaxPercentage"] = total
+            return data
         return data
 
 
@@ -419,7 +479,6 @@ class ServiceCreate(BaseModel):
     name: str = Field(..., max_length=255)
     description: Optional[str] = None
     categoryId: str
-    subcategoryId: str
     billingUnitId: str
     currencyId: Optional[str] = None
     minimumBillingQuantity: int = Field(1, ge=1)
@@ -438,7 +497,6 @@ class ServiceUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     categoryId: Optional[str] = None
-    subcategoryId: Optional[str] = None
     billingUnitId: Optional[str] = None
     currencyId: Optional[str] = None
     minimumBillingQuantity: Optional[int] = Field(None, ge=1)
@@ -463,7 +521,7 @@ class ServiceResponse(CamelResponseModel):
     categoryId: str
     categoryName: Optional[str] = None
     categoryCode: Optional[str] = None
-    subcategoryId: str
+    subcategoryId: Optional[str] = None
     subcategoryName: Optional[str] = None
     subcategoryCode: Optional[str] = None
     billingUnitId: str
@@ -508,9 +566,8 @@ class ServiceResponse(CamelResponseModel):
             cat = getattr(data, "category", None)
             d["categoryName"] = cat.name if cat else None
             d["categoryCode"] = cat.code if cat else None
-            subcat = getattr(data, "subcategory", None)
-            d["subcategoryName"] = subcat.name if subcat else None
-            d["subcategoryCode"] = subcat.code if subcat else None
+            d["subcategoryName"] = None
+            d["subcategoryCode"] = None
             bunit = getattr(data, "billing_unit", None)
             d["billingUnitCode"] = bunit.code if bunit else None
             d["billingUnitName"] = bunit.name if bunit else None
@@ -663,7 +720,6 @@ class PackageCreate(BaseModel):
     name: str = Field(..., max_length=255)
     description: Optional[str] = None
     categoryId: Optional[str] = None
-    subcategoryId: Optional[str] = None
     currencyId: Optional[str] = None
     packagePrice: Decimal = Field(default=Decimal("0.0"), ge=0)
     fixedPackagePrice: Decimal = Field(default=Decimal("0.0"), ge=0)
@@ -686,7 +742,6 @@ class PackageUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     categoryId: Optional[str] = None
-    subcategoryId: Optional[str] = None
     currencyId: Optional[str] = None
     isActive: Optional[bool] = None
 
@@ -756,8 +811,7 @@ class PackageResponse(CamelResponseModel):
 
             cat = getattr(data, "category", None)
             d["categoryName"] = cat.name if cat else None
-            subcat = getattr(data, "subcategory", None)
-            d["subcategoryName"] = subcat.name if subcat else None
+            d["subcategoryName"] = None
             curr = getattr(data, "currency", None)
             d["currencyCode"] = curr.code if curr else "INR"
             d["currencySymbol"] = curr.symbol if curr else "₹"

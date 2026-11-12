@@ -38,30 +38,7 @@ class ServiceCategory(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 
-    subcategories = relationship("ServiceSubcategory", back_populates="category", cascade="all, delete-orphan")
     services = relationship("Service", back_populates="category")
-    created_by = relationship("User", foreign_keys=[created_by_id])
-    updated_by = relationship("User", foreign_keys=[updated_by_id])
-
-
-class ServiceSubcategory(Base):
-    __tablename__ = "crm_service_subcategories"
-
-    id = Column(String(36), primary_key=True, default=generate_uuid)
-    category_id = Column(String(36), ForeignKey("crm_service_categories.id", ondelete="RESTRICT"), nullable=False, index=True)
-    code = Column(String(50), unique=True, nullable=False, index=True)  # LAB-01-SUB-01
-    name = Column(String(255), nullable=False, index=True)
-    description = Column(Text, nullable=True)
-    is_active = Column(Boolean, default=True, nullable=False, index=True)
-    is_deleted = Column(Boolean, default=False, nullable=False, index=True)
-
-    created_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    updated_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
-
-    category = relationship("ServiceCategory", back_populates="subcategories")
-    services = relationship("Service", back_populates="subcategory")
     created_by = relationship("User", foreign_keys=[created_by_id])
     updated_by = relationship("User", foreign_keys=[updated_by_id])
 
@@ -194,6 +171,14 @@ class TaxRate(Base):
 
     configuration = relationship("TaxConfiguration", back_populates="rates")
 
+    @property
+    def percentage(self):
+        return self.rate_percentage
+
+    @property
+    def rate_name(self):
+        return self.component_name
+
 
 class Service(Base):
     __tablename__ = "crm_services"
@@ -204,7 +189,6 @@ class Service(Base):
     description = Column(Text, nullable=True)
 
     category_id = Column(String(36), ForeignKey("crm_service_categories.id", ondelete="RESTRICT"), nullable=False, index=True)
-    subcategory_id = Column(String(36), ForeignKey("crm_service_subcategories.id", ondelete="RESTRICT"), nullable=False, index=True)
     billing_unit_id = Column(String(36), ForeignKey("crm_billing_units.id", ondelete="RESTRICT"), nullable=False, index=True)
     currency_id = Column(String(36), ForeignKey("crm_currencies.id", ondelete="RESTRICT"), nullable=False, index=True)
 
@@ -230,7 +214,6 @@ class Service(Base):
     )
 
     category = relationship("ServiceCategory", back_populates="services")
-    subcategory = relationship("ServiceSubcategory", back_populates="services")
     billing_unit = relationship("BillingUnit")
     currency = relationship("Currency")
 
@@ -326,7 +309,6 @@ class Package(Base):
     description = Column(Text, nullable=True)
 
     category_id = Column(String(36), ForeignKey("crm_service_categories.id", ondelete="SET NULL"), nullable=True, index=True)
-    subcategory_id = Column(String(36), ForeignKey("crm_service_subcategories.id", ondelete="SET NULL"), nullable=True, index=True)
     currency_id = Column(String(36), ForeignKey("crm_currencies.id", ondelete="RESTRICT"), nullable=False, index=True)
 
     fixed_package_price = Column(Numeric(18, 4), nullable=False, default=0.0)
@@ -345,7 +327,6 @@ class Package(Base):
     )
 
     category = relationship("ServiceCategory")
-    subcategory = relationship("ServiceSubcategory")
     currency = relationship("Currency")
     versions = relationship("PackageVersion", back_populates="package", cascade="all, delete-orphan", order_by="desc(PackageVersion.version_number)")
     created_by = relationship("User", foreign_keys=[created_by_id])

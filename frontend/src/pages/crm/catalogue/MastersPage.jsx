@@ -315,7 +315,7 @@ export default function MastersPage() {
     });
   };
 
-  // Filter current data by search term
+  // Filter current data by search term defensively
   const getCurrentData = () => {
     let data = [];
     if (activeTab === 'billing_units') data = billingUnits;
@@ -325,13 +325,13 @@ export default function MastersPage() {
     if (activeTab === 'currencies') data = currencies;
     if (activeTab === 'tax_configs') data = taxConfigs;
 
-    if (!searchTerm) return data;
-    const q = searchTerm.toLowerCase();
+    const normalized = String(searchTerm ?? '').trim().toLowerCase();
+    if (!normalized) return data;
     return data.filter(d =>
-      d.code?.toLowerCase().includes(q) ||
-      d.name?.toLowerCase().includes(q) ||
-      d.description?.toLowerCase().includes(q) ||
-      d.symbol?.toLowerCase().includes(q)
+      String(d.code ?? '').toLowerCase().includes(normalized) ||
+      String(d.name ?? '').toLowerCase().includes(normalized) ||
+      String(d.description ?? '').toLowerCase().includes(normalized) ||
+      String(d.symbol ?? '').toLowerCase().includes(normalized)
     );
   };
 
@@ -446,7 +446,8 @@ export default function MastersPage() {
           <div style={{ width: '260px' }}>
             <SearchInput
               value={searchTerm}
-              onChange={setSearchTerm}
+              onChange={(e) => setSearchTerm(typeof e === 'string' ? e : (e?.target?.value ?? ''))}
+              onClear={() => setSearchTerm('')}
               placeholder={`Search ${TABS.find(t => t.id === activeTab)?.label.toLowerCase()}...`}
             />
           </div>

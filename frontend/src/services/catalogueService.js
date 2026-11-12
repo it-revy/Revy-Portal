@@ -120,28 +120,21 @@ export const catalogueService = {
     return API.delete(`/crm/catalogue/categories/${id}`);
   },
 
-  getSubcategories: async (params = {}) => {
-    const query = new URLSearchParams();
-    if (params.categoryId && params.categoryId !== 'ALL') query.append('category_id', params.categoryId);
-    if (params.includeInactive) query.append('include_inactive', 'true');
-    const res = await API.get(`/crm/catalogue/subcategories?${query.toString()}`);
-    return wrapListResponse(res, 'subcategories');
+  // Subcategories are deprecated in REVY CRM (Main Category directly maps to Services)
+  getSubcategories: async () => {
+    return { data: [], subcategories: [], items: [], total: 0, success: true };
   },
 
-  createSubcategory: async (data) => {
-    const res = await API.post('/crm/catalogue/subcategories', data);
-    const entity = res.data?.subcategory || res.data?.data || res.data;
-    return { ...res, data: entity, subcategory: entity };
+  createSubcategory: async () => {
+    throw new Error('Subcategories have been removed from REVY CRM. Use Main Categories directly.');
   },
 
-  updateSubcategory: async (id, data) => {
-    const res = await API.put(`/crm/catalogue/subcategories/${id}`, data);
-    const entity = res.data?.subcategory || res.data?.data || res.data;
-    return { ...res, data: entity, subcategory: entity };
+  updateSubcategory: async () => {
+    throw new Error('Subcategories have been removed from REVY CRM. Use Main Categories directly.');
   },
 
-  deleteSubcategory: async (id) => {
-    return API.delete(`/crm/catalogue/subcategories/${id}`);
+  deleteSubcategory: async () => {
+    throw new Error('Subcategories have been removed from REVY CRM.');
   },
 
   // =========================================================================
@@ -267,7 +260,9 @@ export const catalogueService = {
   getServices: async (params = {}) => {
     const query = new URLSearchParams();
     if (params.categoryId && params.categoryId !== 'ALL') query.append('categoryId', params.categoryId);
-    if (params.subcategoryId && params.subcategoryId !== 'ALL') query.append('subcategoryId', params.subcategoryId);
+    if (params.billingUnitId && params.billingUnitId !== 'ALL') query.append('billingUnitId', params.billingUnitId);
+    if (params.minPrice !== undefined && params.minPrice !== null && params.minPrice !== '') query.append('minPrice', params.minPrice);
+    if (params.maxPrice !== undefined && params.maxPrice !== null && params.maxPrice !== '') query.append('maxPrice', params.maxPrice);
     if (params.search) query.append('search', params.search);
     if (params.isActive !== undefined && params.isActive !== 'ALL') query.append('isActive', params.isActive);
     if (params.isAddonEligible !== undefined) query.append('isAddonEligible', params.isAddonEligible);
