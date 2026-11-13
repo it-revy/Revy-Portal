@@ -237,8 +237,8 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
     setSubmitError(null);
 
     if (currentStep === 1) {
-      if (lead.lifecycleStatus === 'Disqualified') {
-        setSubmitError("Cannot qualify a Disqualified Lead. Disqualified leads must be reopened to 'Open' before qualification.");
+      if (lead.lifecycleStatus === 'Dormant' || lead.lifecycleStatus === 'Disqualified') {
+        setSubmitError(`Cannot qualify a ${lead.lifecycleStatus} Lead. Inactive leads must be reactivated before qualification.`);
         return;
       }
     }

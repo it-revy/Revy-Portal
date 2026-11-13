@@ -803,6 +803,41 @@ def get_opportunity(
     return {"success": True, "opportunity": opp}
 
 
+@router.get("/opportunities/{opportunity_id}/communications", response_model=CommunicationListResponse)
+def list_opportunity_communications(
+    opportunity_id: str,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.view")),
+    db: Session = Depends(get_db)
+):
+    """
+    Get chronological customer interaction history for an opportunity.
+    """
+    service = CrmService(db)
+    comms = service.list_opportunity_communications(opportunity_id)
+    return {"success": True, "count": len(comms), "communications": comms}
+
+
+@router.post("/opportunities/{opportunity_id}/communications", status_code=status.HTTP_201_CREATED)
+def create_opportunity_communication(
+    opportunity_id: str,
+    payload: CommunicationCreate,
+    request: Request,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.edit")),
+    db: Session = Depends(get_db)
+):
+    """
+    Log an interaction for an opportunity.
+    """
+    service = CrmService(db)
+    comm = service.create_opportunity_communication(
+        actor=current_user,
+        opp_id=opportunity_id,
+        payload=payload,
+        request=request
+    )
+    return {"success": True, "message": "Interaction logged successfully.", "communication": comm}
+
+
 @router.post("/opportunities/{opportunity_id}/stage", response_model=OpportunityDetailResponse)
 def transition_opportunity_stage(
     opportunity_id: str,
@@ -916,6 +951,131 @@ def create_opportunity_quotation(
         payload=payload,
         request=request
     )
+
+
+@router.get("/opportunities/{opportunity_id}/quotations/current")
+def get_current_opportunity_quotation(
+    opportunity_id: str,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.view")),
+    db: Session = Depends(get_db)
+):
+    from app.crm.catalogue_service import CatalogueService
+    from app.crm.invoice_service import ProformaInvoiceService
+    from app.crm.model import Opportunity, OpportunityQuotation
+    from app.crm.catalogue_model import OpportunityQuotationItem
+    from app.crm.catalogue_schema import QuotationItemResponse
+    from sqlalchemy.orm import joinedload
+    from sqlalchemy import or_
+
+    opp = db.query(Opportunity).filter(
+        or_(Opportunity.id == opportunity_id, Opportunity.opportunity_id == opportunity_id)
+    ).first()
+    if not opp:
+        raise HTTPException(status_code=404, detail=f"Opportunity '{opportunity_id}' not found.")
+
+    q = db.query(OpportunityQuotation).options(
+        joinedload(OpportunityQuotation.items).joinedload(OpportunityQuotationItem.tax_configuration)
+    ).filter(
+        OpportunityQuotation.opportunity_id == opp.id,
+        OpportunityQuotation.is_active == True
+    ).first()
+
+    if not q:
+        return {"success": True, "quotation": None}
+
+    inv_service = ProformaInvoiceService(db)
+    email_text = ""
+    try:
+        email_data = inv_service.generate_quotation_email_text(q.id)
+        email_text = email_data.get("emailText", "")
+    except Exception:
+        pass
+
+    items = [QuotationItemResponse.model_validate(it) for it in q.items]
+    return {
+        "success": True,
+        "quotation": {
+            "id": q.id,
+            "quotationNumber": q.quotation_number,
+            "opportunityId": q.opportunity_id,
+            "revisionNumber": q.revision_number,
+            "version": q.version,
+            "status": q.status,
+            "title": q.title,
+            "amount": float(q.amount),
+            "subtotal": float(q.subtotal or 0.0),
+            "taxType": q.tax_type or "INTRA_STATE",
+            "taxConfigurationId": q.tax_configuration_id,
+            "cgstAmount": float(q.cgst_amount or 0.0),
+            "sgstAmount": float(q.sgst_amount or 0.0),
+            "igstAmount": float(q.igst_amount or 0.0),
+            "totalTax": float(q.total_tax or 0.0),
+            "discountAmount": float(q.discount_amount or 0.0),
+            "currency": q.currency,
+            "quotationDate": q.quotation_date,
+            "validUntilDate": q.valid_until_date,
+            "termsAndConditions": q.terms_and_conditions,
+            "notes": q.notes,
+            "items": items,
+            "emailText": email_text
+        }
+    }
+
+
+@router.post("/opportunities/{opportunity_id}/quotations/save-current")
+def save_current_opportunity_quotation(
+    opportunity_id: str,
+    payload: dict,
+    request: Request,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.edit")),
+    db: Session = Depends(get_db)
+):
+    from app.crm.catalogue_service import CatalogueService
+    from app.crm.catalogue_schema import QuotationItemResponse
+    from app.crm.invoice_service import ProformaInvoiceService
+
+    service = CatalogueService(db)
+    try:
+        q = service.save_current_quotation(current_user, opportunity_id, payload, request)
+        inv_service = ProformaInvoiceService(db)
+        email_text = ""
+        try:
+            email_data = inv_service.generate_quotation_email_text(q.id)
+            email_text = email_data.get("emailText", "")
+        except Exception:
+            pass
+
+        items = [QuotationItemResponse.model_validate(it) for it in q.items]
+        return {
+            "success": True,
+            "message": f"Quotation {q.quotation_number} saved successfully.",
+            "quotation": {
+                "id": q.id,
+                "quotationNumber": q.quotation_number,
+                "opportunityId": q.opportunity_id,
+                "revisionNumber": q.revision_number,
+                "status": q.status,
+                "title": q.title,
+                "amount": float(q.amount),
+                "subtotal": float(q.subtotal or 0.0),
+                "taxType": q.tax_type,
+                "taxConfigurationId": q.tax_configuration_id,
+                "cgstAmount": float(q.cgst_amount or 0.0),
+                "sgstAmount": float(q.sgst_amount or 0.0),
+                "igstAmount": float(q.igst_amount or 0.0),
+                "totalTax": float(q.total_tax or 0.0),
+                "discountAmount": float(q.discount_amount or 0.0),
+                "currency": q.currency,
+                "quotationDate": q.quotation_date,
+                "validUntilDate": q.valid_until_date,
+                "termsAndConditions": q.terms_and_conditions,
+                "notes": q.notes,
+                "items": items,
+                "emailText": email_text
+            }
+        }
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/opportunities/{opportunity_id}/quotations/{quotation_id}", response_model=OpportunityQuotationDetailResponse)

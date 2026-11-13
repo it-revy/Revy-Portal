@@ -59,7 +59,11 @@ from app.crm.model import (
     PackageVersion,
     PackageComponent,
     PackageAddOnConfiguration,
-    OpportunityQuotationItem
+    OpportunityQuotationItem,
+    CrmCompanySettings,
+    ProformaInvoice,
+    ProformaInvoiceRevision,
+    ProformaInvoiceItem
 )
 
 __all__ = [

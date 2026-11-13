@@ -12,28 +12,36 @@ import {
   ArrowRight,
   TrendingUp,
   Briefcase,
-  Building
+  Building,
+  Receipt,
+  Plus,
+  Copy,
+  Printer,
+  ExternalLink,
+  FileCheck
 } from 'lucide-react';
 import crmService from '../services/crmService';
+import { invoiceService } from '../services/invoiceService';
+import QuotationManagerModal from '../components/crm/QuotationManagerModal';
+import InvoicePreparationModal from '../components/crm/InvoicePreparationModal';
 import { PageHeader, Button } from '../components/ui';
 
 const CANONICAL_STAGES = [
   'Enquiry',
-  'Qualify',
-  'Develop',
-  'Propose/Offer',
-  'Negotiate',
-  'Close'
+  'Offer',
+  'Negotiation',
+  'Supply',
+  'Payment',
+  'Dormant'
 ];
 
 const STAGE_ORDER = {
   'Enquiry': 0,
-  'Qualify': 1,
-  'Develop': 2,
-  'Propose': 3,
-  'Propose/Offer': 3,
-  'Negotiate': 4,
-  'Close': 5
+  'Offer': 1,
+  'Negotiation': 2,
+  'Supply': 3,
+  'Payment': 4,
+  'Dormant': 5
 };
 
 const BUSINESS_AREAS = [
@@ -94,6 +102,59 @@ export default function CrmOpportunityEditPage() {
   });
 
   const [fieldErrors, setFieldErrors] = useState({});
+
+  // Collateral & Quotation State
+  const [currentQuotation, setCurrentQuotation] = useState(null);
+  const [proformaInvoices, setProformaInvoices] = useState([]);
+  const [loadingCollateral, setLoadingCollateral] = useState(false);
+  const [quotationModalOpen, setQuotationModalOpen] = useState(false);
+  const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState(null);
+
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const fetchQuotationAndInvoices = React.useCallback(async () => {
+    if (!id) return;
+    setLoadingCollateral(true);
+    try {
+      const [quoteRes, colRes] = await Promise.allSettled([
+        invoiceService.getCurrentQuotation(id),
+        invoiceService.getCollateral({ search: id })
+      ]);
+      if (quoteRes.status === 'fulfilled' && quoteRes.value.data?.success) {
+        setCurrentQuotation(quoteRes.value.data.quotation);
+      }
+      if (colRes.status === 'fulfilled' && colRes.value.data?.success) {
+        const matching = (colRes.value.data.items || []).filter(it => it.opportunityId === id || it.opportunityNumber === id);
+        setProformaInvoices(matching.filter(m => m.piId));
+      }
+    } catch (err) {
+      console.error('Error fetching opportunity collateral:', err);
+    } finally {
+      setLoadingCollateral(false);
+    }
+  }, [id]);
+
+  useEffect(() => {
+    fetchQuotationAndInvoices();
+  }, [fetchQuotationAndInvoices]);
+
+  const handleCopyQuoteText = async () => {
+    if (!currentQuotation?.id) return;
+    try {
+      const res = await invoiceService.getQuotationEmailText(currentQuotation.id);
+      if (res.data?.emailText) {
+        await navigator.clipboard.writeText(res.data.emailText);
+        showToast('Quotation text copied to clipboard! Ready to paste into email.');
+      }
+    } catch (err) {
+      console.error('Copy quote error:', err);
+      alert('Failed to copy quotation text.');
+    }
+  };
 
   // 1. Load Lookups (Accounts, Contacts, Assignees)
   useEffect(() => {
@@ -215,38 +276,15 @@ export default function CrmOpportunityEditPage() {
       if (error && error.includes('Permission Denied')) setError(null);
     }
 
-    // Check reopening guard if original deal was Won/Lost and moving back to open pipeline
-    if (originalOpp && (originalOpp.status === 'Won' || originalOpp.status === 'Lost') && newStage !== 'Close') {
-      if (!isAdmin) {
-        setError('Permission Denied: Only CRM Administrators can reopen a Closed Won or Closed Lost opportunity.');
-        return;
-      }
-    }
-
     setFormData(prev => {
-      let nextStatus = prev.status;
-      let nextOutcome = prev.outcomeLabel;
-
-      if (newStage === 'Close') {
-        if (nextStatus !== 'Won' && nextStatus !== 'Lost') {
-          nextStatus = 'Won';
-          nextOutcome = 'Closed Won';
-        }
-      } else {
-        nextStatus = 'Open';
-        nextOutcome = 'Open Pipeline';
-      }
-
       return {
         ...prev,
-        stage: newStage,
-        status: nextStatus,
-        outcomeLabel: nextOutcome
+        stage: newStage
       };
     });
   };
 
-  // Outcome change handler (only applicable when stage is 'Close')
+  // Outcome change handler
   const handleOutcomeChange = (newOutcome) => {
     setIsDirty(true);
     setFormData(prev => {
@@ -302,22 +340,13 @@ export default function CrmOpportunityEditPage() {
       }
     }
 
-    // 4. Close stage & outcome consistency
-    if (formData.stage === 'Close') {
-      if (formData.status !== 'Won' && formData.status !== 'Lost') {
-        errors.outcome = 'An opportunity in the Close stage must have outcome set to Closed Won or Closed Lost.';
-      }
-      if (formData.status === 'Lost' && (!formData.lossReason || !formData.lossReason.trim())) {
-        errors.lossReason = 'Mandatory loss reason is required when marking an opportunity as Closed Lost.';
-      }
-    } else {
-      if (formData.status === 'Won' || formData.status === 'Lost') {
-        errors.stage = 'Closed Won and Closed Lost opportunities must be in the Close stage.';
-      }
+    // 4. Outcome validation
+    if (formData.status === 'Lost' && (!formData.lossReason || !formData.lossReason.trim())) {
+      errors.lossReason = 'Mandatory loss reason is required when marking an opportunity as Closed Lost.';
     }
 
     // 5. Backward movement permission
-    const originalStage = originalOpp?.stage === 'Propose' ? 'Propose/Offer' : (originalOpp?.stage || 'Enquiry');
+    const originalStage = originalOpp?.stage || 'Enquiry';
     const origOrder = STAGE_ORDER[originalStage] ?? 0;
     const newOrder = STAGE_ORDER[formData.stage] ?? 0;
     if (newOrder < origOrder && !isManager) {
@@ -872,29 +901,15 @@ export default function CrmOpportunityEditPage() {
                 <label className="form-label" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.35rem' }}>
                   Opportunity Outcome <span style={{ color: 'var(--danger)' }}>*</span>
                 </label>
-                {formData.stage === 'Close' ? (
                   <select
                     className={`form-control ${fieldErrors.outcome ? 'is-invalid' : ''}`}
                     value={formData.outcomeLabel}
                     onChange={(e) => handleOutcomeChange(e.target.value)}
                   >
+                    <option value="Open Pipeline">Open Pipeline</option>
                     <option value="Closed Won">Closed Won</option>
                     <option value="Closed Lost">Closed Lost</option>
                   </select>
-                ) : (
-                  <input
-                    type="text"
-                    className="form-control"
-                    value="Open Pipeline"
-                    readOnly
-                    style={{ background: '#f8fafc', color: 'var(--text-secondary)', cursor: 'not-allowed', fontWeight: 600 }}
-                  />
-                )}
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem', display: 'block' }}>
-                  {formData.stage === 'Close'
-                    ? 'Close stage requires an explicit Won or Lost determination.'
-                    : 'Earlier pipeline stages strictly maintain Open Pipeline outcome.'}
-                </span>
               </div>
             </div>
 
@@ -1017,6 +1032,187 @@ export default function CrmOpportunityEditPage() {
             </div>
           </div>
 
+          {/* SECTION 5: COMMERCIAL COLLATERAL (QUOTATION & PROFORMA INVOICES) */}
+          <div className="glass-panel" style={{ padding: '1.5rem', borderRadius: 'var(--radius-md)', boxShadow: 'var(--card-shadow)', border: '1px solid #334155' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <Receipt size={20} color="#f59e0b" />
+                <h2 style={{ fontSize: '1.15rem', fontWeight: 600, margin: 0, color: 'var(--text-primary)' }}>
+                  5. Commercial Collateral (Quotation & Proforma Invoicing)
+                </h2>
+              </div>
+              {toastMessage && (
+                <span style={{ fontSize: '0.8rem', color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '4px 10px', borderRadius: '4px' }}>
+                  {toastMessage}
+                </span>
+              )}
+            </div>
+
+            {/* Current Quotation Card */}
+            <div style={{
+              backgroundColor: '#0f172a',
+              borderRadius: '8px',
+              border: '1px solid #334155',
+              padding: '1.25rem',
+              marginBottom: '1.25rem'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <FileText size={18} color="#38bdf8" />
+                  <span style={{ fontWeight: 600, fontSize: '0.95rem', color: '#f8fafc' }}>
+                    Current Quotation
+                  </span>
+                  {currentQuotation?.quotationNumber ? (
+                    <span style={{ fontSize: '0.75rem', fontWeight: 700, backgroundColor: '#0369a1', color: '#e0f2fe', padding: '2px 8px', borderRadius: '4px' }}>
+                      {currentQuotation.quotationNumber}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic' }}>
+                      (No active quotation)
+                    </span>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  {currentQuotation ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={handleCopyQuoteText}
+                        className="btn btn-secondary"
+                        style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                        title="Copy email-ready quotation"
+                      >
+                        <Copy size={14} />
+                        Copy Quote
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQuotationModalOpen(true)}
+                        className="btn btn-secondary"
+                        style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        <FileCheck size={14} />
+                        Edit Quotation
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setInvoiceModalOpen(true)}
+                        className="btn btn-primary"
+                        style={{ fontSize: '0.8rem', padding: '0.35rem 0.85rem', backgroundColor: '#10b981', borderColor: '#10b981', display: 'flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        <Receipt size={14} />
+                        Approve & Create Invoice
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setQuotationModalOpen(true)}
+                      className="btn btn-primary"
+                      style={{ fontSize: '0.8rem', padding: '0.4rem 0.85rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                    >
+                      <Plus size={14} />
+                      Create Quotation
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {currentQuotation ? (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '1rem', marginTop: '0.75rem', borderTop: '1px solid #1e293b', paddingTop: '0.75rem' }}>
+                  <div>
+                    <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Status</span>
+                    <div style={{ fontWeight: 600, color: '#f8fafc', fontSize: '0.85rem' }}>{currentQuotation.status || 'Draft'}</div>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Items Included</span>
+                    <div style={{ fontWeight: 600, color: '#f8fafc', fontSize: '0.85rem' }}>{currentQuotation.items?.length || 0} line items</div>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Subtotal (Excl. Tax)</span>
+                    <div style={{ fontWeight: 600, color: '#f8fafc', fontSize: '0.85rem' }}>₹{Number(currentQuotation.subtotal || 0).toLocaleString('en-IN')}</div>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>Grand Total (Incl. Tax)</span>
+                    <div style={{ fontWeight: 700, color: '#38bdf8', fontSize: '1rem' }}>₹{Number(currentQuotation.amount || 0).toLocaleString('en-IN')}</div>
+                  </div>
+                </div>
+              ) : (
+                <p style={{ margin: '0.5rem 0 0', fontSize: '0.85rem', color: '#94a3b8' }}>
+                  No commercial quotation has been prepared for this opportunity yet. Click <strong>Create Quotation</strong> to select laboratory tests, packages, or custom items.
+                </p>
+              )}
+            </div>
+
+            {/* Proforma Invoices List */}
+            {proformaInvoices.length > 0 && (
+              <div style={{
+                backgroundColor: '#0f172a',
+                borderRadius: '8px',
+                border: '1px solid #334155',
+                padding: '1.25rem'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                  <Receipt size={18} color="#34d399" />
+                  <span style={{ fontWeight: 600, fontSize: '0.95rem', color: '#f8fafc' }}>
+                    Generated Proforma Invoices ({proformaInvoices.length})
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {proformaInvoices.map((inv) => (
+                    <div
+                      key={inv.piId}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '0.65rem 0.85rem',
+                        backgroundColor: '#1e293b',
+                        borderRadius: '6px',
+                        border: '1px solid #334155'
+                      }}
+                    >
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span style={{ fontWeight: 600, color: '#34d399', fontSize: '0.88rem' }}>{inv.piNumber}</span>
+                          <span style={{ fontSize: '0.7rem', padding: '1px 6px', borderRadius: '4px', backgroundColor: '#065f46', color: '#d1fae5', fontWeight: 600 }}>
+                            Rev {inv.piRevisionNumber || 1}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '2px' }}>
+                          Amount: <strong>₹{Number(inv.piAmount || 0).toLocaleString('en-IN')}</strong> • Updated: {new Date(inv.lastUpdatedDate).toLocaleDateString('en-IN')}
+                        </div>
+                      </div>
+
+                      <div style={{ display: 'flex', gap: '0.4rem' }}>
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/crm/proforma-invoices/${inv.piId}`)}
+                          className="btn btn-secondary"
+                          style={{ fontSize: '0.78rem', padding: '0.3rem 0.65rem', display: 'flex', alignItems: 'center', gap: '3px' }}
+                        >
+                          <ExternalLink size={13} />
+                          View PI
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => window.open(invoiceService.getInvoiceHtmlUrl(inv.piId), '_blank')}
+                          className="btn btn-secondary"
+                          style={{ fontSize: '0.78rem', padding: '0.3rem 0.65rem', display: 'flex', alignItems: 'center', gap: '3px' }}
+                          title="Print / PDF"
+                        >
+                          <Printer size={13} />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Bottom Action Footer */}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: '0.5rem' }}>
             <button
@@ -1048,6 +1244,46 @@ export default function CrmOpportunityEditPage() {
 
         </div>
       </form>
+
+      {/* Quotation Manager Modal */}
+      {quotationModalOpen && originalOpp && (
+        <QuotationManagerModal
+          isOpen={quotationModalOpen}
+          onClose={() => {
+            setQuotationModalOpen(false);
+            fetchQuotationAndInvoices();
+          }}
+          opportunity={originalOpp}
+          onQuotationSaved={(savedQuote) => {
+            setCurrentQuotation(savedQuote);
+            fetchQuotationAndInvoices();
+          }}
+          onApproveAndCreateInvoice={(savedQuote) => {
+            setQuotationModalOpen(false);
+            setCurrentQuotation(savedQuote);
+            setInvoiceModalOpen(true);
+          }}
+        />
+      )}
+
+      {/* Invoice Preparation Modal */}
+      {invoiceModalOpen && originalOpp && currentQuotation && (
+        <InvoicePreparationModal
+          isOpen={invoiceModalOpen}
+          onClose={() => {
+            setInvoiceModalOpen(false);
+            fetchQuotationAndInvoices();
+          }}
+          opportunity={originalOpp}
+          quotation={currentQuotation}
+          onInvoiceCreated={(piData) => {
+            fetchQuotationAndInvoices();
+            if (piData?.proformaInvoiceId) {
+              navigate(`/crm/proforma-invoices/${piData.proformaInvoiceId}`);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

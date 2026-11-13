@@ -130,6 +130,7 @@ def health_check():
 
 from app.crm.router import router as crm_router
 from app.crm.catalogue_router import router as catalogue_router
+from app.crm.invoice_router import router as invoice_router
 from app.modules.services_router import (
     lms_router,
     ims_router,
@@ -156,6 +157,7 @@ for prefix in ["/api/v1", "/api"]:
     app.include_router(bms_memberships_router, prefix=prefix)
     app.include_router(crm_router, prefix=prefix)
     app.include_router(catalogue_router, prefix=prefix)
+    app.include_router(invoice_router, prefix=prefix)
     app.include_router(lms_router, prefix=prefix)
     app.include_router(ims_router, prefix=prefix)
     app.include_router(leave_router, prefix=prefix)

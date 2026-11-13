@@ -56,7 +56,8 @@ from app.crm.catalogue_schema import (
     PackageNewVersionCreate,
     QuotationItemInput
 )
-from app.crm.model import CrmSequence, OpportunityQuotation
+from app.crm.model import CrmSequence, OpportunityQuotation, Opportunity
+from app.crm.service import get_next_sequence_id
 
 logger = logging.getLogger("revy.crm.catalogue")
 
@@ -1242,6 +1243,11 @@ class CatalogueService:
         tax_config = None
         if payload.taxConfigurationId:
             tax_config = self.get_tax_configuration(payload.taxConfigurationId)
+        elif quotation.tax_type in ("INTRA_STATE", "INTER_STATE"):
+            tax_config = self.db.query(TaxConfiguration).filter(
+                TaxConfiguration.tax_type == quotation.tax_type,
+                TaxConfiguration.is_active == True
+            ).first()
 
         if payload.itemType == "SERVICE":
             if not payload.serviceId:
@@ -1461,6 +1467,89 @@ class CatalogueService:
                 "total": float(item.final_total)
             }, request)
             return item
+
+        elif payload.itemType in ("CUSTOM_SERVICE", "CUSTOM_PRODUCT", "PRODUCT"):
+            item_name = (getattr(payload, "itemName", None) or "Custom Item").strip()
+            unit_price = getattr(payload, "unitPrice", None) if getattr(payload, "unitPrice", None) is not None else getattr(payload, "negotiatedUnitPrice", Decimal("0.0"))
+            if unit_price is None:
+                unit_price = Decimal("0.0")
+            unit_price = Decimal(str(unit_price))
+
+            service_rec = None
+            if getattr(payload, "savePermanently", False):
+                is_admin = False
+                roles = getattr(actor, "roles", []) or []
+                if actor.active_role in ("CRM_ADMIN", "IT_ADMIN", "SUPER_ADMIN") or "CRM_ADMIN" in roles:
+                    is_admin = True
+                if not is_admin:
+                    raise PermissionError("Only CRM Admins can save custom items permanently to the catalogue.")
+
+                cat_id = getattr(payload, "categoryId", None)
+                if not cat_id:
+                    first_cat = self.db.query(ServiceCategory).filter(ServiceCategory.is_active == True).first()
+                    cat_id = first_cat.id if first_cat else None
+
+                code_prefix = "SRV"
+                if cat_id:
+                    cat = self.get_category(cat_id)
+                    code_prefix = cat.category_code
+
+                svc_code = get_next_sequence_id(self.db, f"SRV_{code_prefix}", f"{code_prefix}", padding=3, commit=False)
+
+                service_rec = Service(
+                    service_code=svc_code,
+                    name=item_name,
+                    category_id=cat_id,
+                    billing_unit_id=getattr(payload, "billingUnitId", None),
+                    description=getattr(payload, "description", None) or f"Custom catalogue item: {item_name}",
+                    standard_price=unit_price,
+                    is_active=True
+                )
+                self.db.add(service_rec)
+                self.db.flush()
+
+            line_discount = Decimal(str(getattr(payload, "discountAmount", 0) or 0))
+            taxable_amount = (Decimal(str(payload.quantity)) * unit_price) - line_discount
+            if taxable_amount < 0:
+                taxable_amount = Decimal("0.0")
+            tax_res = self.calculate_tax(taxable_amount, tax_config)
+
+            item = OpportunityQuotationItem(
+                quotation_id=quotation.id,
+                item_type=payload.itemType,
+                service_id=service_rec.id if service_rec else None,
+                item_code=service_rec.service_code if service_rec else f"CUST-{int(datetime.now(timezone.utc).timestamp()) % 10000:04d}",
+                item_name=item_name,
+                description=getattr(payload, "description", None),
+                billing_unit=getattr(payload, "billingUnit", None) or (service_rec.billing_unit.code if (service_rec and service_rec.billing_unit) else "Unit"),
+                quantity=payload.quantity,
+                standard_price=unit_price,
+                unit_price=unit_price,
+                discount_amount=line_discount,
+                total_price=taxable_amount,
+                currency="INR",
+                tax_configuration_id=tax_config.id if tax_config else None,
+                tax_type=tax_res["tax_type"],
+                taxable_amount=taxable_amount,
+                cgst_rate=tax_res["cgst_rate"],
+                cgst_amount=tax_res["cgst_amount"],
+                sgst_rate=tax_res["sgst_rate"],
+                sgst_amount=tax_res["sgst_amount"],
+                igst_rate=tax_res["igst_rate"],
+                igst_amount=tax_res["igst_amount"],
+                total_tax=tax_res["total_tax"],
+                final_total=tax_res["final_total"]
+            )
+            self.db.add(item)
+            self.db.commit()
+            self.db.refresh(item)
+            self._audit(actor, "CRM_QUOTATION_CUSTOM_ITEM_ADDED", "OpportunityQuotationItem", item.id, {
+                "quotation_id": quotation.id,
+                "item_code": item.item_code,
+                "saved_permanently": bool(service_rec),
+                "total": float(item.final_total)
+            }, request)
+            return item
         else:
             raise ValidationError(f"Unsupported item type '{payload.itemType}'.")
 
@@ -1491,3 +1580,124 @@ class CatalogueService:
         self._audit(actor, "CRM_QUOTATION_ITEM_REMOVED", "OpportunityQuotationItem", item_id, {
             "quotation_id": quotation_id
         }, request)
+
+    def save_current_quotation(
+        self,
+        actor: CurrentUser,
+        opp_id: str,
+        payload: Dict[str, Any],
+        request: Any = None
+    ) -> OpportunityQuotation:
+        """
+        Maintains only the single current quotation per opportunity.
+        Replaces existing quotation line items cleanly without creating revision history.
+        """
+        opp = self.db.query(Opportunity).filter(
+            or_(Opportunity.id == opp_id, Opportunity.opportunity_id == opp_id)
+        ).first()
+        if not opp:
+            raise NotFoundError(f"Opportunity '{opp_id}' not found.")
+
+        # Find existing active quotation
+        quotation = self.db.query(OpportunityQuotation).filter(
+            OpportunityQuotation.opportunity_id == opp.id,
+            OpportunityQuotation.is_active == True
+        ).first()
+
+        title = payload.get("title") or f"Quotation for {opp.name}"
+        q_date = payload.get("quotationDate") or py_date.today()
+        valid_until = payload.get("validUntilDate")
+        terms = payload.get("termsAndConditions")
+        notes = payload.get("notes")
+        currency = payload.get("currency") or "INR"
+        tax_type = payload.get("taxType") or "INTRA_STATE"
+        tax_config_id = payload.get("taxConfigurationId")
+        if not tax_config_id and tax_type in ("INTRA_STATE", "INTER_STATE"):
+            def_tax = self.db.query(TaxConfiguration).filter(
+                TaxConfiguration.tax_type == tax_type,
+                TaxConfiguration.is_active == True
+            ).first()
+            if def_tax:
+                tax_config_id = def_tax.id
+
+        if not quotation:
+            quotation_num = get_next_sequence_id(self.db, "QUOTATION", "QT", padding=5, commit=False)
+            quotation = OpportunityQuotation(
+                quotation_number=quotation_num,
+                opportunity_id=opp.id,
+                revision_number=1,
+                version="v1",
+                is_active=True,
+                title=title,
+                status="Draft",
+                currency=currency,
+                quotation_date=q_date,
+                valid_until_date=valid_until,
+                terms_and_conditions=terms,
+                notes=notes,
+                tax_type=tax_type,
+                tax_configuration_id=tax_config_id,
+                created_by_id=str(actor.id) if getattr(actor, "id", None) else None,
+                updated_by_id=str(actor.id) if getattr(actor, "id", None) else None
+            )
+            self.db.add(quotation)
+            self.db.flush()
+        else:
+            quotation.title = title
+            quotation.quotation_date = q_date
+            quotation.valid_until_date = valid_until
+            quotation.terms_and_conditions = terms
+            quotation.notes = notes
+            quotation.currency = currency
+            quotation.tax_type = tax_type
+            quotation.tax_configuration_id = tax_config_id
+            quotation.updated_by_id = str(actor.id) if getattr(actor, "id", None) else None
+            quotation.updated_at = datetime.now(timezone.utc)
+            # Remove old items to replace with updated set
+            self.db.query(OpportunityQuotationItem).filter(
+                OpportunityQuotationItem.quotation_id == quotation.id
+            ).delete()
+            self.db.flush()
+
+        # Add all line items
+        raw_items = payload.get("items") or []
+        subtotal = Decimal("0.00")
+        total_cgst = Decimal("0.00")
+        total_sgst = Decimal("0.00")
+        total_igst = Decimal("0.00")
+        total_tax = Decimal("0.00")
+        total_discount = Decimal("0.00")
+
+        for raw_item in raw_items:
+            item_input = QuotationItemInput.model_validate(raw_item)
+            if not item_input.taxConfigurationId:
+                item_input.taxConfigurationId = tax_config_id
+            created_item = self.add_item_to_quotation(actor, quotation.id, item_input, request)
+            subtotal += Decimal(str(created_item.total_price))
+            total_cgst += Decimal(str(created_item.cgst_amount))
+            total_sgst += Decimal(str(created_item.sgst_amount))
+            total_igst += Decimal(str(created_item.igst_amount))
+            total_tax += Decimal(str(created_item.total_tax))
+            total_discount += Decimal(str(created_item.discount_amount or 0))
+
+        grand_total = subtotal + total_tax
+        quotation.subtotal = subtotal
+        quotation.cgst_amount = total_cgst
+        quotation.sgst_amount = total_sgst
+        quotation.igst_amount = total_igst
+        quotation.total_tax = total_tax
+        quotation.discount_amount = total_discount
+        quotation.amount = grand_total
+
+        self.db.commit()
+        self.db.refresh(quotation)
+
+        self._audit(actor, "CRM_QUOTATION_SAVED", "OpportunityQuotation", quotation.id, {
+            "quotation_number": quotation.quotation_number,
+            "opportunity_id": opp.opportunity_id,
+            "items_count": len(raw_items),
+            "amount": float(grand_total)
+        }, request)
+
+        return quotation
+

@@ -205,6 +205,14 @@ export const crmService = {
     return API.post(`/crm/leads/${leadId}/communications`, data);
   },
 
+  getOpportunityCommunications: async (opportunityId) => {
+    return API.get(`/crm/opportunities/${opportunityId}/communications`);
+  },
+
+  addOpportunityCommunication: async (opportunityId, data) => {
+    return API.post(`/crm/opportunities/${opportunityId}/communications`, data);
+  },
+
   // =========================================================================
   // 4. ACCOUNTS & CONTACTS LOOKUP / QUICK-CREATE
   // =========================================================================

@@ -12,7 +12,7 @@ export default function CustomerResponseModal({
     channel: 'Email',
     outcome: 'Interested',
     responseNotes: '',
-    targetLifecycleStatus: 'Negotiation',
+    targetLifecycleStatus: 'In Discussion',
     pauseNurturing: true
   });
   const [loading, setLoading] = useState(false);
@@ -30,7 +30,7 @@ export default function CustomerResponseModal({
       channel: 'Email',
       outcome: 'Interested',
       responseNotes: '',
-      targetLifecycleStatus: 'Negotiation',
+      targetLifecycleStatus: 'In Discussion',
       pauseNurturing: true
     });
     setError(null);
@@ -43,7 +43,7 @@ export default function CustomerResponseModal({
   const handleOutcomeChange = (newOutcome) => {
     let suggestedStatus = lead.lifecycleStatus;
     if (newOutcome === 'Interested' || newOutcome === 'Meeting Requested') {
-      suggestedStatus = 'Negotiation';
+      suggestedStatus = 'In Discussion';
     } else if (newOutcome === 'Not Interested') {
       suggestedStatus = 'Dormant';
     }
@@ -199,12 +199,11 @@ export default function CustomerResponseModal({
                 value={formData.targetLifecycleStatus}
                 onChange={e => setFormData({ ...formData, targetLifecycleStatus: e.target.value })}
               >
-                <option value="Enquiry">Enquiry (Remain in Enquiry)</option>
-                <option value="Offer">Offer (Prepare Commercial Offer)</option>
-                <option value="Negotiation">Negotiation (Commercial Scope & Pricing)</option>
-                <option value="Supply">Supply (Execution Phase)</option>
-                <option value="Payment">Payment (Payment Follow-up)</option>
-                <option value="Dormant">Dormant (Archive / Not Interested)</option>
+                <option value="New">New (Initial enquiry)</option>
+                <option value="Contacted">Contacted (Outreach initiated)</option>
+                <option value="In Discussion">In Discussion (Scope & requirement discussion)</option>
+                <option value="Dormant">Dormant (Archive / Temporarily inactive)</option>
+                <option value="Disqualified">Disqualified (Unqualified / not feasible)</option>
               </select>
             </div>
 

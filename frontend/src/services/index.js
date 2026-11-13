@@ -8,3 +8,4 @@ export { default as reportService } from './reportService';
 export { default as employeeService } from './employeeService';
 export { default as auditService } from './auditService';
 export { default as crmService } from './crmService';
+export { default as invoiceService } from './invoiceService';

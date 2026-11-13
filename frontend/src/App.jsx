@@ -17,6 +17,7 @@ import CrmLeadCreatePage from './pages/CrmLeadCreatePage';
 import CrmLeadDetailPage from './pages/CrmLeadDetailPage';
 import CrmAccountsPage from './pages/CrmAccountsPage';
 import CrmOpportunitiesPage from './pages/CrmOpportunitiesPage';
+import CrmOpportunityDetailPage from './pages/CrmOpportunityDetailPage';
 import CrmOpportunityEditPage from './pages/CrmOpportunityEditPage';
 import CrmContactsPage from './pages/CrmContactsPage';
 import CrmUserHubPage from './pages/CrmUserHubPage';
@@ -30,6 +31,11 @@ import PackageDetailPage from './pages/crm/catalogue/PackageDetailPage';
 import PackageFormPage from './pages/crm/catalogue/PackageFormPage';
 import CategoriesPage from './pages/crm/catalogue/CategoriesPage';
 import MastersPage from './pages/crm/catalogue/MastersPage';
+
+// CRM Collateral & Proforma Invoicing Pages
+import CollateralPage from './pages/crm/collateral/CollateralPage';
+import InvoiceDetailPage from './pages/crm/collateral/InvoiceDetailPage';
+import CompanyInvoiceConfigPage from './pages/crm/settings/CompanyInvoiceConfigPage';
 
 function AppRoutes() {
   const { user, hasPermission, hasRole, hasModuleAccess, loading } = useAuth();
@@ -200,6 +206,14 @@ function AppRoutes() {
         }
       />
       <Route
+        path="/crm/opportunities/:id"
+        element={
+          <CrmLayout>
+            <CrmOpportunityDetailPage />
+          </CrmLayout>
+        }
+      />
+      <Route
         path="/crm/opportunities/:id/edit"
         element={
           <CrmLayout>
@@ -212,6 +226,48 @@ function AppRoutes() {
         element={
           <CrmLayout>
             <CrmContactsPage />
+          </CrmLayout>
+        }
+      />
+
+      {/* CRM Collateral & Proforma Invoicing Routes */}
+      <Route
+        path="/crm/collateral"
+        element={
+          <CrmLayout>
+            <CollateralPage />
+          </CrmLayout>
+        }
+      />
+      <Route
+        path="/crm/collateral/quotations"
+        element={
+          <CrmLayout>
+            <CollateralPage />
+          </CrmLayout>
+        }
+      />
+      <Route
+        path="/crm/collateral/invoices"
+        element={
+          <CrmLayout>
+            <CollateralPage />
+          </CrmLayout>
+        }
+      />
+      <Route
+        path="/crm/proforma-invoices/:id"
+        element={
+          <CrmLayout>
+            <InvoiceDetailPage />
+          </CrmLayout>
+        }
+      />
+      <Route
+        path="/crm/settings/company-invoice"
+        element={
+          <CrmLayout requiredPermission="crm.user.manage" requiredRole="CRM_ADMIN">
+            <CompanyInvoiceConfigPage />
           </CrmLayout>
         }
       />

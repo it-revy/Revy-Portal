@@ -17,7 +17,10 @@ import {
   FlaskConical,
   Package as PackageIcon,
   FolderTree,
-  Sliders
+  Sliders,
+  FileText,
+  Receipt,
+  FileCheck
 } from 'lucide-react';
 
 const CrmSidebar = ({
@@ -52,6 +55,10 @@ const CrmSidebar = ({
   const isOpportunitiesActive = location.pathname.startsWith('/crm/opportunities');
   const isAccountsActive = location.pathname.startsWith('/crm/accounts');
   const isContactsActive = location.pathname.startsWith('/crm/contacts');
+  const isCollateralActive = location.pathname === '/crm/collateral';
+  const isQuotationsActive = location.pathname.startsWith('/crm/collateral/quotations');
+  const isInvoicesActive = location.pathname.startsWith('/crm/collateral/invoices') || location.pathname.startsWith('/crm/proforma-invoices');
+  const isCompanySettingsActive = location.pathname.startsWith('/crm/settings/company-invoice');
   const isUserHubActive = location.pathname === '/crm/user-hub' || location.pathname === '/crm/users';
   const isServicesActive = location.pathname.startsWith('/crm/catalogue/services');
   const isPackagesActive = location.pathname.startsWith('/crm/catalogue/packages');
@@ -205,6 +212,40 @@ const CrmSidebar = ({
           {(!isCollapsed || isMobileOpen) && <span>Contacts</span>}
         </NavLink>
 
+        {/* Collateral Navigation Section */}
+        {(!isCollapsed || isMobileOpen) && (
+          <div style={{
+            fontSize: '0.68rem',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            color: '#64748b',
+            padding: '0.9rem 0.5rem 0.2rem',
+            fontWeight: 700
+          }}>
+            Collateral
+          </div>
+        )}
+
+        <NavLink
+          to="/crm/collateral/quotations"
+          onClick={handleLinkClick}
+          className={`nav-item ${isQuotationsActive ? 'active' : ''}`}
+          title="Quotations"
+        >
+          <FileCheck size={18} />
+          {(!isCollapsed || isMobileOpen) && <span>Quotations</span>}
+        </NavLink>
+
+        <NavLink
+          to="/crm/collateral/invoices"
+          onClick={handleLinkClick}
+          className={`nav-item ${isInvoicesActive ? 'active' : ''}`}
+          title="Proforma Invoices"
+        >
+          <Receipt size={18} />
+          {(!isCollapsed || isMobileOpen) && <span>Invoices</span>}
+        </NavLink>
+
         {/* Product & Service Management Section */}
         {(!isCollapsed || isMobileOpen) && (
           <div style={{
@@ -291,6 +332,16 @@ const CrmSidebar = ({
             >
               <Users size={18} />
               {(!isCollapsed || isMobileOpen) && <span>CRM User Hub</span>}
+            </NavLink>
+
+            <NavLink
+              to="/crm/settings/company-invoice"
+              onClick={handleLinkClick}
+              className={`nav-item ${isCompanySettingsActive ? 'active' : ''}`}
+              title="Company & Invoice Configuration"
+            >
+              <Building size={18} />
+              {(!isCollapsed || isMobileOpen) && <span>Company & Invoice</span>}
             </NavLink>
           </>
         )}

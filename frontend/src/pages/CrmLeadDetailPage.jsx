@@ -23,7 +23,6 @@ import crmService from '../services/crmService';
 import LeadStatusModal from '../modules/crm/components/LeadStatusModal';
 import CommunicationModal from '../modules/crm/components/CommunicationModal';
 import LeadQualifyWizard from '../modules/crm/components/LeadQualifyWizard';
-import OpportunityDetailModal from '../modules/crm/components/OpportunityDetailModal';
 import NextActivityPanel from '../modules/crm/components/NextActivityPanel';
 import UnifiedTimeline from '../modules/crm/components/UnifiedTimeline';
 import CustomerResponseModal from '../modules/crm/components/CustomerResponseModal';
@@ -81,6 +80,7 @@ export default function CrmLeadDetailPage() {
     !lead.convertedAt &&
     !lead.opportunityId &&
     lead.lifecycleStatus !== 'Dormant' &&
+    lead.lifecycleStatus !== 'Disqualified' &&
     !lead.disqualificationReason;
 
   const fetchLeadDetails = useCallback(async () => {
@@ -190,12 +190,12 @@ export default function CrmLeadDetailPage() {
   const getStatusBadge = (status) => {
     const s = (status || '').toLowerCase();
     let badgeClass = 'status-badge';
-    if (s === 'enquiry' || s === 'open') badgeClass = 'status-badge open';
-    else if (s === 'offer') badgeClass = 'status-badge info';
-    else if (s === 'negotiation' || s === 'qualified') badgeClass = 'status-badge in-progress';
-    else if (s === 'supply') badgeClass = 'status-badge present';
-    else if (s === 'payment') badgeClass = 'status-badge late';
-    else if (s === 'dormant' || s === 'disqualified') badgeClass = 'status-badge absent';
+    if (s === 'new' || s === 'open') badgeClass = 'status-badge open';
+    else if (s === 'contacted') badgeClass = 'status-badge info';
+    else if (s === 'in discussion' || s === 'in-discussion') badgeClass = 'status-badge in-progress';
+    else if (s === 'qualified') badgeClass = 'status-badge success';
+    else if (s === 'dormant') badgeClass = 'status-badge absent';
+    else if (s === 'disqualified') badgeClass = 'status-badge danger';
 
     return <span className={badgeClass}>{status}</span>;
   };
@@ -327,7 +327,7 @@ export default function CrmLeadDetailPage() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
             {getStatusBadge(lead.lifecycleStatus)}
 
-            {(!lead.isQualified && !lead.qualifiedAt && lead.lifecycleStatus !== 'Qualified') && (canEdit || canUpdateStatus) && (
+            {(!lead.isQualified && !lead.qualifiedAt && lead.lifecycleStatus !== 'Qualified' && !lead.opportunityId) && (canEdit || canUpdateStatus) ? (
               <Button
                 variant="primary"
                 onClick={() => setIsQualifyWizardOpen(true)}
@@ -336,7 +336,16 @@ export default function CrmLeadDetailPage() {
               >
                 Qualify Lead
               </Button>
-            )}
+            ) : (lead.isQualified || lead.qualifiedAt || lead.lifecycleStatus === 'Qualified' || lead.opportunityId) ? (
+              <Button
+                variant="primary"
+                onClick={() => navigate(`/crm/opportunities/${lead.opportunityId || lead.opportunity?.id}`)}
+                icon={Briefcase}
+                style={{ background: 'var(--accent-primary)', borderColor: 'var(--accent-primary)' }}
+              >
+                View Opportunity
+              </Button>
+            ) : null}
 
             {canUnqualify && (
               <Button
@@ -495,23 +504,23 @@ export default function CrmLeadDetailPage() {
                     : [lead.opportunity]
                   ).map((opp) => (
                     <tr key={opp.id}>
-                      <td style={{ fontWeight: 700, color: 'var(--accent-primary)', whiteSpace: 'nowrap' }}>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedOppIdForDetail(opp.id)}
-                          style={{ background: 'none', border: 'none', color: 'var(--accent-primary)', fontWeight: 700, cursor: 'pointer', padding: 0 }}
+                      <td style={{ fontWeight: 700, whiteSpace: 'nowrap' }}>
+                        <Link
+                          to={`/crm/opportunities/${opp.id}`}
+                          style={{ color: 'var(--accent-primary)', fontWeight: 700, textDecoration: 'none' }}
+                          title="View Dedicated Opportunity Page"
                         >
                           {opp.opportunityId || opp.id}
-                        </button>
+                        </Link>
                       </td>
                       <td style={{ fontWeight: 600 }}>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedOppIdForDetail(opp.id)}
-                          style={{ background: 'none', border: 'none', textAlign: 'left', font: 'inherit', fontWeight: 600, cursor: 'pointer', padding: 0, color: 'var(--text-primary)' }}
+                        <Link
+                          to={`/crm/opportunities/${opp.id}`}
+                          style={{ textDecoration: 'none', color: 'var(--text-primary)' }}
+                          title="View Dedicated Opportunity Page"
                         >
                           {opp.name}
-                        </button>
+                        </Link>
                       </td>
                       <td>
                         <span style={{
@@ -557,14 +566,14 @@ export default function CrmLeadDetailPage() {
                         </span>
                       </td>
                       <td style={{ textAlign: 'right' }}>
-                        <button
-                          type="button"
-                          onClick={() => setSelectedOppIdForDetail(opp.id)}
+                        <Link
+                          to={`/crm/opportunities/${opp.id}`}
                           className="crm-btn crm-btn-secondary crm-btn-sm"
-                          style={{ padding: '2px 8px', fontSize: '0.75rem' }}
+                          style={{ padding: '2px 8px', fontSize: '0.75rem', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+                          title="View Dedicated Opportunity Page"
                         >
                           View
-                        </button>
+                        </Link>
                       </td>
                     </tr>
                   ))}
@@ -1757,16 +1766,6 @@ export default function CrmLeadDetailPage() {
           onQualifiedSuccess={() => {
             fetchLeadDetails();
           }}
-        />
-      )}
-
-      {/* Comprehensive Opportunity Detail & Workstream Modal */}
-      {selectedOppIdForDetail && (
-        <OpportunityDetailModal
-          isOpen={Boolean(selectedOppIdForDetail)}
-          opportunityId={selectedOppIdForDetail}
-          onClose={() => setSelectedOppIdForDetail(null)}
-          onOpportunityUpdated={() => fetchLeadDetails()}
         />
       )}
 

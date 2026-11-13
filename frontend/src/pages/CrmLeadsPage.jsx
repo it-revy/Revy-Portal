@@ -30,6 +30,7 @@ import { PageHeader, Button, SearchInput, Select, FilterBar, FilterField, Pagina
 const SAVED_VIEWS = [
   { id: 'open', label: 'Open Leads', icon: Layers },
   { id: 'all', label: 'All Leads', icon: Briefcase },
+  { id: 'qualified', label: 'Qualified Leads', icon: CheckCircle2 },
   { id: 'unqualified', label: 'Unqualified Leads', icon: XCircle },
   { id: 'my_leads', label: 'My Leads', icon: User },
   { id: 'follow_ups_due', label: 'Follow-ups Due', icon: Clock }
@@ -337,12 +338,12 @@ export default function CrmLeadsPage() {
                 onChange={e => { setLifecycleStatus(e.target.value); setPage(1); }}
                 options={[
                   { value: 'ALL', label: 'All Statuses' },
-                  { value: 'Enquiry', label: 'Enquiry' },
-                  { value: 'Offer', label: 'Offer' },
-                  { value: 'Negotiation', label: 'Negotiation' },
-                  { value: 'Supply', label: 'Supply' },
-                  { value: 'Payment', label: 'Payment' },
-                  { value: 'Dormant', label: 'Dormant' }
+                  { value: 'New', label: 'New' },
+                  { value: 'Contacted', label: 'Contacted' },
+                  { value: 'In Discussion', label: 'In Discussion' },
+                  { value: 'Qualified', label: 'Qualified' },
+                  { value: 'Dormant', label: 'Dormant' },
+                  { value: 'Disqualified', label: 'Disqualified' }
                 ]}
               />
             </FilterField>
@@ -533,8 +534,9 @@ export default function CrmLeadsPage() {
                 </tr>
               ) : (
                 leads.map(lead => {
-                  const overdue = lead.lifecycleStatus !== 'Dormant' && isOverdue(lead.nextFollowUpDate);
-                  const dueToday = lead.lifecycleStatus !== 'Dormant' && isDueToday(lead.nextFollowUpDate);
+                  const isInactive = lead.lifecycleStatus === 'Dormant' || lead.lifecycleStatus === 'Disqualified';
+                  const overdue = !isInactive && isOverdue(lead.nextFollowUpDate);
+                  const dueToday = !isInactive && isDueToday(lead.nextFollowUpDate);
 
                   if (currentView === 'open') {
                     /* OPEN LEADS VIEW: Lead ID + 4 information groups + Actions */
@@ -747,9 +749,33 @@ export default function CrmLeadsPage() {
 
                       {/* 5. Status */}
                       <td>
-                        <span className={`crm-badge crm-badge-status-${(lead.lifecycleStatus || 'enquiry').toLowerCase()}`}>
+                        <span className={`crm-badge crm-badge-status-${(lead.lifecycleStatus || 'new').toLowerCase().replace(/\s+/g, '-')}`}>
                           {lead.lifecycleStatus}
                         </span>
+                        {(lead.opportunityId || lead.opportunity?.id) && (
+                          <div style={{ marginTop: '4px' }}>
+                            <button
+                              onClick={() => navigate(`/crm/opportunities/${lead.opportunityId || lead.opportunity?.id}`)}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '3px',
+                                fontSize: '0.72rem',
+                                color: '#2563eb',
+                                background: '#eff6ff',
+                                border: '1px solid #bfdbfe',
+                                borderRadius: '4px',
+                                padding: '2px 5px',
+                                cursor: 'pointer',
+                                fontWeight: 600
+                              }}
+                              title="Open Associated Opportunity"
+                            >
+                              <ExternalLink size={10} />
+                              <span>Opportunity</span>
+                            </button>
+                          </div>
+                        )}
                       </td>
 
                       {/* 6. Assigned To */}

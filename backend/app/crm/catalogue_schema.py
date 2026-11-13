@@ -876,14 +876,21 @@ class PackageListResponse(BaseModel):
 # =========================================================================
 
 class QuotationItemInput(BaseModel):
-    itemType: str = Field(..., pattern="^(SERVICE|PACKAGE|ADDON)$")
+    itemType: str = Field(..., pattern="^(SERVICE|PACKAGE|ADDON|PRODUCT|CUSTOM_SERVICE|CUSTOM_PRODUCT)$")
     serviceId: Optional[str] = None
     packageId: Optional[str] = None
     packageVersionId: Optional[str] = None
     parentItemId: Optional[str] = None
+    itemName: Optional[str] = None
+    description: Optional[str] = None
+    billingUnit: Optional[str] = None
     quantity: int = Field(1, ge=1)
     unitPrice: Optional[Decimal] = Field(None, ge=0)
     negotiatedUnitPrice: Optional[Decimal] = Field(None, ge=0)
+    discountAmount: Optional[Decimal] = Field(Decimal("0.0"), ge=0)
+    savePermanently: Optional[bool] = False
+    categoryId: Optional[str] = None
+    billingUnitId: Optional[str] = None
     sampleType: Optional[str] = None
     sampleTypeId: Optional[str] = None
     testingMethod: Optional[str] = None

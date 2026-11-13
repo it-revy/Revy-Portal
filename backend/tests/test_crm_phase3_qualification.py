@@ -375,7 +375,7 @@ def test_9_10_11_rollback_atomicity_on_failure(setup_phase3_env):
 
         # Verify lead status was NOT changed to Qualified
         db_lead = db.query(Lead).filter(Lead.id == lead["id"]).first()
-        assert db_lead.lifecycle_status == "Open"
+        assert db_lead.lifecycle_status in ("Open", "New")
         assert db_lead.opportunity_id is None
 
 

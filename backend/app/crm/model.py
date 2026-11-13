@@ -30,6 +30,7 @@ class Account(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     account_id = Column(String(50), unique=True, index=True, nullable=False)
+    customer_id = Column(String(100), nullable=True, index=True)
     name = Column(String(255), nullable=False, index=True)
     industry = Column(String(100), nullable=True)
     website = Column(String(255), nullable=True)
@@ -137,8 +138,8 @@ class Opportunity(Base):
             name="ck_crm_opportunities_amount_non_negative"
         ),
         CheckConstraint(
-            "(status = 'Open' AND stage != 'Close') OR (status IN ('Won', 'Lost') AND stage = 'Close')",
-            name="ck_crm_opportunities_stage_status"
+            "stage IN ('Enquiry', 'Offer', 'Negotiation', 'Supply', 'Payment', 'Dormant')",
+            name="ck_crm_opportunities_stage"
         ),
     )
 
@@ -150,7 +151,7 @@ class Opportunity(Base):
     originating_lead_id = Column(String(36), ForeignKey("leads.id", ondelete="SET NULL"), nullable=True, index=True)
 
     status = Column(String(50), nullable=False, default="Open", index=True)  # Open, Won, Lost
-    stage = Column(String(50), nullable=False, default="Qualify", index=True)  # Qualify, Develop, Propose, Close
+    stage = Column(String(50), nullable=False, default="Enquiry", index=True)  # Enquiry, Offer, Negotiation, Supply, Payment, Dormant
     loss_reason = Column(Text, nullable=True)
     won_reason = Column(Text, nullable=True)
     closed_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -188,6 +189,7 @@ class Opportunity(Base):
     product_transactions = relationship("ProductTransaction", back_populates="opportunity")
     milestones = relationship("Milestone", back_populates="opportunity", cascade="all, delete-orphan")
     quotations = relationship("OpportunityQuotation", back_populates="opportunity", cascade="all, delete-orphan", order_by="desc(OpportunityQuotation.created_at)")
+    communications = relationship("LeadCommunicationHistory", back_populates="opportunity", cascade="all, delete-orphan", order_by="desc(LeadCommunicationHistory.communication_date)")
 
 
 class Lead(Base):
@@ -238,8 +240,8 @@ class Lead(Base):
     contact_id = Column(String(36), ForeignKey("contacts.id", ondelete="SET NULL"), nullable=True, index=True)  # Primary Contact (Optional)
     assigned_to_user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)  # Lead Owner
 
-    # Lead Lifecycle Status (Enquiry, Offer, Negotiation, Supply, Payment, Dormant)
-    lifecycle_status = Column(String(50), nullable=False, default="Enquiry", index=True)
+    # Lead Lifecycle Status (New, Contacted, In Discussion, Dormant, Disqualified)
+    lifecycle_status = Column(String(50), nullable=False, default="New", index=True)
     legacy_lifecycle_status = Column(String(50), nullable=True)
     remarks = Column(Text, nullable=True)
     disqualification_reason = Column(Text, nullable=True)
@@ -262,6 +264,10 @@ class Lead(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     __table_args__ = (
+        CheckConstraint(
+            "lifecycle_status IN ('New', 'Contacted', 'In Discussion', 'Qualified', 'Dormant', 'Disqualified', 'Open')",
+            name="ck_leads_lifecycle_status"
+        ),
         Index("ix_leads_lifecycle_followup", "lifecycle_status", "next_follow_up_date"),
         Index("ix_leads_account_product", "account_id", "requested_product_service"),
         Index("ix_leads_contact_product", "contact_id", "requested_product_service"),
@@ -319,7 +325,8 @@ class LeadCommunicationHistory(Base):
 
     id = Column(String(36), primary_key=True, default=generate_uuid)
     communication_id = Column(String(50), unique=True, index=True, nullable=False)
-    lead_id = Column(String(36), ForeignKey("leads.id", ondelete="CASCADE"), nullable=False, index=True)
+    lead_id = Column(String(36), ForeignKey("leads.id", ondelete="CASCADE"), nullable=True, index=True)
+    opportunity_id = Column(String(36), ForeignKey("crm_opportunities.id", ondelete="CASCADE"), nullable=True, index=True)
     communication_date = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), index=True)
     channel = Column(String(50), nullable=False)  # Email, Mobile/Call, WhatsApp, Teams, Other
     event_type = Column(String(100), nullable=False)  # Introductory mail sent, Introductory call, etc.
@@ -338,6 +345,7 @@ class LeadCommunicationHistory(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     lead = relationship("Lead", back_populates="communications")
+    opportunity = relationship("Opportunity", back_populates="communications")
     created_by = relationship("User", foreign_keys=[created_by_id])
     nurturing_activity = relationship("NurturingActivity", back_populates="interaction")
 
@@ -731,6 +739,14 @@ class OpportunityQuotation(Base):
     # Statuses: Draft, Internal Review, Approved, Shared with Client, Accepted, Superseded, Rejected
 
     amount = Column(Numeric(12, 2), nullable=False, default=0.0)
+    subtotal = Column(Numeric(14, 2), nullable=False, default=0.0)
+    tax_type = Column(String(50), nullable=True, default="INTRA_STATE")
+    tax_configuration_id = Column(String(36), ForeignKey("crm_tax_configurations.id", ondelete="SET NULL"), nullable=True)
+    cgst_amount = Column(Numeric(14, 2), nullable=False, default=0.0)
+    sgst_amount = Column(Numeric(14, 2), nullable=False, default=0.0)
+    igst_amount = Column(Numeric(14, 2), nullable=False, default=0.0)
+    total_tax = Column(Numeric(14, 2), nullable=False, default=0.0)
+    discount_amount = Column(Numeric(14, 2), nullable=False, default=0.0)
     currency = Column(String(10), nullable=False, default="INR")
     quotation_date = Column(Date, nullable=False, default=lambda: py_date.today())
     valid_until_date = Column(Date, nullable=True)
@@ -807,4 +823,12 @@ from app.crm.catalogue_model import (
     PackageAddOnConfiguration,
     OpportunityQuotationItem
 )
+
+from app.crm.invoice_model import (
+    CrmCompanySettings,
+    ProformaInvoice,
+    ProformaInvoiceRevision,
+    ProformaInvoiceItem
+)
+
 

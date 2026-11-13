@@ -422,6 +422,7 @@ class OpportunityQuotationItem(Base):
 
     standard_price = Column(Numeric(18, 4), nullable=False, default=0.0)
     unit_price = Column(Numeric(18, 4), nullable=False, default=0.0)  # Negotiated / agreed line price
+    discount_amount = Column(Numeric(18, 4), nullable=False, default=0.0)
     total_price = Column(Numeric(18, 4), nullable=False, default=0.0)  # quantity * unit_price
     currency = Column(String(10), nullable=False, default="INR")
 

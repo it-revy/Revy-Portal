@@ -8,13 +8,16 @@ export default function LeadStatusModal({
   lead,
   onStatusUpdated
 }) {
-  const [newStatus, setNewStatus] = useState(lead?.lifecycleStatus || 'Qualified');
+  const [newStatus, setNewStatus] = useState(lead?.lifecycleStatus || 'New');
   const [remarks, setRemarks] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
     if (!isOpen) return;
+    setNewStatus(lead?.lifecycleStatus || 'New');
+    setRemarks('');
+    setError(null);
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') {
         onClose();
@@ -22,12 +25,12 @@ export default function LeadStatusModal({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, lead, onClose]);
 
   if (!isOpen || !lead) return null;
 
   const currentStatus = lead.lifecycleStatus;
-  const isReactivating = newStatus !== 'Dormant' && currentStatus === 'Dormant';
+  const isReactivating = (newStatus !== 'Dormant' && newStatus !== 'Disqualified') && (currentStatus === 'Dormant' || currentStatus === 'Disqualified');
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -115,12 +118,11 @@ export default function LeadStatusModal({
                 value={newStatus}
                 onChange={e => setNewStatus(e.target.value)}
               >
-                <option value="Enquiry">Enquiry (New enquiry / requirement received)</option>
-                <option value="Offer">Offer (Preparing or submitted commercial offer)</option>
-                <option value="Negotiation">Negotiation (Commercial scope, price & terms discussion)</option>
-                <option value="Supply">Supply (Delivery / service execution phase)</option>
-                <option value="Payment">Payment (Payment-related follow-up underway)</option>
+                <option value="New">New (Initial enquiry received / uncontacted)</option>
+                <option value="Contacted">Contacted (Outreach initiated / email or phone call made)</option>
+                <option value="In Discussion">In Discussion (Requirements discovery & scope discussion)</option>
                 <option value="Dormant">Dormant (Temporarily inactive / preserved)</option>
+                <option value="Disqualified">Disqualified (Unqualified / not feasible)</option>
               </select>
             </div>
 

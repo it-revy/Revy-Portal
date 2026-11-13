@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 import crmService from '../../../services/crmService';
 
-const STAGES = ['Enquiry', 'Qualify', 'Develop', 'Propose/Offer', 'Negotiate', 'Close'];
+const STAGES = ['Enquiry', 'Offer', 'Negotiation', 'Supply', 'Payment', 'Dormant'];
 
 const QUICK_LOSS_REASONS = [
   'Competitor Chosen',
@@ -30,7 +30,7 @@ const QUICK_WON_REASONS = [
 ];
 
 export default function OpportunityStageModal({ isOpen, onClose, opportunity, onSuccess }) {
-  const [targetStage, setTargetStage] = useState('Qualify');
+  const [targetStage, setTargetStage] = useState('Enquiry');
   const [targetStatus, setTargetStatus] = useState('Open');
   const [lossReason, setLossReason] = useState('');
   const [wonReason, setWonReason] = useState('');
@@ -41,7 +41,7 @@ export default function OpportunityStageModal({ isOpen, onClose, opportunity, on
 
   useEffect(() => {
     if (!isOpen || !opportunity) return;
-    const currentStage = opportunity.stage === 'Propose' ? 'Propose/Offer' : (opportunity.stage || 'Qualify');
+    const currentStage = opportunity.stage || 'Enquiry';
     setTargetStage(currentStage);
     setTargetStatus(opportunity.status || 'Open');
     setLossReason(opportunity.lossReason || '');
@@ -64,11 +64,6 @@ export default function OpportunityStageModal({ isOpen, onClose, opportunity, on
     // Validation
     if (targetStatus === 'Lost' && !lossReason.trim()) {
       setError('Please provide a loss reason when marking an opportunity as Lost.');
-      return;
-    }
-
-    if (targetStatus === 'Won' && targetStage !== 'Close') {
-      setError('An opportunity must be in the "Close" stage to be marked as Won.');
       return;
     }
 
@@ -206,7 +201,6 @@ export default function OpportunityStageModal({ isOpen, onClose, opportunity, on
                 type="button"
                 onClick={() => {
                   setTargetStatus('Won');
-                  setTargetStage('Close');
                   setLossReason('');
                 }}
                 style={{
@@ -262,7 +256,7 @@ export default function OpportunityStageModal({ isOpen, onClose, opportunity, on
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.4rem' }}>
               {STAGES.map((stg) => {
                 const isSelected = targetStage === stg;
-                const isDisabled = targetStatus === 'Won' && stg !== 'Close';
+                const isDisabled = false;
                 return (
                   <button
                     key={stg}

@@ -1902,7 +1902,7 @@ class CrmService:
                 account_id=acc_id,
                 contact_id=con_id,
                 assigned_to_user_id=assignee.id if assignee else None,
-                lifecycle_status=payload.lifecycleStatus or "Enquiry",
+                lifecycle_status=payload.lifecycleStatus or "New",
                 communication_channel=payload.communicationChannel or "Email",
                 remarks=payload.remarks.strip() if payload.remarks else None,
                 next_follow_up_date=payload.nextFollowUpDate,
@@ -2304,6 +2304,10 @@ class CrmService:
         lead.lifecycle_status = clean_status
         if remarks:
             lead.remarks = remarks.strip()
+        if clean_status == "Disqualified":
+            lead.disqualification_reason = remarks.strip() if remarks else "Disqualified during lead nurturing"
+        elif clean_status != "Dormant":
+            lead.disqualification_reason = None
         lead.updated_by_id = str(actor.id) if actor.id else None
 
         # Record Lead Status Change interaction for unified timeline
@@ -2388,17 +2392,43 @@ class CrmService:
         clean_view = (view or "open").strip().lower()
 
         if clean_view == "open":
-            query = query.filter(Lead.lifecycle_status.in_(["Enquiry", "Offer", "Negotiation", "Supply", "Payment", "Open"]))
+            query = query.filter(
+                Lead.lifecycle_status.in_(["New", "Contacted", "In Discussion"]),
+                Lead.lifecycle_status != "Qualified",
+                Lead.qualified_at.is_(None),
+                Lead.opportunity_id.is_(None)
+            )
         elif clean_view == "all":
             pass
+        elif clean_view == "qualified":
+            query = query.filter(
+                or_(
+                    Lead.lifecycle_status == "Qualified",
+                    Lead.qualified_at.isnot(None),
+                    Lead.opportunity_id.isnot(None)
+                )
+            )
         elif clean_view in ("unqualified", "dormant"):
-            query = query.filter(Lead.lifecycle_status.in_(["Dormant", "Disqualified"]))
+            query = query.filter(
+                Lead.lifecycle_status.in_(["Dormant", "Disqualified"]),
+                Lead.lifecycle_status != "Qualified",
+                Lead.qualified_at.is_(None),
+                Lead.opportunity_id.is_(None)
+            )
         elif clean_view == "my_leads":
-            query = query.filter(Lead.assigned_to_user_id == str(actor.id))
+            query = query.filter(
+                Lead.assigned_to_user_id == str(actor.id),
+                Lead.lifecycle_status.in_(["New", "Contacted", "In Discussion"]),
+                Lead.lifecycle_status != "Qualified",
+                Lead.qualified_at.is_(None),
+                Lead.opportunity_id.is_(None)
+            )
         elif clean_view == "follow_ups_due":
             due_window = date.today() + timedelta(days=1)
             query = query.filter(
-                Lead.lifecycle_status.notin_(["Dormant", "Disqualified"]),
+                Lead.lifecycle_status.notin_(["Dormant", "Disqualified", "Qualified"]),
+                Lead.qualified_at.is_(None),
+                Lead.opportunity_id.is_(None),
                 Lead.next_follow_up_date.isnot(None),
                 Lead.next_follow_up_date <= due_window
             )
@@ -2417,7 +2447,7 @@ class CrmService:
                 )
             )
 
-        if lifecycle_status and lifecycle_status != "ALL" and clean_view == "all":
+        if lifecycle_status and lifecycle_status != "ALL":
             query = query.filter(Lead.lifecycle_status == lifecycle_status.strip())
 
         if assigned_to_user_id:
@@ -2630,7 +2660,7 @@ class CrmService:
                     "opportunityId": opp_item.opportunity_id,
                     "name": opp_item.name,
                     "status": opp_item.status or "Open",
-                    "stage": opp_item.stage or "Qualify",
+                    "stage": opp_item.stage or "Enquiry",
                     "subStatus": opp_item.sub_status,
                     "sub_status": opp_item.sub_status,
                     "currency": opp_item.currency or "INR",
@@ -2655,7 +2685,7 @@ class CrmService:
             "requirementSummary": lead.requirement_summary,
             "requestedProductService": lead.requested_product_service,
             "leadSource": lead.lead_source or "Website",
-            "lifecycleStatus": lead.lifecycle_status or "Enquiry",
+            "lifecycleStatus": lead.lifecycle_status or "New",
             "communicationChannel": lead.communication_channel,
             "remarks": lead.remarks,
             "nextFollowUpDate": _iso_utc(lead.next_follow_up_date),
@@ -2797,6 +2827,57 @@ class CrmService:
             if opp.estimated_value is not None:
                 has_mismatch = bool(round(float(opp.estimated_value), 2) != round(active_quote_amount, 2))
 
+        account_obj = None
+        if opp.account:
+            account_obj = {
+                "id": opp.account.id,
+                "accountId": opp.account.account_id,
+                "customerId": getattr(opp.account, "customer_id", None),
+                "name": opp.account.name,
+                "industry": opp.account.industry,
+                "website": opp.account.website,
+                "phone": opp.account.phone,
+                "email": opp.account.email,
+                "address": opp.account.address,
+                "billingAddress": opp.account.billing_address,
+                "shippingAddress": opp.account.shipping_address,
+                "siteName": opp.account.site_name,
+                "businessArea": opp.account.business_area,
+                "gstNumber": getattr(opp.account, "gst_number", None),
+                "panNumber": getattr(opp.account, "pan_number", None),
+                "city": opp.account.city,
+                "state": opp.account.state,
+                "country": opp.account.country
+            }
+
+        contact_obj = None
+        if opp.contact:
+            contact_obj = {
+                "id": opp.contact.id,
+                "contactId": opp.contact.contact_id,
+                "name": opp.contact.name,
+                "firstName": opp.contact.first_name,
+                "lastName": opp.contact.last_name,
+                "designation": opp.contact.designation,
+                "email": opp.contact.email,
+                "mobileNumber": opp.contact.mobile_number,
+                "whatsappNumber": opp.contact.whatsapp_number,
+                "isPrimary": opp.contact.is_primary,
+                "accountId": opp.contact.account_id,
+                "accountName": opp.contact.account.name if opp.contact.account else (opp.account.name if opp.account else None)
+            }
+
+        orig_lead_obj = None
+        if opp.originating_lead:
+            orig_lead_obj = {
+                "id": opp.originating_lead.id,
+                "leadId": opp.originating_lead.lead_id,
+                "leadName": opp.originating_lead.lead_name,
+                "leadSource": opp.originating_lead.lead_source,
+                "lifecycleStatus": opp.originating_lead.lifecycle_status,
+                "businessArea": opp.originating_lead.business_area
+            }
+
         return {
             "id": opp.id,
             "opportunityId": opp.opportunity_id,
@@ -2805,10 +2886,13 @@ class CrmService:
             "accountName": opp.account.name if opp.account else None,
             "contactId": opp.contact_id,
             "contactName": opp.contact.name if opp.contact else None,
+            "account": account_obj,
+            "contact": contact_obj,
+            "originatingLead": orig_lead_obj,
             "originatingLeadId": opp.originating_lead_id,
             "originatingLeadNumber": opp.originating_lead.lead_id if opp.originating_lead else None,
             "status": opp.status or "Open",
-            "stage": opp.stage or "Qualify",
+            "stage": opp.stage or "Enquiry",
             "lossReason": opp.loss_reason,
             "wonReason": opp.won_reason,
             "closedById": opp.closed_by_id,
@@ -3088,10 +3172,10 @@ class CrmService:
             Lead.id == lead_id_row[0]
         ).first()
 
-        # Lifecycle check: Dormant leads cannot be qualified directly
+        # Lifecycle check: Dormant and Disqualified leads cannot be qualified directly
         if lead.lifecycle_status in ("Dormant", "Disqualified"):
             raise ValidationError(
-                f"Cannot qualify dormant Lead '{lead.lead_id}'. Dormant leads must be reactivated before qualification."
+                f"Cannot qualify {lead.lifecycle_status} Lead '{lead.lead_id}'. {lead.lifecycle_status} leads must be reactivated before qualification."
             )
 
         # Idempotency / Retry-Safety:
@@ -3128,63 +3212,116 @@ class CrmService:
 
         try:
             # 1. Resolve Account
-            acc_action = (payload.account.action or "create").strip().lower()
             account = None
-            if acc_action == "reuse":
-                if not payload.account.accountId:
-                    raise ValidationError("accountId is required when reusing an existing account.")
-                account = self.db.query(Account).filter(
-                    or_(Account.id == payload.account.accountId, Account.account_id == payload.account.accountId),
-                    Account.is_active == True
-                ).first()
-                if not account:
-                    raise NotFoundError(f"Account '{payload.account.accountId}' does not exist or is inactive.")
+            if payload.account:
+                acc_action = (payload.account.action or "create").strip().lower()
+                if acc_action == "reuse":
+                    if not payload.account.accountId:
+                        raise ValidationError("accountId is required when reusing an existing account.")
+                    account = self.db.query(Account).filter(
+                        or_(Account.id == payload.account.accountId, Account.account_id == payload.account.accountId),
+                        Account.is_active == True
+                    ).first()
+                    if not account:
+                        raise NotFoundError(f"Account '{payload.account.accountId}' does not exist or is inactive.")
 
-                # Handle siteName: if user explicitly provided a new siteName, apply it; if empty on account, enrich with lead.site_name
-                if payload.account.siteName is not None and payload.account.siteName.strip():
-                    account.site_name = payload.account.siteName.strip()
-                elif not account.site_name and lead.site_name:
-                    account.site_name = lead.site_name.strip()
+                    # Handle siteName: if user explicitly provided a new siteName, apply it; if empty on account, enrich with lead.site_name
+                    if payload.account.siteName is not None and payload.account.siteName.strip():
+                        account.site_name = payload.account.siteName.strip()
+                    elif not account.site_name and lead.site_name:
+                        account.site_name = lead.site_name.strip()
 
-                # Safely enrich existing account fields if empty on account but present in payload/lead
-                if not account.website and (payload.account.website or lead.website_link):
-                    account.website = (payload.account.website or lead.website_link).strip()
-                if not account.email and (payload.account.email or lead.company_email):
-                    account.email = (payload.account.email or lead.company_email).strip().lower()
-                if not account.phone and (payload.account.phone or lead.business_phone):
-                    account.phone = (payload.account.phone or lead.business_phone).strip()
-                if not account.industry and (payload.account.industry or lead.industry):
-                    account.industry = (payload.account.industry or lead.industry).strip()
-            elif acc_action == "create":
-                acc_name = (payload.account.name or lead.company_name or "").strip()
-                if not acc_name:
-                    raise ValidationError("Account name is required when creating a new Account.")
+                    # Safely enrich existing account fields if empty on account but present in payload/lead
+                    if not account.website and (payload.account.website or lead.website_link):
+                        account.website = (payload.account.website or lead.website_link).strip()
+                    if not account.email and (payload.account.email or lead.company_email):
+                        account.email = (payload.account.email or lead.company_email).strip().lower()
+                    if not account.phone and (payload.account.phone or lead.business_phone):
+                        account.phone = (payload.account.phone or lead.business_phone).strip()
+                    if not account.industry and (payload.account.industry or lead.industry):
+                        account.industry = (payload.account.industry or lead.industry).strip()
+                elif acc_action == "create":
+                    acc_name = (payload.account.name or lead.company_name or "").strip()
+                    if not acc_name:
+                        raise ValidationError("Account name is required when creating a new Account.")
 
-                account_code = get_next_sequence_id(self.db, "ACCOUNT", "ACC", commit=False)
-                site_name = (payload.account.siteName or lead.site_name or "").strip() or None
-                phone = (payload.account.phone or lead.business_phone or "").strip() or None
-                email = (payload.account.email or lead.company_email or "").strip().lower() or None
-                address = (payload.account.address or lead.location or "").strip() or None
-                acc_biz_area = getattr(payload.account, "businessArea", None) or lead.business_area or "Biogas"
+                    # Check whether appropriate Account already exists to avoid duplicate accounts
+                    existing_acc = self.db.query(Account).filter(
+                        func.lower(Account.name) == acc_name.lower(),
+                        Account.is_active == True
+                    ).first()
 
-                account = Account(
-                    account_id=account_code,
-                    name=acc_name,
-                    site_name=site_name,
-                    industry=(payload.account.industry or lead.industry or "").strip() or None,
-                    website=(payload.account.website or lead.website_link or "").strip() or None,
-                    phone=phone,
-                    email=email,
-                    address=address,
-                    business_area=acc_biz_area,
-                    created_by_id=actor_user_id,
-                    updated_by_id=actor_user_id,
-                    is_active=True
-                )
-                self.db.add(account)
-                self.db.flush()
+                    if existing_acc:
+                        account = existing_acc
+                        site_name = (payload.account.siteName or lead.site_name or "").strip()
+                        if site_name and not account.site_name:
+                            account.site_name = site_name
+                        if not account.website and (payload.account.website or lead.website_link):
+                            account.website = (payload.account.website or lead.website_link).strip()
+                        if not account.email and (payload.account.email or lead.company_email):
+                            account.email = (payload.account.email or lead.company_email).strip().lower()
+                        if not account.phone and (payload.account.phone or lead.business_phone):
+                            account.phone = (payload.account.phone or lead.business_phone).strip()
+                        if not account.industry and (payload.account.industry or lead.industry):
+                            account.industry = (payload.account.industry or lead.industry).strip()
+                        if not account.address and (payload.account.address or lead.location):
+                            account.address = (payload.account.address or lead.location).strip()
+                    else:
+                        account_code = get_next_sequence_id(self.db, "ACCOUNT", "ACC", commit=False)
+                        site_name = (payload.account.siteName or lead.site_name or "").strip() or None
+                        phone = (payload.account.phone or lead.business_phone or "").strip() or None
+                        email = (payload.account.email or lead.company_email or "").strip().lower() or None
+                        address = (payload.account.address or lead.location or "").strip() or None
+                        acc_biz_area = getattr(payload.account, "businessArea", None) or lead.business_area or "Biogas"
+
+                        account = Account(
+                            account_id=account_code,
+                            name=acc_name,
+                            site_name=site_name,
+                            industry=(payload.account.industry or lead.industry or "").strip() or None,
+                            website=(payload.account.website or lead.website_link or "").strip() or None,
+                            phone=phone,
+                            email=email,
+                            address=address,
+                            business_area=acc_biz_area,
+                            created_by_id=actor_user_id,
+                            updated_by_id=actor_user_id,
+                            is_active=True
+                        )
+                        self.db.add(account)
+                        self.db.flush()
+                else:
+                    raise ValidationError(f"Invalid account action '{payload.account.action}'. Must be 'reuse' or 'create'.")
             else:
-                raise ValidationError(f"Invalid account action '{payload.account.action}'. Must be 'reuse' or 'create'.")
+                # Read Lead's existing company/account information
+                if lead.account_id:
+                    account = self.db.query(Account).filter(Account.id == lead.account_id, Account.is_active == True).first()
+                if not account and lead.company_name:
+                    acc_name = lead.company_name.strip()
+                    existing_acc = self.db.query(Account).filter(func.lower(Account.name) == acc_name.lower(), Account.is_active == True).first()
+                    if existing_acc:
+                        account = existing_acc
+                    else:
+                        account_code = get_next_sequence_id(self.db, "ACCOUNT", "ACC", commit=False)
+                        account = Account(
+                            account_id=account_code,
+                            name=acc_name,
+                            site_name=lead.site_name,
+                            industry=lead.industry,
+                            website=lead.website_link,
+                            phone=lead.business_phone,
+                            email=lead.company_email,
+                            address=lead.location,
+                            business_area=lead.business_area or "Biogas",
+                            created_by_id=actor_user_id,
+                            updated_by_id=actor_user_id,
+                            is_active=True
+                        )
+                        self.db.add(account)
+                        self.db.flush()
+
+            if not account:
+                raise ValidationError("Company / Account information is required to qualify this Lead into an Opportunity.")
 
             # 2. Resolve Contact (Mandatory designated Primary Contact)
             contact = None
@@ -3233,6 +3370,16 @@ class CrmService:
                             contact = existing_con
 
                     if not contact:
+                        # Check by name under the same account to avoid duplicate contacts
+                        existing_by_name = self.db.query(Contact).filter(
+                            func.lower(Contact.name) == con_name.lower(),
+                            Contact.account_id == account.id,
+                            Contact.is_active == True
+                        ).first()
+                        if existing_by_name:
+                            contact = existing_by_name
+
+                    if not contact:
                         con_first = lead.first_name
                         con_last = lead.last_name
                         if not con_first and not con_last and con_name:
@@ -3269,6 +3416,44 @@ class CrmService:
                         )
                     elif not contact.account_id:
                         contact.account_id = account.id
+            else:
+                # Read lead contact info
+                con_name = f"{lead.first_name or ''} {lead.last_name or ''}".strip()
+                if con_name:
+                    existing_con = None
+                    if lead.contact_email:
+                        existing_con = self.db.query(Contact).filter(
+                            func.lower(Contact.email) == lead.contact_email.strip().lower(),
+                            Contact.account_id == account.id,
+                            Contact.is_active == True
+                        ).first()
+                    if not existing_con:
+                        existing_con = self.db.query(Contact).filter(
+                            func.lower(Contact.name) == con_name.lower(),
+                            Contact.account_id == account.id,
+                            Contact.is_active == True
+                        ).first()
+                    if existing_con:
+                        contact = existing_con
+                    else:
+                        contact_code = get_next_sequence_id(self.db, "CONTACT", "CON", commit=False)
+                        contact = Contact(
+                            contact_id=contact_code,
+                            account_id=account.id,
+                            first_name=lead.first_name,
+                            last_name=lead.last_name,
+                            name=con_name,
+                            email=lead.contact_email,
+                            mobile_number=lead.mobile_phone,
+                            whatsapp_number=lead.mobile_phone,
+                            designation=lead.job_title,
+                            is_primary=True,
+                            created_by_id=actor_user_id,
+                            updated_by_id=actor_user_id,
+                            is_active=True
+                        )
+                        self.db.add(contact)
+                        self.db.flush()
 
             # Enforce Primary Contact presence
             if not contact:
@@ -3280,32 +3465,49 @@ class CrmService:
                     f"Selected Primary Contact '{contact.name}' belongs to a different Account ({contact.account.name if contact.account else contact.account_id})."
                 )
 
-            # 3. Create Opportunity
-            opp_code = get_next_sequence_id(self.db, "OPPORTUNITY", "OPP", commit=False)
-            opp_name = (payload.opportunityName or lead.lead_name or f"Opportunity - {account.name}").strip()
-            req_types_str = ", ".join([rt.requirement_type for rt in lead.requirement_types]) if lead.requirement_types else "Consulting"
+            # 3. Create or Link Opportunity (Prevent duplicate Opportunities)
+            existing_opp = None
+            if lead.opportunity_id:
+                existing_opp = self.db.query(Opportunity).filter(Opportunity.id == lead.opportunity_id).first()
+            if not existing_opp:
+                existing_opp = self.db.query(Opportunity).filter(Opportunity.originating_lead_id == lead.id).first()
 
-            assigned_user_id = self._sanitize_user_id(payload.assignedToUserId or lead.assigned_to_user_id)
+            if existing_opp:
+                opportunity = existing_opp
+                opportunity.account_id = account.id
+                opportunity.contact_id = contact.id
+                if payload.opportunityName:
+                    opportunity.name = payload.opportunityName.strip()
+                if payload.opportunityDescription:
+                    opportunity.description = payload.opportunityDescription.strip()
+                if payload.estimatedValue is not None:
+                    opportunity.estimated_value = payload.estimatedValue
+            else:
+                opp_code = get_next_sequence_id(self.db, "OPPORTUNITY", "OPP", commit=False)
+                opp_name = (payload.opportunityName or lead.lead_name or f"Opportunity - {account.name}").strip()
+                req_types_str = ", ".join([rt.requirement_type for rt in lead.requirement_types]) if lead.requirement_types else "Consulting"
+                assigned_user_id = self._sanitize_user_id(payload.assignedToUserId or lead.assigned_to_user_id)
 
-            opportunity = Opportunity(
-                opportunity_id=opp_code,
-                name=opp_name,
-                account_id=account.id,
-                contact_id=contact.id,  # Mandatory Primary Contact
-                originating_lead_id=lead.id,
-                status="Open",
-                stage="Qualify",
-                business_area=lead.business_area or "Biogas",
-                currency=lead.currency or "INR",
-                estimated_value=payload.estimatedValue,
-                description=payload.opportunityDescription or lead.description,
-                requirement_summary=lead.requirement_summary,
-                requirement_types=req_types_str,
-                assigned_to_user_id=assigned_user_id,
-                created_by_id=actor_user_id,
-                updated_by_id=actor_user_id
-            )
-            self.db.add(opportunity)
+                opportunity = Opportunity(
+                    opportunity_id=opp_code,
+                    name=opp_name,
+                    account_id=account.id,
+                    contact_id=contact.id,  # Mandatory Primary Contact
+                    originating_lead_id=lead.id,
+                    status="Open",
+                    stage="Enquiry",
+                    business_area=lead.business_area or "Biogas",
+                    currency=lead.currency or "INR",
+                    estimated_value=payload.estimatedValue,
+                    description=payload.opportunityDescription or lead.description,
+                    requirement_summary=lead.requirement_summary,
+                    requirement_types=req_types_str,
+                    assigned_to_user_id=assigned_user_id,
+                    created_by_id=actor_user_id,
+                    updated_by_id=actor_user_id
+                )
+                self.db.add(opportunity)
+
             self.db.flush()
 
             # 4. Update Lead Lifecycle and Qualification Metadata
@@ -3316,11 +3518,11 @@ class CrmService:
                 "contactId": lead.contact_id
             }
 
-            # In approved 6-status model, qualification is decoupled from lifecycle_status
             now_utc = datetime.now(timezone.utc)
             lead.account_id = account.id
             lead.contact_id = contact.id
             lead.opportunity_id = opportunity.id
+            lead.lifecycle_status = "Qualified"
             lead.qualified_at = now_utc
             lead.qualified_by_id = actor_user_id
             lead.converted_at = now_utc
@@ -3513,7 +3715,7 @@ class CrmService:
                 f"Lead '{lead.lead_id}' has already been qualified/converted to an Opportunity and cannot be unqualified."
             )
 
-        if lead.lifecycle_status == "Dormant" and lead.disqualification_reason:
+        if lead.lifecycle_status in ("Dormant", "Disqualified") and lead.disqualification_reason:
             raise ValidationError(
                 f"Lead '{lead.lead_id}' is already unqualified / dormant."
             )
@@ -3606,10 +3808,7 @@ class CrmService:
 
         if stage and stage.strip().upper() != "ALL":
             raw_stg = stage.strip()
-            if raw_stg in ("Propose", "Propose/Offer"):
-                base_query = base_query.filter(Opportunity.stage.in_(["Propose/Offer", "Propose"]))
-            else:
-                base_query = base_query.filter(Opportunity.stage == raw_stg)
+            base_query = base_query.filter(Opportunity.stage == raw_stg)
 
         if business_area and business_area.strip().upper() != "ALL":
             base_query = base_query.filter(Opportunity.business_area == business_area.strip())
@@ -3708,9 +3907,7 @@ class CrmService:
         if payload.estimatedValue is not None and payload.estimatedValue < 0:
             raise ValidationError("Estimated value cannot be negative.")
 
-        raw_stage = (payload.stage or "Qualify").strip()
-        if raw_stage == "Propose":
-            raw_stage = "Propose/Offer"
+        raw_stage = (payload.stage or "Enquiry").strip()
         if raw_stage not in OPPORTUNITY_STAGES:
             raise ValidationError(f"Invalid stage '{raw_stage}'. Permitted stages are: {', '.join(OPPORTUNITY_STAGES)}")
 
@@ -3718,12 +3915,10 @@ class CrmService:
         if raw_status not in ("Open", "Won", "Lost"):
             raise ValidationError(f"Invalid status '{raw_status}'. Permitted statuses are Open, Won, Lost.")
 
-        if raw_stage == "Close" and raw_status == "Open":
-            raise ValidationError("An opportunity in the 'Close' stage must have an outcome of Closed Won or Closed Lost.")
-        if raw_status in ("Won", "Lost") and raw_stage != "Close":
-            raise ValidationError(f"Closed opportunities ({raw_status}) must be saved in the 'Close' stage.")
         if raw_status == "Lost" and not (payload.lossReason and str(payload.lossReason).strip()):
             raise ValidationError("Loss reason is mandatory when marking an opportunity as Lost.")
+        if raw_status == "Won" and not (getattr(payload, "wonReason", None) and str(payload.wonReason).strip()):
+            raise ValidationError("Won reason is mandatory when marking an opportunity as Won.")
 
         opp_code = get_next_sequence_id(self.db, "OPPORTUNITY", "OPP")
         req_types_str = ", ".join(payload.requirementTypes) if payload.requirementTypes else None
@@ -3838,17 +4033,14 @@ class CrmService:
         return self.create_opportunity(actor, payload, request)
 
     def get_pipeline_summary(self, actor: CurrentUser) -> Dict[str, Any]:
-        stages = ["Enquiry", "Qualify", "Develop", "Propose/Offer", "Negotiate", "Close"]
+        stages = OPPORTUNITY_STAGES
         stage_metrics = []
         for stg in stages:
-            filter_stages = [stg]
-            if stg == "Propose/Offer":
-                filter_stages = ["Propose/Offer", "Propose"]
             row = self.db.query(
                 func.count(Opportunity.id),
                 func.coalesce(func.sum(Opportunity.estimated_value), 0.0)
             ).filter(
-                Opportunity.stage.in_(filter_stages),
+                Opportunity.stage == stg,
                 Opportunity.status == "Open"
             ).first()
             cnt = row[0] or 0
@@ -3929,17 +4121,13 @@ class CrmService:
         if not opp:
             raise NotFoundError(f"Opportunity '{opp_id}' not found.")
 
-        valid_stages = ["Enquiry", "Qualify", "Develop", "Propose/Offer", "Negotiate", "Close"]
+        valid_stages = OPPORTUNITY_STAGES
         new_stage = (payload.newStage or "").strip()
-        if new_stage == "Propose":
-            new_stage = "Propose/Offer"
         if new_stage not in valid_stages:
             raise ValidationError(f"Invalid stage '{new_stage}'. Permitted stages are: {', '.join(valid_stages)}")
 
         STAGE_INDEX = {s: i for i, s in enumerate(valid_stages)}
-        old_stage = opp.stage or "Qualify"
-        if old_stage == "Propose":
-            old_stage = "Propose/Offer"
+        old_stage = opp.stage or "Enquiry"
         old_idx = STAGE_INDEX.get(old_stage, 0)
         new_idx = STAGE_INDEX.get(new_stage, 0)
 
@@ -3973,27 +4161,23 @@ class CrmService:
             if not payload.lossReason or not payload.lossReason.strip():
                 raise ValidationError("Loss reason is mandatory when marking an opportunity as Lost.")
             opp.status = "Lost"
-            opp.stage = "Close"
+            opp.stage = new_stage
             opp.loss_reason = payload.lossReason.strip()
             opp.won_reason = None
             opp.closed_by_id = str(actor.id) if actor.id else None
             close_dt = payload.actualCloseDate or datetime.now(timezone.utc)
             opp.actual_close_date = close_dt if isinstance(close_dt, datetime) else datetime.combine(close_dt, datetime.min.time(), tzinfo=timezone.utc)
         elif target_status == "Won":
-            if new_stage != "Close":
-                raise ValidationError("Opportunity must be in 'Close' stage to be marked as Won.")
             if not payload.wonReason or not payload.wonReason.strip():
                 raise ValidationError("Won reason is mandatory when marking an opportunity as Won.")
             opp.status = "Won"
-            opp.stage = "Close"
+            opp.stage = new_stage
             opp.won_reason = payload.wonReason.strip()
             opp.loss_reason = None
             opp.closed_by_id = str(actor.id) if actor.id else None
             close_dt = payload.actualCloseDate or datetime.now(timezone.utc)
             opp.actual_close_date = close_dt if isinstance(close_dt, datetime) else datetime.combine(close_dt, datetime.min.time(), tzinfo=timezone.utc)
         else:
-            if new_stage == "Close":
-                raise ValidationError("Opportunities moving to the 'Close' stage must be marked as Closed Won or Closed Lost.")
             opp.stage = new_stage
             opp.status = "Open"
             opp.loss_reason = None
@@ -4051,7 +4235,7 @@ class CrmService:
         if not opp:
             raise NotFoundError(f"Opportunity '{opp_id}' not found.")
 
-        valid_stages = ["Enquiry", "Qualify", "Develop", "Propose/Offer", "Negotiate", "Close"]
+        valid_stages = OPPORTUNITY_STAGES
         STAGE_INDEX = {s: i for i, s in enumerate(valid_stages)}
         changes = {}
 
@@ -4144,14 +4328,10 @@ class CrmService:
             opp.contact_id = new_contact_id
 
         # Stage and Status validation & updates
-        proposed_stage = opp.stage or "Qualify"
-        if proposed_stage == "Propose":
-            proposed_stage = "Propose/Offer"
+        proposed_stage = opp.stage or "Enquiry"
 
         if payload.stage is not None:
             clean_stg = payload.stage.strip()
-            if clean_stg == "Propose":
-                clean_stg = "Propose/Offer"
             if clean_stg not in valid_stages:
                 raise ValidationError(f"Invalid stage '{clean_stg}'. Permitted stages are: {', '.join(valid_stages)}")
             proposed_stage = clean_stg
@@ -4186,14 +4366,14 @@ class CrmService:
                     raise PermissionDeniedError("Only authorized sales managers or CRM administrators can move an opportunity backward through the pipeline.")
 
         # Combined stage and outcome validation
-        if proposed_status in ("Won", "Lost") and proposed_stage != "Close":
-            raise ValidationError(f"Closed opportunities ({proposed_status}) must be saved in the 'Close' stage.")
-        if proposed_status == "Open" and proposed_stage == "Close":
-            raise ValidationError("An opportunity in the 'Close' stage must have an outcome of Closed Won or Closed Lost.")
         if proposed_status == "Lost":
             loss_r = payload.lossReason or opp.loss_reason
             if not loss_r or not str(loss_r).strip():
                 raise ValidationError("Loss reason is mandatory when marking an opportunity as Lost.")
+        if proposed_status == "Won":
+            won_r = payload.wonReason or opp.won_reason
+            if not won_r or not str(won_r).strip():
+                raise ValidationError("Won reason is mandatory when marking an opportunity as Won.")
 
         # Reopening guard: if moving from Closed to Open
         if opp.status in ("Won", "Lost") and proposed_status == "Open":
@@ -4689,11 +4869,7 @@ class CrmService:
             raise ValidationError("Mandatory justification reason must be provided to reopen a closed Opportunity.")
 
         target_stage = (payload.reopenStage or "").strip()
-        if target_stage == "Propose":
-            target_stage = "Propose/Offer"
-        open_stages = ["Enquiry", "Qualify", "Develop", "Propose/Offer", "Negotiate"]
-        if target_stage == "Close":
-            raise ValidationError("A reopened opportunity cannot remain in the 'Close' stage. Select an active pipeline stage.")
+        open_stages = ["Enquiry", "Offer", "Negotiation", "Supply", "Payment"]
         if target_stage not in open_stages:
             raise ValidationError(f"Invalid reopen stage '{target_stage}'. Permitted stages are: {', '.join(open_stages)}")
 
@@ -4743,14 +4919,11 @@ class CrmService:
         stages = OPPORTUNITY_STAGES
         stage_metrics = []
         for stg in stages:
-            filter_stages = [stg]
-            if stg == "Propose/Offer":
-                filter_stages = ["Propose/Offer", "Propose"]
             row = self.db.query(
                 func.count(Opportunity.id),
                 func.coalesce(func.sum(Opportunity.estimated_value), 0.0)
             ).filter(
-                Opportunity.stage.in_(filter_stages),
+                Opportunity.stage == stg,
                 Opportunity.status == "Open"
             ).first()
             cnt = row[0] or 0
@@ -5397,6 +5570,120 @@ class CrmService:
             "createdAt": comm.created_at.isoformat() if comm.created_at else None
         }
 
+    def list_opportunity_communications(self, opp_id: str) -> List[Dict[str, Any]]:
+        opp = self.db.query(Opportunity).filter(
+            or_(Opportunity.id == opp_id, Opportunity.opportunity_id == opp_id)
+        ).first()
+        if not opp:
+            raise NotFoundError(f"Opportunity '{opp_id}' not found.")
+
+        filters = [LeadCommunicationHistory.opportunity_id == opp.id]
+        if opp.originating_lead_id:
+            filters.append(LeadCommunicationHistory.lead_id == opp.originating_lead_id)
+
+        comms = (
+            self.db.query(LeadCommunicationHistory)
+            .options(
+                joinedload(LeadCommunicationHistory.created_by),
+                joinedload(LeadCommunicationHistory.lead)
+            )
+            .filter(or_(*filters))
+            .order_by(LeadCommunicationHistory.communication_date.asc())
+            .all()
+        )
+
+        return [
+            {
+                "id": c.id,
+                "communicationId": c.communication_id,
+                "opportunityId": opp.opportunity_id,
+                "leadId": c.lead.lead_id if c.lead else None,
+                "communicationDate": c.communication_date.isoformat(),
+                "channel": c.channel,
+                "eventType": c.event_type,
+                "subject": c.subject or c.event_type,
+                "summary": c.summary,
+                "outcome": c.outcome,
+                "nextAction": c.next_action,
+                "followUpDate": c.follow_up_date.isoformat() if c.follow_up_date else None,
+                "createdById": c.created_by_id,
+                "createdByName": c.created_by.name if c.created_by else None,
+                "createdAt": c.created_at.isoformat() if c.created_at else None
+            }
+            for c in comms
+        ]
+
+    def create_opportunity_communication(
+        self,
+        actor: CurrentUser,
+        opp_id: str,
+        payload: CommunicationCreate,
+        request: Optional[Request] = None
+    ) -> Dict[str, Any]:
+        opp = self.db.query(Opportunity).filter(
+            or_(Opportunity.id == opp_id, Opportunity.opportunity_id == opp_id)
+        ).first()
+        if not opp:
+            raise NotFoundError(f"Opportunity '{opp_id}' not found.")
+
+        comm_code = get_next_sequence_id(self.db, "COMMUNICATION", "COM")
+        comm_date = payload.date or datetime.now(timezone.utc)
+        subject = payload.subject or payload.eventType
+
+        comm = LeadCommunicationHistory(
+            communication_id=comm_code,
+            opportunity_id=opp.id,
+            lead_id=opp.originating_lead_id,
+            communication_date=comm_date,
+            channel=payload.channel,
+            event_type=payload.eventType,
+            subject=subject,
+            summary=payload.summary.strip() if payload.summary else None,
+            outcome=payload.outcome.strip() if payload.outcome else None,
+            next_action=payload.nextAction.strip() if payload.nextAction else None,
+            follow_up_date=payload.followUpDate,
+            interaction_source="Manual",
+            created_by_id=str(actor.id) if actor.id else None,
+            created_at=datetime.now(timezone.utc)
+        )
+        self.db.add(comm)
+        self.db.commit()
+        self.db.refresh(comm)
+
+        self.audit_service.log(
+            action="CRM_COMMUNICATION_LOGGED",
+            request=request,
+            performed_by_employee_id=str(actor.id) if actor.id else None,
+            performed_by_name=actor.name or actor.username,
+            role_used=actor.active_role,
+            target_info={
+                "recordId": comm.id,
+                "communicationCode": comm.communication_id,
+                "opportunityId": opp.opportunity_id,
+                "channel": comm.channel,
+                "eventType": comm.event_type,
+                "details": f"Logged {comm.channel} interaction ({comm.event_type}) for Opportunity {opp.opportunity_id}."
+            }
+        )
+
+        return {
+            "id": comm.id,
+            "communicationId": comm.communication_id,
+            "opportunityId": opp.opportunity_id,
+            "leadId": opp.originating_lead.lead_id if opp.originating_lead else None,
+            "communicationDate": comm.communication_date.isoformat(),
+            "channel": comm.channel,
+            "eventType": comm.event_type,
+            "subject": comm.subject,
+            "summary": comm.summary,
+            "outcome": comm.outcome,
+            "nextAction": comm.next_action,
+            "followUpDate": comm.follow_up_date.isoformat() if comm.follow_up_date else None,
+            "createdById": comm.created_by_id,
+            "createdByName": actor.name or actor.username,
+            "createdAt": comm.created_at.isoformat() if comm.created_at else None
+        }
+
     # =========================================================================
     # 6. DASHBOARD METRICS & ASSIGNEES
     # =========================================================================
@@ -5404,10 +5691,17 @@ class CrmService:
     def get_dashboard_metrics(self, actor: CurrentUser) -> Dict[str, Any]:
         total_leads = self.db.query(func.count(Lead.id)).scalar() or 0
         open_leads = self.db.query(func.count(Lead.id)).filter(
-            Lead.lifecycle_status.in_(["Enquiry", "Offer", "Negotiation", "Supply", "Payment", "Open"])
+            Lead.lifecycle_status.in_(["New", "Contacted", "In Discussion"]),
+            Lead.lifecycle_status != "Qualified",
+            Lead.qualified_at.is_(None),
+            Lead.opportunity_id.is_(None)
         ).scalar() or 0
         qualified_leads = self.db.query(func.count(Lead.id)).filter(
-            or_(Lead.qualified_at.isnot(None), Lead.lifecycle_status == "Qualified")
+            or_(
+                Lead.qualified_at.isnot(None),
+                Lead.opportunity_id.isnot(None),
+                Lead.lifecycle_status == "Qualified"
+            )
         ).scalar() or 0
         disqualified_leads = self.db.query(func.count(Lead.id)).filter(
             Lead.lifecycle_status.in_(["Dormant", "Disqualified"])
@@ -5421,13 +5715,13 @@ class CrmService:
         today_ist = datetime.now(KOLKATA_TZ).date()
         due_window = today_ist + timedelta(days=1)
         follow_ups_due = self.db.query(func.count(Lead.id)).filter(
-            Lead.lifecycle_status != "Dormant",
+            Lead.lifecycle_status.notin_(["Dormant", "Disqualified"]),
             Lead.next_follow_up_date.isnot(None),
             Lead.next_follow_up_date <= due_window
         ).scalar() or 0
 
         overdue_follow_ups = self.db.query(func.count(Lead.id)).filter(
-            Lead.lifecycle_status != "Dormant",
+            Lead.lifecycle_status.notin_(["Dormant", "Disqualified"]),
             Lead.next_follow_up_date.isnot(None),
             Lead.next_follow_up_date < today_ist
         ).scalar() or 0

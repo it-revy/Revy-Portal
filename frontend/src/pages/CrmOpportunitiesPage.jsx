@@ -24,20 +24,18 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import crmService from '../services/crmService';
-import OpportunityDetailModal from '../modules/crm/components/OpportunityDetailModal';
 import OpportunityStageModal from '../modules/crm/components/OpportunityStageModal';
 import { PageHeader, Button, SearchInput, Select, FilterBar, FilterField, Pagination } from '../components/ui';
 
-const STAGES = ['Enquiry', 'Qualify', 'Develop', 'Propose/Offer', 'Negotiate', 'Close'];
+const STAGES = ['Enquiry', 'Offer', 'Negotiation', 'Supply', 'Payment', 'Dormant'];
 
 const STAGE_ORDER = {
   'Enquiry': 0,
-  'Qualify': 1,
-  'Develop': 2,
-  'Propose': 3,
-  'Propose/Offer': 3,
-  'Negotiate': 4,
-  'Close': 5
+  'Offer': 1,
+  'Negotiation': 2,
+  'Supply': 3,
+  'Payment': 4,
+  'Dormant': 5
 };
 
 const BUSINESS_AREAS = ['Biogas', 'Wastewater Treatment (WWT)', 'R&D Lab', 'Solid Waste', 'Other'];
@@ -91,7 +89,6 @@ export default function CrmOpportunitiesPage() {
   const [dragOverColumn, setDragOverColumn] = useState(null);
 
   // Modals state
-  const [detailModalOppId, setDetailModalOppId] = useState(null);
   const [stageModalOpp, setStageModalOpp] = useState(null);
 
   // Load assignees on mount
@@ -254,7 +251,7 @@ export default function CrmOpportunitiesPage() {
     setDragOverColumn(null);
     if (!draggedOpp) return;
 
-    const currentStage = draggedOpp.stage === 'Propose' ? 'Propose/Offer' : draggedOpp.stage;
+    const currentStage = draggedOpp.stage || 'Enquiry';
     if (currentStage === targetStage) {
       setDraggedOpp(null);
       return;
@@ -346,16 +343,9 @@ export default function CrmOpportunitiesPage() {
     );
   };
 
-  // Group opportunities by canonical 6 stages for Kanban View
-  // Display both open and closed opportunities on the Kanban board.
-  // Closed Won and Closed Lost appear in the Close column.
+  // Group opportunities by canonical 6 sales stages for Kanban View
   const kanbanColumns = STAGES.map(stage => {
-    const oppsInStage = opportunities.filter(o => {
-      if (stage === 'Propose/Offer') {
-        return o.stage === 'Propose/Offer' || o.stage === 'Propose';
-      }
-      return o.stage === stage;
-    });
+    const oppsInStage = opportunities.filter(o => o.stage === stage);
 
     const openSum = oppsInStage
       .filter(o => o.status === 'Open')
@@ -743,7 +733,7 @@ export default function CrmOpportunitiesPage() {
                           width: '8px',
                           height: '8px',
                           borderRadius: '50%',
-                          background: stage === 'Close' ? 'var(--success)' : 'var(--accent-primary)'
+                          background: stage === 'Dormant' ? '#94a3b8' : (stage === 'Payment' ? 'var(--success)' : 'var(--accent-primary)')
                         }} />
                         <strong style={{ fontSize: '0.925rem', color: 'var(--text-primary)' }}>
                           {stage}
@@ -760,11 +750,8 @@ export default function CrmOpportunitiesPage() {
                         </span>
                       </div>
                       <div style={{ fontSize: '0.725rem', color: 'var(--text-muted)', marginTop: '0.2rem' }}>
-                        {stage === 'Close' ? (
-                          <span>Won: INR {wonValue.toLocaleString()}</span>
-                        ) : (
-                          <span>Open: INR {openValue.toLocaleString()}</span>
-                        )}
+                        <span>Open: INR {openValue.toLocaleString()}</span>
+                        {wonValue > 0 && <span style={{ marginLeft: '0.5rem', color: '#16a34a' }}>Won: INR {wonValue.toLocaleString()}</span>}
                       </div>
                     </div>
                   </div>
@@ -809,7 +796,7 @@ export default function CrmOpportunitiesPage() {
                             key={opp.id}
                             draggable
                             onDragStart={(e) => handleDragStart(e, opp)}
-                            onClick={() => setDetailModalOppId(opp.id)}
+                            onClick={() => navigate(`/crm/opportunities/${opp.id}`)}
                             className="crm-kanban-card"
                             style={{
                               background: cardBg,
@@ -1004,31 +991,30 @@ export default function CrmOpportunitiesPage() {
                   opportunities.map((opp) => (
                     <tr key={opp.id}>
                       <td style={{ whiteSpace: 'nowrap' }}>
-                        <button
-                          onClick={() => setDetailModalOppId(opp.id)}
+                        <Link
+                          to={`/crm/opportunities/${opp.id}`}
                           style={{
-                            background: 'none',
-                            border: 'none',
                             color: 'var(--accent-primary)',
                             fontWeight: 700,
                             fontSize: '0.85rem',
-                            cursor: 'pointer',
-                            padding: 0
+                            textDecoration: 'none'
                           }}
+                          title="View Dedicated Opportunity Page"
                         >
                           {opp.opportunityId}
-                        </button>
+                        </Link>
                       </td>
 
                       <td>
-                        <button
-                          onClick={() => setDetailModalOppId(opp.id)}
-                          style={{ background: 'none', border: 'none', padding: 0, textAlign: 'left', font: 'inherit', cursor: 'pointer' }}
+                        <Link
+                          to={`/crm/opportunities/${opp.id}`}
+                          style={{ textDecoration: 'none', display: 'block' }}
+                          title="View Dedicated Opportunity Page"
                         >
                           <span style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', display: 'block' }}>
                             {opp.name}
                           </span>
-                        </button>
+                        </Link>
                         {opp.subStatus && (
                           <div style={{ fontSize: '0.725rem', color: 'var(--text-muted)', marginTop: '2px' }}>
                             Sub-status: {opp.subStatus}
@@ -1068,8 +1054,8 @@ export default function CrmOpportunitiesPage() {
                         <span style={{
                           padding: '2px 8px',
                           borderRadius: '4px',
-                          background: opp.stage === 'Close' ? '#dcfce7' : '#eff6ff',
-                          color: opp.stage === 'Close' ? '#166534' : '#1d4ed8',
+                          background: opp.stage === 'Payment' ? '#dcfce7' : (opp.stage === 'Dormant' ? '#f1f5f9' : '#eff6ff'),
+                          color: opp.stage === 'Payment' ? '#166534' : (opp.stage === 'Dormant' ? '#64748b' : '#1d4ed8'),
                           fontWeight: 700,
                           fontSize: '0.75rem'
                         }}>
@@ -1119,13 +1105,14 @@ export default function CrmOpportunitiesPage() {
                           >
                             Stage
                           </button>
-                          <button
-                            onClick={() => setDetailModalOppId(opp.id)}
+                          <Link
+                            to={`/crm/opportunities/${opp.id}`}
                             className="crm-btn crm-btn-secondary crm-btn-sm"
                             title="View Full Details"
+                            style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
                           >
                             View
-                          </button>
+                          </Link>
                         </div>
                       </td>
                     </tr>
@@ -1144,16 +1131,6 @@ export default function CrmOpportunitiesPage() {
             onPageChange={newPage => setPage(newPage)}
           />
         </div>
-      )}
-
-      {/* Opportunity Detail Modal */}
-      {detailModalOppId && (
-        <OpportunityDetailModal
-          isOpen={!!detailModalOppId}
-          opportunityId={detailModalOppId}
-          onClose={() => setDetailModalOppId(null)}
-          onOpportunityUpdated={handleOpportunityUpdated}
-        />
       )}
 
       {/* Opportunity Stage Transition Modal */}

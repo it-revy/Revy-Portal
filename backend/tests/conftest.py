@@ -29,6 +29,10 @@ def setup_test_database():
             if contact_id_col and contact_id_col[3] == 1:
                 needs_lead_recreate = True
 
+            table_sql_row = conn.exec_driver_sql("SELECT sql FROM sqlite_master WHERE type='table' AND name='leads'").fetchone()
+            if table_sql_row and "'Qualified'" not in (table_sql_row[0] or ""):
+                needs_lead_recreate = True
+
             if needs_lead_recreate:
                 conn.exec_driver_sql("DROP TABLE IF EXISTS lead_contact_methods")
                 conn.exec_driver_sql("DROP TABLE IF EXISTS lead_additional_contacts")
@@ -70,6 +74,8 @@ def setup_test_database():
                 conn.commit()
 
             comm_cols = conn.exec_driver_sql("PRAGMA table_info(lead_communications)").fetchall()
+            if comm_cols and not any(c[1] == 'opportunity_id' for c in comm_cols):
+                conn.exec_driver_sql("ALTER TABLE lead_communications ADD COLUMN opportunity_id VARCHAR(36)")
             if comm_cols and not any(c[1] == 'subject' for c in comm_cols):
                 conn.exec_driver_sql("ALTER TABLE lead_communications ADD COLUMN subject VARCHAR(255)")
             if comm_cols and not any(c[1] == 'interaction_source' for c in comm_cols):
@@ -93,12 +99,35 @@ def setup_test_database():
                 ("gst_number", "VARCHAR(30)"),
                 ("pan_number", "VARCHAR(20)"),
                 ("parent_account_id", "VARCHAR(36)"),
+                ("customer_id", "VARCHAR(100)"),
                 ("created_by_id", "VARCHAR(36)"),
                 ("updated_by_id", "VARCHAR(36)"),
             ]:
                 if acc_cols and col not in existing_acc:
                     conn.exec_driver_sql(f"ALTER TABLE accounts ADD COLUMN {col} {col_type}")
             conn.commit()
+
+            quote_cols = conn.exec_driver_sql("PRAGMA table_info(crm_opportunity_quotations)").fetchall()
+            existing_quotes = [c[1] for c in quote_cols]
+            for col, col_type in [
+                ("subtotal", "NUMERIC(14, 2) DEFAULT 0.0"),
+                ("tax_type", "VARCHAR(50) DEFAULT 'INTRA_STATE'"),
+                ("tax_configuration_id", "VARCHAR(36)"),
+                ("cgst_amount", "NUMERIC(14, 2) DEFAULT 0.0"),
+                ("sgst_amount", "NUMERIC(14, 2) DEFAULT 0.0"),
+                ("igst_amount", "NUMERIC(14, 2) DEFAULT 0.0"),
+                ("total_tax", "NUMERIC(14, 2) DEFAULT 0.0"),
+                ("discount_amount", "NUMERIC(14, 2) DEFAULT 0.0"),
+            ]:
+                if quote_cols and col not in existing_quotes:
+                    conn.exec_driver_sql(f"ALTER TABLE crm_opportunity_quotations ADD COLUMN {col} {col_type}")
+            conn.commit()
+
+            q_item_cols = conn.exec_driver_sql("PRAGMA table_info(crm_opportunity_quotation_items)").fetchall()
+            existing_q_items = [c[1] for c in q_item_cols]
+            if q_item_cols and "discount_amount" not in existing_q_items:
+                conn.exec_driver_sql("ALTER TABLE crm_opportunity_quotation_items ADD COLUMN discount_amount NUMERIC(18, 4) DEFAULT 0.0")
+                conn.commit()
 
             con_cols = conn.exec_driver_sql("PRAGMA table_info(contacts)").fetchall()
             existing_con = [c[1] for c in con_cols]
