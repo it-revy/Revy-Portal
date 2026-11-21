@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   FileText,
   Printer,
@@ -10,19 +10,28 @@ import {
   ExternalLink,
   DollarSign,
   HelpCircle,
-  ShieldAlert
+  ShieldAlert,
+  Send,
+  Eye,
+  Edit3,
+  Calendar,
+  Building,
+  Info
 } from 'lucide-react';
 import { invoiceService } from '../../services/invoiceService';
 import catalogueService from '../../services/catalogueService';
-import { Button, StatusBadge } from '../ui';
 
 export default function InvoicePreparationModal({
   isOpen,
   onClose,
   opportunity,
   quotation,
-  onInvoiceCreated
+  editingInvoice = null,
+  onInvoiceCreated,
+  onInvoiceUpdated
 }) {
+  const isEditMode = Boolean(editingInvoice?.id);
+
   const [loading, setLoading] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -34,51 +43,133 @@ export default function InvoicePreparationModal({
   const [taxType, setTaxType] = useState('INTRA_STATE');
   const [taxConfigurations, setTaxConfigurations] = useState([]);
   const [selectedTaxConfigId, setSelectedTaxConfigId] = useState('');
+  const [invoiceDate, setInvoiceDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [referenceNote, setReferenceNote] = useState('');
   const [terms, setTerms] = useState([]);
   const [newTerm, setNewTerm] = useState('');
+  const [overrideReason, setOverrideReason] = useState('');
 
-  // Computed Totals
-  const [subtotal, setSubtotal] = useState(0);
-  const [cgstRate, setCgstRate] = useState(9);
-  const [cgstAmount, setCgstAmount] = useState(0);
-  const [sgstRate, setSgstRate] = useState(9);
-  const [sgstAmount, setSgstAmount] = useState(0);
-  const [igstRate, setIgstRate] = useState(18);
-  const [igstAmount, setIgstAmount] = useState(0);
-  const [totalTax, setTotalTax] = useState(0);
-  const [grandTotal, setGrandTotal] = useState(0);
+  // Active Tax Configuration matching current taxType and/or selectedTaxConfigId
+  const activeTaxConfig = useMemo(() => {
+    if (selectedTaxConfigId) {
+      const match = taxConfigurations.find(t => t.id === selectedTaxConfigId);
+      if (match && (match.taxType || match.tax_type) === taxType) {
+        return match;
+      }
+    }
+    return taxConfigurations.find(t => (t.taxType || t.tax_type) === taxType) || null;
+  }, [taxConfigurations, selectedTaxConfigId, taxType]);
 
-  // Initialize from source quotation
+  // Dynamically extract rates from active configuration with robust fallbacks
+  const { cgstRate, sgstRate, igstRate } = useMemo(() => {
+    let c = 9;
+    let s = 9;
+    let i = 18;
+
+    if (activeTaxConfig && Array.isArray(activeTaxConfig.rates) && activeTaxConfig.rates.length > 0) {
+      activeTaxConfig.rates.forEach(r => {
+        const name = (r.rateName || r.componentName || r.component_name || '').toUpperCase();
+        const pct = Number(r.percentage !== undefined ? r.percentage : r.ratePercentage || r.rate_percentage || 0);
+        if (name.includes('CGST')) c = pct;
+        else if (name.includes('SGST')) s = pct;
+        else if (name.includes('IGST')) i = pct;
+      });
+    }
+
+    return { cgstRate: c, sgstRate: s, igstRate: i };
+  }, [activeTaxConfig]);
+
+  // Synchronize tax type and corresponding tax configuration ID
+  const handleTaxTypeChange = (newTaxType) => {
+    setTaxType(newTaxType);
+    const matching = taxConfigurations.find(t => (t.taxType || t.tax_type) === newTaxType);
+    if (matching) {
+      setSelectedTaxConfigId(matching.id);
+    }
+  };
+
+  // State mismatch detection for GST compliance
+  const account = opportunity?.account || {};
+  const customerGstin = account.gstin || '';
+  const customerState = account.billingState || account.state || '';
+
+  const stateMismatchNotice = useMemo(() => {
+    // REVY Home State is Gujarat (GST State Code 24)
+    if (customerGstin && customerGstin.length >= 2) {
+      const stateCode = customerGstin.trim().substring(0, 2);
+      if (stateCode !== '24' && taxType === 'INTRA_STATE') {
+        return `GST State Notice: Customer GSTIN starts with "${stateCode}" (outside Gujarat 24). Intra-State GST (CGST + SGST) is currently selected. For inter-state supply, Inter-State (IGST 18%) is recommended.`;
+      }
+      if (stateCode === '24' && taxType === 'INTER_STATE') {
+        return 'GST State Notice: Customer GSTIN indicates Gujarat (24). Inter-State (IGST) is currently selected. For intra-state supply within Gujarat, Intra-State (CGST + SGST) is recommended.';
+      }
+    } else if (customerState) {
+      const isGujarat = customerState.toLowerCase().includes('gujarat');
+      if (!isGujarat && taxType === 'INTRA_STATE') {
+        return `Location Notice: Customer billing state is recorded as "${customerState}". For supplies outside Gujarat, Inter-State (IGST 18%) is recommended.`;
+      }
+    }
+    return null;
+  }, [customerGstin, customerState, taxType]);
+
+  // Initialize from editing invoice or source quotation
   useEffect(() => {
-    if (!isOpen || !quotation) return;
+    if (!isOpen) return;
 
-    // Load line items from quotation
-    const quoteItems = quotation.items || [];
-    const mappedItems = quoteItems.map((item, idx) => ({
-      srNo: idx + 1,
-      itemType: item.itemType || 'SERVICE',
-      serviceId: item.serviceId,
-      packageId: item.packageId,
-      itemCode: item.itemCode,
-      name: item.itemName || item.name || 'Service Item',
-      description: item.description || '',
-      quantity: Number(item.quantity) || 1,
-      unit: item.billingUnit || item.unit || 'Test',
-      rate: Number(item.unitPrice) || Number(item.rate) || 0,
-      notes: ''
-    }));
-    setItems(mappedItems);
+    if (isEditMode && editingInvoice) {
+      // Edit mode: populate from existing issued PI
+      const piItems = editingInvoice.items || [];
+      const mappedItems = piItems.map((item, idx) => ({
+        srNo: item.srNo || item.sr_no || idx + 1,
+        itemType: item.itemType || item.item_type || 'SERVICE',
+        serviceId: item.serviceId || item.service_id,
+        packageId: item.packageId || item.package_id,
+        itemCode: item.itemCode || item.item_code,
+        name: item.name || item.itemName || item.item_name || 'Service Item',
+        description: item.description || '',
+        quantity: Number(item.quantity) || 1,
+        unit: item.unit || item.billingUnit || 'Test',
+        rate: Number(item.unitPrice !== undefined ? item.unitPrice : item.rate || 0),
+        discountAmount: Number(item.discountAmount !== undefined ? item.discountAmount : item.discount_amount || 0),
+        notes: item.notes || ''
+      }));
+      setItems(mappedItems);
+      const incomingTaxType = editingInvoice.taxType || editingInvoice.tax_type || 'INTRA_STATE';
+      setTaxType(incomingTaxType);
+      setSelectedTaxConfigId(editingInvoice.taxConfigurationId || editingInvoice.tax_configuration_id || '');
+      setInvoiceDate(editingInvoice.piDate ? editingInvoice.piDate.split('T')[0] : new Date().toISOString().split('T')[0]);
+      setReferenceNote(editingInvoice.referenceNote || editingInvoice.reference_note || '');
+      setTerms(editingInvoice.terms || []);
+      setOverrideReason('');
+      loadDefaults(false, incomingTaxType);
+    } else if (quotation) {
+      // Creation mode: populate from approved commercial quotation
+      const quoteItems = quotation.items || [];
+      const mappedItems = quoteItems.map((item, idx) => ({
+        srNo: idx + 1,
+        itemType: item.itemType || 'SERVICE',
+        serviceId: item.serviceId,
+        packageId: item.packageId,
+        itemCode: item.itemCode,
+        name: item.itemName || item.name || 'Service Item',
+        description: item.description || '',
+        quantity: Number(item.quantity) || 1,
+        unit: item.billingUnit || item.unit || 'Test',
+        rate: Number(item.negotiatedUnitPrice !== null && item.negotiatedUnitPrice !== undefined ? item.negotiatedUnitPrice : item.unitPrice || item.rate || 0),
+        discountAmount: Number(item.discountAmount || 0),
+        notes: ''
+      }));
+      setItems(mappedItems);
+      const incomingTaxType = quotation.taxType || 'INTRA_STATE';
+      setTaxType(incomingTaxType);
+      setSelectedTaxConfigId(quotation.taxConfigurationId || '');
+      setInvoiceDate(new Date().toISOString().split('T')[0]);
+      setReferenceNote(quotation.title ? `Quotation Ref: ${quotation.quotationNumber} - ${quotation.title}` : `Quotation Ref: ${quotation.quotationNumber}`);
+      loadDefaults(true, incomingTaxType);
+    }
+  }, [isOpen, quotation, editingInvoice, isEditMode]);
 
-    setTaxType(quotation.taxType || 'INTRA_STATE');
-    setSelectedTaxConfigId(quotation.taxConfigurationId || '');
-    setReferenceNote(quotation.title ? `Quotation Ref: ${quotation.quotationNumber} - ${quotation.title}` : `Quotation Ref: ${quotation.quotationNumber}`);
-
-    // Load company defaults for terms & taxes
-    loadDefaults();
-  }, [isOpen, quotation]);
-
-  const loadDefaults = async () => {
+  const loadDefaults = async (loadTerms = true, currentTaxType = 'INTRA_STATE') => {
     setLoading(true);
     try {
       const [compRes, taxRes] = await Promise.all([
@@ -86,22 +177,23 @@ export default function InvoicePreparationModal({
         catalogueService.getTaxConfigurations({ includeInactive: false })
       ]);
 
-      if (compRes.data) {
+      if (loadTerms && compRes.data) {
         const defaultTerms = compRes.data.defaultTerms || [
           '100 % Advance alongwith PO or Work order',
-          'Payment to be made in Favour of " REVY Environmental Solutions Pvt.Ltd.',
+          'Payment to be made in Favour of " REVY Environmental Solutions Pvt.Ltd."',
           'Transportation cost for delivery or rendering services will be charged extra as actual',
-          'We will not be any storing sample provided by client after 7 days post analysis'
+          'We will not be storing any sample provided by client after 7 days post analysis'
         ];
         setTerms(defaultTerms);
       }
 
-      if (taxRes.data?.success) {
-        const taxes = taxRes.data.taxConfigurations || [];
+      if (taxRes.data?.taxConfigurations || taxRes.data?.success) {
+        const taxes = taxRes.data?.taxConfigurations || taxRes.data?.data || [];
         setTaxConfigurations(taxes);
-        if (!selectedTaxConfigId && taxes.length > 0) {
-          const def = taxes.find(t => t.taxType === taxType) || taxes[0];
-          if (def) setSelectedTaxConfigId(def.id);
+        // Match the tax configuration to current tax type
+        const matching = taxes.find(t => (t.taxType || t.tax_type) === currentTaxType) || taxes.find(t => t.isDefault) || taxes[0];
+        if (matching) {
+          setSelectedTaxConfigId(matching.id);
         }
       }
     } catch (err) {
@@ -111,38 +203,60 @@ export default function InvoicePreparationModal({
     }
   };
 
-  // Recalculate Totals whenever items or tax config changes
-  useEffect(() => {
-    const sum = items.reduce((acc, it) => acc + (Number(it.quantity || 0) * Number(it.rate || 0)), 0);
-    setSubtotal(sum);
+  // Authoritative calculations matching FinancialCalculator (Paise Rounding)
+  const grossSubtotal = useMemo(() => {
+    return items.reduce((acc, it) => acc + (Number(it.quantity || 1) * Number(it.rate || 0)), 0);
+  }, [items]);
 
+  const totalDiscount = useMemo(() => {
+    return items.reduce((acc, it) => acc + Number(it.discountAmount || 0), 0);
+  }, [items]);
+
+  const taxableSubtotal = useMemo(() => {
+    return Math.max(0, grossSubtotal - totalDiscount);
+  }, [grossSubtotal, totalDiscount]);
+
+  const { cgstAmount, sgstAmount, igstAmount, totalTax, grandTotal } = useMemo(() => {
     let cgst = 0;
     let sgst = 0;
     let igst = 0;
-    let taxSum = 0;
+    let tax = 0;
 
     if (taxType === 'INTRA_STATE') {
-      cgst = Math.round(sum * (cgstRate / 100) * 100) / 100;
-      sgst = Math.round(sum * (sgstRate / 100) * 100) / 100;
-      taxSum = cgst + sgst;
+      cgst = Math.round(taxableSubtotal * (cgstRate / 100) * 100) / 100;
+      sgst = Math.round(taxableSubtotal * (sgstRate / 100) * 100) / 100;
+      tax = cgst + sgst;
     } else if (taxType === 'INTER_STATE') {
-      igst = Math.round(sum * (igstRate / 100) * 100) / 100;
-      taxSum = igst;
-    } else {
-      taxSum = 0;
+      igst = Math.round(taxableSubtotal * (igstRate / 100) * 100) / 100;
+      tax = igst;
     }
 
-    setCgstAmount(cgst);
-    setSgstAmount(sgst);
-    setIgstAmount(igst);
-    setTotalTax(taxSum);
-    setGrandTotal(sum + taxSum);
-  }, [items, taxType, cgstRate, sgstRate, igstRate]);
+    return {
+      cgstAmount: cgst,
+      sgstAmount: sgst,
+      igstAmount: igst,
+      totalTax: tax,
+      grandTotal: taxableSubtotal + tax
+    };
+  }, [taxableSubtotal, taxType, cgstRate, sgstRate, igstRate]);
 
   // Handle item property changes
   const handleItemChange = (index, field, value) => {
     const updated = [...items];
-    updated[index] = { ...updated[index], [field]: value };
+    const item = { ...updated[index] };
+
+    if (field === 'quantity') {
+      item.quantity = Math.max(1, Number(value) || 1);
+    } else if (field === 'rate') {
+      item.rate = Math.max(0, Number(value) || 0);
+    } else if (field === 'discountAmount') {
+      const gross = Number(item.quantity || 1) * Number(item.rate || 0);
+      item.discountAmount = Math.max(0, Math.min(Number(value) || 0, gross));
+    } else {
+      item[field] = value;
+    }
+
+    updated[index] = item;
     setItems(updated);
   };
 
@@ -168,17 +282,24 @@ export default function InvoicePreparationModal({
     setTerms(terms.filter((_, i) => i !== index));
   };
 
-  // Preview in New Tab (Without Saving)
+  // Preview in New Tab
   const handlePreview = async () => {
     setPreviewing(true);
     setError(null);
     try {
       const payload = {
         opportunity_id: opportunity.id,
-        quotation_id: quotation.id,
+        opportunityId: opportunity.id,
+        quotation_id: quotation?.id || editingInvoice?.quotationId || editingInvoice?.quotation_id,
+        quotationId: quotation?.id || editingInvoice?.quotationId || editingInvoice?.quotation_id,
         tax_type: taxType,
-        tax_configuration_id: selectedTaxConfigId || undefined,
+        taxType: taxType,
+        tax_configuration_id: activeTaxConfig?.id || selectedTaxConfigId || undefined,
+        taxConfigurationId: activeTaxConfig?.id || selectedTaxConfigId || undefined,
+        pi_date: invoiceDate,
+        piDate: invoiceDate,
         reference_note: referenceNote,
+        referenceNote: referenceNote,
         terms: terms,
         items: items.map(it => ({
           sr_no: it.srNo,
@@ -190,6 +311,7 @@ export default function InvoicePreparationModal({
           quantity: Number(it.quantity),
           unit: it.unit,
           rate: Number(it.rate),
+          discount_amount: Number(it.discountAmount || 0),
           notes: it.notes
         }))
       };
@@ -203,15 +325,29 @@ export default function InvoicePreparationModal({
       }
     } catch (err) {
       console.error('Preview error:', err);
-      setError(err.response?.data?.detail || 'Failed to generate invoice preview.');
+      setError(err.response?.data?.detail || err.response?.data?.message || 'Failed to generate invoice preview.');
     } finally {
       setPreviewing(false);
     }
   };
 
-  // Confirm and Save Permanent PI
+  // Save / Update PI
   const handleSaveInvoice = async () => {
-    if (!window.confirm('Are you sure you want to approve this quotation and generate the permanent Proforma Invoice? This will assign the next sequential invoice number.')) {
+    if (items.length === 0) {
+      alert('A Proforma Invoice must have at least one line item.');
+      return;
+    }
+
+    if (isEditMode && !overrideReason.trim()) {
+      alert('Please provide a mandatory reason for editing this issued Proforma Invoice.');
+      return;
+    }
+
+    const confirmMsg = isEditMode
+      ? `Save modifications to issued Proforma Invoice ${editingInvoice.piNumber}?`
+      : 'Generate Proforma Invoice? This will assign the next sequential invoice number.';
+
+    if (!window.confirm(confirmMsg)) {
       return;
     }
 
@@ -220,11 +356,20 @@ export default function InvoicePreparationModal({
     try {
       const payload = {
         opportunity_id: opportunity.id,
-        quotation_id: quotation.id,
+        opportunityId: opportunity.id,
+        quotation_id: quotation?.id || editingInvoice?.quotationId || editingInvoice?.quotation_id,
+        quotationId: quotation?.id || editingInvoice?.quotationId || editingInvoice?.quotation_id,
         tax_type: taxType,
-        tax_configuration_id: selectedTaxConfigId || undefined,
+        taxType: taxType,
+        tax_configuration_id: activeTaxConfig?.id || selectedTaxConfigId || undefined,
+        taxConfigurationId: activeTaxConfig?.id || selectedTaxConfigId || undefined,
+        pi_date: invoiceDate,
+        piDate: invoiceDate,
         reference_note: referenceNote,
+        referenceNote: referenceNote,
         terms: terms,
+        override_reason: isEditMode ? overrideReason.trim() : undefined,
+        overrideReason: isEditMode ? overrideReason.trim() : undefined,
         items: items.map(it => ({
           sr_no: it.srNo,
           item_type: it.itemType,
@@ -235,21 +380,35 @@ export default function InvoicePreparationModal({
           quantity: Number(it.quantity),
           unit: it.unit,
           rate: Number(it.rate),
+          discount_amount: Number(it.discountAmount || 0),
           notes: it.notes
         }))
       };
 
-      const res = await invoiceService.createProformaInvoice(payload);
-      if (res.data?.success) {
-        alert(`Proforma Invoice ${res.data.piNumber} generated successfully!`);
-        if (onInvoiceCreated) {
-          onInvoiceCreated(res.data);
+      if (isEditMode) {
+        const res = await invoiceService.updateProformaInvoice(editingInvoice.id, payload);
+        if (res.data?.success) {
+          alert(`Proforma Invoice ${res.data.piNumber || editingInvoice.piNumber} updated successfully.`);
+          if (onInvoiceUpdated) {
+            onInvoiceUpdated(res.data);
+          } else if (onInvoiceCreated) {
+            onInvoiceCreated(res.data);
+          }
+          onClose();
         }
-        onClose();
+      } else {
+        const res = await invoiceService.createProformaInvoice(payload);
+        if (res.data?.success) {
+          alert(`Proforma Invoice ${res.data.piNumber} generated successfully!`);
+          if (onInvoiceCreated) {
+            onInvoiceCreated(res.data);
+          }
+          onClose();
+        }
       }
     } catch (err) {
-      console.error('Invoice creation error:', err);
-      setError(err.response?.data?.detail || 'Failed to create Proforma Invoice.');
+      console.error('Invoice save error:', err);
+      setError(err.response?.data?.detail || err.response?.data?.message || 'Failed to save Proforma Invoice.');
     } finally {
       setSubmitting(false);
     }
@@ -257,7 +416,8 @@ export default function InvoicePreparationModal({
 
   if (!isOpen || !opportunity) return null;
 
-  const account = opportunity.account || {};
+  const quoteNumber = quotation?.quotationNumber || editingInvoice?.quotationNumber || 'QT-00001';
+  const quoteRevision = quotation?.revisionNumber || editingInvoice?.revisionNumber || 1;
 
   return (
     <div style={{
@@ -266,54 +426,91 @@ export default function InvoicePreparationModal({
       left: 0,
       right: 0,
       bottom: 0,
-      backgroundColor: 'rgba(15, 23, 42, 0.75)',
-      backdropFilter: 'blur(4px)',
+      backgroundColor: 'rgba(15, 23, 42, 0.65)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       zIndex: 1050,
-      padding: '1.5rem'
+      padding: '1.25rem'
     }}>
       <div style={{
-        background: 'var(--card-bg, #1e293b)',
-        borderRadius: '12px',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
+        backgroundColor: '#ffffff',
+        borderRadius: '8px',
+        border: '1px solid #e2e8f0',
         width: '100%',
-        maxWidth: '1100px',
+        maxWidth: '1180px',
         maxHeight: '92vh',
         display: 'flex',
         flexDirection: 'column',
-        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-        color: '#f8fafc'
+        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
+        color: '#0f172a',
+        overflow: 'hidden'
       }}>
         {/* Header */}
         <div style={{
           padding: '1.25rem 1.75rem',
-          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+          borderBottom: '1px solid #e2e8f0',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          background: 'linear-gradient(90deg, rgba(0, 176, 240, 0.12), transparent)'
+          backgroundColor: '#f8fafc'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
             <div style={{
-              background: '#00B0F0',
-              width: '38px',
-              height: '38px',
+              backgroundColor: isEditMode ? '#d97706' : '#0284c7',
+              width: '42px',
+              height: '42px',
               borderRadius: '8px',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center'
+              justifyContent: 'center',
+              color: 'white',
+              flexShrink: 0
             }}>
-              <FileText size={20} color="white" />
+              {isEditMode ? <Edit3 size={22} /> : <FileText size={22} />}
             </div>
             <div>
-              <h2 style={{ fontSize: '1.15rem', fontWeight: 700, margin: 0 }}>
-                Approve Quotation &amp; Prepare Proforma Invoice
-              </h2>
-              <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-                Source: Quotation {quotation?.quotationNumber || 'N/A'} for {opportunity.name}
-              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                <h2 style={{ fontSize: '1.18rem', fontWeight: 700, margin: 0, color: '#0f172a' }}>
+                  {isEditMode ? `Edit Proforma Invoice: ${editingInvoice.piNumber}` : 'Prepare Proforma Invoice'}
+                </h2>
+                <span style={{
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  backgroundColor: '#e0f2fe',
+                  color: '#0369a1',
+                  fontFamily: 'monospace'
+                }}>
+                  {quoteNumber}
+                </span>
+                <span style={{
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  backgroundColor: '#ede9fe',
+                  color: '#6d28d9'
+                }}>
+                  Rev R{quoteRevision}
+                </span>
+                {isEditMode && (
+                  <span style={{
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    fontSize: '0.75rem',
+                    fontWeight: 700,
+                    backgroundColor: '#fef3c7',
+                    color: '#b45309'
+                  }}>
+                    Issued PI Revision
+                  </span>
+                )}
+              </div>
+              <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '3px 0 0' }}>
+                Opportunity: <strong>{opportunity.name}</strong> • Customer: <strong>{opportunity.accountName || account.name || 'Valued Client'}</strong>
+              </p>
             </div>
           </div>
           <button
@@ -321,10 +518,12 @@ export default function InvoicePreparationModal({
             style={{
               background: 'none',
               border: 'none',
-              color: '#94a3b8',
+              color: '#64748b',
               cursor: 'pointer',
-              padding: '0.25rem'
+              padding: '0.35rem',
+              borderRadius: '6px'
             }}
+            title="Close"
           >
             <X size={20} />
           </button>
@@ -334,231 +533,282 @@ export default function InvoicePreparationModal({
         <div style={{ padding: '1.5rem 1.75rem', overflowY: 'auto', flex: 1 }}>
           {error && (
             <div style={{
-              background: 'rgba(239, 68, 68, 0.15)',
-              border: '1px solid #ef4444',
-              borderRadius: '8px',
-              padding: '0.85rem 1rem',
-              marginBottom: '1.25rem',
+              backgroundColor: '#fef2f2',
+              border: '1px solid #fecaca',
+              borderRadius: '6px',
+              padding: '0.75rem 1rem',
+              marginBottom: '1rem',
+              color: '#b91c1c',
+              fontSize: '0.85rem',
               display: 'flex',
               alignItems: 'center',
-              gap: '0.65rem',
-              color: '#fca5a5'
+              gap: '0.5rem'
             }}>
               <AlertTriangle size={18} />
               <span>{error}</span>
             </div>
           )}
 
-          {warnings.length > 0 && (
+          {stateMismatchNotice && (
             <div style={{
-              background: 'rgba(245, 158, 11, 0.12)',
-              border: '1px solid #f59e0b',
-              borderRadius: '8px',
-              padding: '0.85rem 1rem',
-              marginBottom: '1.25rem'
+              backgroundColor: '#fffbeb',
+              border: '1px solid #fde68a',
+              borderRadius: '6px',
+              padding: '0.65rem 0.9rem',
+              marginBottom: '1rem',
+              color: '#92400e',
+              fontSize: '0.82rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem'
             }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#fbbf24', fontWeight: 600, fontSize: '0.85rem', marginBottom: '0.35rem' }}>
-                <AlertTriangle size={16} /> Attention / Non-blocking Warnings:
-              </div>
-              <ul style={{ margin: 0, paddingLeft: '1.25rem', fontSize: '0.8rem', color: '#cbd5e1' }}>
-                {warnings.map((w, idx) => (
-                  <li key={idx}>{w}</li>
-                ))}
-              </ul>
+              <Info size={16} style={{ flexShrink: 0, color: '#d97706' }} />
+              <span>{stateMismatchNotice}</span>
             </div>
           )}
 
-          {/* Customer & Document Information Summary Card */}
+          {/* EDIT REASON FOR ISSUED PI */}
+          {isEditMode && (
+            <div style={{
+              backgroundColor: '#fffbeb',
+              border: '1px solid #fde68a',
+              borderRadius: '6px',
+              padding: '1rem',
+              marginBottom: '1.25rem'
+            }}>
+              <label style={{ fontSize: '0.8rem', fontWeight: 700, color: '#92400e', display: 'block', marginBottom: '4px' }}>
+                Reason for Editing Issued Proforma Invoice * (Mandatory for Audit Trail)
+              </label>
+              <input
+                type="text"
+                value={overrideReason}
+                onChange={e => setOverrideReason(e.target.value)}
+                placeholder="e.g. Client requested quantity adjustment, negotiated price override, or updated scope..."
+                style={{
+                  width: '100%',
+                  padding: '0.5rem 0.75rem',
+                  border: '1px solid #f59e0b',
+                  borderRadius: '4px',
+                  fontSize: '0.85rem',
+                  backgroundColor: '#ffffff'
+                }}
+              />
+            </div>
+          )}
+
+          {/* Configuration Row */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
             gap: '1rem',
-            background: 'rgba(255, 255, 255, 0.03)',
-            border: '1px solid rgba(255, 255, 255, 0.07)',
-            borderRadius: '8px',
-            padding: '1rem 1.25rem',
-            marginBottom: '1.5rem'
+            marginBottom: '1.25rem'
           }}>
             <div>
-              <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 700 }}>
-                Client / Account
-              </div>
-              <div style={{ fontWeight: 700, fontSize: '0.95rem', color: '#38bdf8', marginTop: '2px' }}>
-                {account.name || 'N/A'}
-              </div>
-              <div style={{ fontSize: '0.8rem', color: '#cbd5e1', marginTop: '2px' }}>
-                Customer ID: <strong>{account.customerId || account.accountId || 'Auto'}</strong>
-              </div>
-              <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-                GSTIN: {account.gstNumber || <span style={{ color: '#f59e0b' }}>Missing</span>}
-              </div>
-            </div>
-
-            <div>
-              <div style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 700 }}>
-                Opportunity Reference
-              </div>
-              <div style={{ fontWeight: 600, fontSize: '0.9rem', marginTop: '2px' }}>
-                {opportunity.opportunityId} – {opportunity.name}
-              </div>
-              <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '2px' }}>
-                Source Quote: <strong>{quotation?.quotationNumber || 'N/A'}</strong>
-              </div>
-            </div>
-
-            <div>
-              <label style={{ fontSize: '0.72rem', textTransform: 'uppercase', color: '#64748b', fontWeight: 700, display: 'block', marginBottom: '4px' }}>
-                Tax Type (Supply Configuration)
+              <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '4px' }}>
+                Tax Regime
               </label>
               <select
                 value={taxType}
-                onChange={(e) => setTaxType(e.target.value)}
+                onChange={e => handleTaxTypeChange(e.target.value)}
                 style={{
                   width: '100%',
-                  padding: '0.45rem 0.65rem',
+                  padding: '0.5rem',
+                  border: '1px solid #cbd5e1',
                   borderRadius: '6px',
-                  background: '#0f172a',
-                  border: '1px solid rgba(255, 255, 255, 0.15)',
-                  color: '#fff',
-                  fontSize: '0.85rem'
+                  fontSize: '0.85rem',
+                  backgroundColor: '#ffffff',
+                  color: '#0f172a'
                 }}
               >
-                <option value="INTRA_STATE">Intra-State: CGST (9%) + SGST (9%) [Total 18%]</option>
-                <option value="INTER_STATE">Inter-State: IGST (18%)</option>
-                <option value="EXEMPT">Exempt / Zero Rated (0%)</option>
+                <option value="INTRA_STATE">Intra-State (CGST 9% + SGST 9%)</option>
+                <option value="INTER_STATE">Inter-State (IGST 18%)</option>
+                <option value="EXEMPT">Exempt / Zero Tax</option>
               </select>
             </div>
-          </div>
 
-          {/* Reference Note */}
-          <div style={{ marginBottom: '1.25rem' }}>
-            <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, marginBottom: '0.35rem', color: '#cbd5e1' }}>
-              Invoice Reference Note (Printed below customer block):
-            </label>
-            <input
-              type="text"
-              value={referenceNote}
-              onChange={(e) => setReferenceNote(e.target.value)}
-              placeholder="e.g. Samples Received from Himmatnagar on 24.10.26"
-              style={{
-                width: '100%',
-                padding: '0.55rem 0.85rem',
-                borderRadius: '6px',
-                background: '#0f172a',
-                border: '1px solid rgba(255, 255, 255, 0.15)',
-                color: '#fff',
-                fontSize: '0.85rem'
-              }}
-            />
+            <div>
+              <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '4px' }}>
+                Invoice Date
+              </label>
+              <input
+                type="date"
+                value={invoiceDate}
+                onChange={e => setInvoiceDate(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '0.5rem',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '6px',
+                  fontSize: '0.85rem',
+                  backgroundColor: '#ffffff',
+                  color: '#0f172a'
+                }}
+              />
+            </div>
+
+            <div>
+              <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '4px' }}>
+                Reference Note
+              </label>
+              <input
+                type="text"
+                value={referenceNote}
+                onChange={e => setReferenceNote(e.target.value)}
+                placeholder="e.g. Quotation Ref / Work Order #"
+                style={{
+                  width: '100%',
+                  padding: '0.5rem',
+                  border: '1px solid #cbd5e1',
+                  borderRadius: '6px',
+                  fontSize: '0.85rem',
+                  backgroundColor: '#ffffff',
+                  color: '#0f172a'
+                }}
+              />
+            </div>
           </div>
 
           {/* Line Items Table */}
           <div style={{ marginBottom: '1.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-              <div style={{ fontSize: '0.85rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', color: '#94a3b8' }}>
-                Invoice Line Items ({items.length})
-              </div>
-              <span style={{ fontSize: '0.78rem', color: '#64748b' }}>
-                * Quantities and Rates can be edited for this Proforma Invoice without modifying catalogue prices.
-              </span>
-            </div>
+            <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.92rem', fontWeight: 700, color: '#0f172a' }}>
+              Invoice Line Items ({items.length})
+            </h4>
 
-            <div style={{
-              overflowX: 'auto',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '8px'
-            }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.85rem' }}>
+            <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.825rem' }}>
                 <thead>
-                  <tr style={{ background: 'rgba(0, 176, 240, 0.2)', borderBottom: '1px solid rgba(255, 255, 255, 0.1)' }}>
-                    <th style={{ padding: '0.65rem 0.85rem', width: '50px', textAlign: 'center' }}>Sr.</th>
-                    <th style={{ padding: '0.65rem 0.85rem' }}>Service / Product</th>
-                    <th style={{ padding: '0.65rem 0.85rem', width: '90px' }}>Unit</th>
-                    <th style={{ padding: '0.65rem 0.85rem', width: '100px', textAlign: 'right' }}>Qty</th>
-                    <th style={{ padding: '0.65rem 0.85rem', width: '130px', textAlign: 'right' }}>Rate (₹)</th>
-                    <th style={{ padding: '0.65rem 0.85rem', width: '130px', textAlign: 'right' }}>Amount (₹)</th>
-                    <th style={{ padding: '0.65rem 0.85rem', width: '50px', textAlign: 'center' }}></th>
+                  <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'left' }}>
+                    <th style={{ padding: '8px 12px', width: '38px', textAlign: 'center' }}>#</th>
+                    <th style={{ padding: '8px 12px', minWidth: '180px' }}>Description / Service</th>
+                    <th style={{ padding: '8px 12px', width: '80px', textAlign: 'right' }}>Qty</th>
+                    <th style={{ padding: '8px 12px', width: '70px' }}>Unit</th>
+                    <th style={{ padding: '8px 12px', width: '100px', textAlign: 'right' }}>Rate (₹)</th>
+                    <th style={{ padding: '8px 12px', width: '90px', textAlign: 'right' }}>Discount (₹)</th>
+                    <th style={{ padding: '8px 12px', width: '110px', textAlign: 'right' }}>Amount (₹)</th>
+                    <th style={{ padding: '8px 12px', width: '40px', textAlign: 'center' }}></th>
                   </tr>
                 </thead>
                 <tbody>
                   {items.map((item, idx) => {
-                    const lineAmount = (Number(item.quantity || 0) * Number(item.rate || 0)).toFixed(2);
+                    const gross = Number(item.quantity || 1) * Number(item.rate || 0);
+                    const taxable = Math.max(0, gross - Number(item.discountAmount || 0));
+
                     return (
-                      <tr
-                        key={idx}
-                        style={{
-                          borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
-                          background: idx % 2 === 0 ? 'rgba(255, 255, 255, 0.015)' : 'transparent'
-                        }}
-                      >
-                        <td style={{ padding: '0.65rem', textAlign: 'center', color: '#94a3b8' }}>
-                          {item.srNo}
+                      <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                        <td style={{ padding: '8px 12px', textAlign: 'center', color: '#64748b' }}>
+                          {idx + 1}
                         </td>
-                        <td style={{ padding: '0.65rem' }}>
-                          <div style={{ fontWeight: 600 }}>{item.name}</div>
-                          {item.description && item.description !== item.name && (
-                            <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '2px' }}>
-                              {item.description}
-                            </div>
-                          )}
-                        </td>
-                        <td style={{ padding: '0.65rem', color: '#94a3b8' }}>
-                          {item.unit}
-                        </td>
-                        <td style={{ padding: '0.65rem', textAlign: 'right' }}>
+                        <td style={{ padding: '8px 12px' }}>
                           <input
-                            type="number"
-                            min="0.1"
-                            step="any"
-                            value={item.quantity}
-                            onChange={(e) => handleItemChange(idx, 'quantity', e.target.value)}
+                            type="text"
+                            value={item.name}
+                            onChange={e => handleItemChange(idx, 'name', e.target.value)}
                             style={{
-                              width: '75px',
-                              padding: '0.35rem 0.45rem',
+                              width: '100%',
+                              padding: '4px 6px',
+                              border: '1px solid #cbd5e1',
                               borderRadius: '4px',
-                              background: '#0f172a',
-                              border: '1px solid rgba(255, 255, 255, 0.15)',
-                              color: '#fff',
-                              textAlign: 'right',
-                              fontSize: '0.85rem'
+                              fontSize: '0.825rem',
+                              fontWeight: 600
+                            }}
+                          />
+                          <input
+                            type="text"
+                            value={item.description}
+                            onChange={e => handleItemChange(idx, 'description', e.target.value)}
+                            placeholder="Optional description"
+                            style={{
+                              width: '100%',
+                              padding: '3px 6px',
+                              border: '1px solid #e2e8f0',
+                              borderRadius: '4px',
+                              fontSize: '0.75rem',
+                              marginTop: '2px',
+                              color: '#64748b'
                             }}
                           />
                         </td>
-                        <td style={{ padding: '0.65rem', textAlign: 'right' }}>
+                        <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                          <input
+                            type="number"
+                            min="1"
+                            value={item.quantity}
+                            onChange={e => handleItemChange(idx, 'quantity', e.target.value)}
+                            style={{
+                              width: '65px',
+                              padding: '4px 6px',
+                              border: '1px solid #cbd5e1',
+                              borderRadius: '4px',
+                              textAlign: 'right',
+                              fontSize: '0.825rem'
+                            }}
+                          />
+                        </td>
+                        <td style={{ padding: '8px 12px' }}>
+                          <input
+                            type="text"
+                            value={item.unit}
+                            onChange={e => handleItemChange(idx, 'unit', e.target.value)}
+                            style={{
+                              width: '65px',
+                              padding: '4px 6px',
+                              border: '1px solid #cbd5e1',
+                              borderRadius: '4px',
+                              fontSize: '0.825rem'
+                            }}
+                          />
+                        </td>
+                        <td style={{ padding: '8px 12px', textAlign: 'right' }}>
                           <input
                             type="number"
                             min="0"
-                            step="any"
                             value={item.rate}
-                            onChange={(e) => handleItemChange(idx, 'rate', e.target.value)}
+                            onChange={e => handleItemChange(idx, 'rate', e.target.value)}
                             style={{
-                              width: '105px',
-                              padding: '0.35rem 0.45rem',
+                              width: '90px',
+                              padding: '4px 6px',
+                              border: '1px solid #cbd5e1',
                               borderRadius: '4px',
-                              background: '#0f172a',
-                              border: '1px solid rgba(255, 255, 255, 0.15)',
-                              color: '#fff',
                               textAlign: 'right',
-                              fontSize: '0.85rem'
+                              fontSize: '0.825rem'
                             }}
                           />
                         </td>
-                        <td style={{ padding: '0.65rem', textAlign: 'right', fontWeight: 600, color: '#38bdf8' }}>
-                          ₹{Number(lineAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                          <input
+                            type="number"
+                            min="0"
+                            max={gross}
+                            value={item.discountAmount}
+                            onChange={e => handleItemChange(idx, 'discountAmount', e.target.value)}
+                            style={{
+                              width: '80px',
+                              padding: '4px 6px',
+                              border: '1px solid #cbd5e1',
+                              borderRadius: '4px',
+                              textAlign: 'right',
+                              fontSize: '0.825rem',
+                              color: item.discountAmount > 0 ? '#b91c1c' : '#0f172a'
+                            }}
+                          />
                         </td>
-                        <td style={{ padding: '0.65rem', textAlign: 'center' }}>
+                        <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: '#0f172a' }}>
+                          ₹{taxable.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </td>
+                        <td style={{ padding: '8px 12px', textAlign: 'center' }}>
                           <button
+                            type="button"
                             onClick={() => handleRemoveItem(idx)}
-                            title="Remove line item"
                             style={{
                               background: 'none',
                               border: 'none',
-                              color: '#ef4444',
+                              color: '#dc2626',
                               cursor: 'pointer',
-                              padding: '2px'
+                              padding: '4px'
                             }}
+                            title="Remove item"
                           >
-                            <Trash2 size={16} />
+                            <Trash2 size={14} />
                           </button>
                         </td>
                       </tr>
@@ -569,64 +819,67 @@ export default function InvoicePreparationModal({
             </div>
           </div>
 
-          {/* Bottom Grid: Terms & Bank vs Totals */}
+          {/* Terms & Financial Summary */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
+            gridTemplateColumns: '1fr 360px',
             gap: '1.5rem',
-            marginBottom: '1rem'
+            alignItems: 'start'
           }}>
-            {/* Terms & Conditions list */}
-            <div style={{
-              background: 'rgba(255, 255, 255, 0.02)',
-              border: '1px solid rgba(255, 255, 255, 0.06)',
-              borderRadius: '8px',
-              padding: '1rem'
-            }}>
-              <div style={{ fontSize: '0.8rem', fontWeight: 700, textTransform: 'uppercase', color: '#94a3b8', marginBottom: '0.5rem' }}>
+            {/* Terms block */}
+            <div>
+              <h4 style={{ margin: '0 0 0.5rem 0', fontSize: '0.88rem', fontWeight: 700, color: '#0f172a' }}>
                 Service &amp; Supply Terms
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxHeight: '160px', overflowY: 'auto' }}>
-                {terms.map((term, tIdx) => (
-                  <div key={tIdx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.8rem', color: '#cbd5e1', padding: '0.25rem 0.4rem', background: 'rgba(0,0,0,0.2)', borderRadius: '4px' }}>
-                    <span>{tIdx + 1}. {term}</span>
+              </h4>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '0.75rem' }}>
+                {terms.map((term, idx) => (
+                  <div key={idx} style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    padding: '5px 8px',
+                    backgroundColor: '#f8fafc',
+                    borderRadius: '4px',
+                    fontSize: '0.78rem',
+                    border: '1px solid #f1f5f9'
+                  }}>
+                    <span>{idx + 1}. {term}</span>
                     <button
-                      onClick={() => handleRemoveTerm(tIdx)}
-                      style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', marginLeft: '6px' }}
+                      type="button"
+                      onClick={() => handleRemoveTerm(idx)}
+                      style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '2px' }}
                     >
-                      <X size={14} />
+                      <X size={13} />
                     </button>
                   </div>
                 ))}
               </div>
-              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.65rem' }}>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
                 <input
                   type="text"
-                  placeholder="Add custom term..."
                   value={newTerm}
-                  onChange={(e) => setNewTerm(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && handleAddTerm()}
+                  onChange={e => setNewTerm(e.target.value)}
+                  placeholder="Add custom invoice term..."
                   style={{
                     flex: 1,
-                    padding: '0.35rem 0.65rem',
+                    padding: '5px 8px',
+                    border: '1px solid #cbd5e1',
                     borderRadius: '4px',
-                    background: '#0f172a',
-                    border: '1px solid rgba(255, 255, 255, 0.15)',
-                    color: '#fff',
                     fontSize: '0.8rem'
                   }}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddTerm(); } }}
                 />
                 <button
+                  type="button"
                   onClick={handleAddTerm}
                   style={{
-                    background: '#00B0F0',
-                    border: 'none',
-                    color: '#fff',
+                    padding: '5px 12px',
+                    backgroundColor: '#ffffff',
+                    border: '1px solid #cbd5e1',
                     borderRadius: '4px',
-                    padding: '0.35rem 0.75rem',
-                    cursor: 'pointer',
                     fontSize: '0.8rem',
-                    fontWeight: 600
+                    fontWeight: 600,
+                    cursor: 'pointer'
                   }}
                 >
                   Add
@@ -634,57 +887,71 @@ export default function InvoicePreparationModal({
               </div>
             </div>
 
-            {/* Calculations and Totals Summary */}
+            {/* Financial Summary */}
             <div style={{
-              background: 'rgba(0, 176, 240, 0.05)',
-              border: '1px solid rgba(0, 176, 240, 0.25)',
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
               borderRadius: '8px',
               padding: '1.25rem'
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.35rem 0', fontSize: '0.9rem' }}>
-                <span style={{ color: '#94a3b8' }}>Subtotal:</span>
-                <span style={{ fontWeight: 600 }}>₹{subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-              </div>
+              <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.9rem', fontWeight: 700, color: '#0f172a' }}>
+                Financial Summary
+              </h4>
 
-              {taxType === 'INTRA_STATE' && (
-                <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.35rem 0', fontSize: '0.85rem' }}>
-                    <span style={{ color: '#94a3b8' }}>CGST ({cgstRate}%):</span>
-                    <span>₹{cgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.35rem 0', fontSize: '0.85rem' }}>
-                    <span style={{ color: '#94a3b8' }}>SGST ({sgstRate}%):</span>
-                    <span>₹{sgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                  </div>
-                </>
-              )}
-
-              {taxType === 'INTER_STATE' && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.35rem 0', fontSize: '0.85rem' }}>
-                  <span style={{ color: '#94a3b8' }}>IGST ({igstRate}%):</span>
-                  <span>₹{igstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', fontSize: '0.825rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+                  <span>Gross Subtotal:</span>
+                  <span style={{ fontWeight: 600 }}>₹{grossSubtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
-              )}
 
-              {taxType === 'EXEMPT' && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '0.35rem 0', fontSize: '0.85rem', color: '#10b981' }}>
-                  <span>Tax:</span>
-                  <span>Exempt (0.00)</span>
+                {totalDiscount > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#b91c1c' }}>
+                    <span>Total Discount:</span>
+                    <span style={{ fontWeight: 600 }}>-₹{totalDiscount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#0f172a', fontWeight: 600, borderTop: '1px dashed #cbd5e1', paddingTop: '4px' }}>
+                  <span>Taxable Amount:</span>
+                  <span>₹{taxableSubtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
-              )}
 
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                padding: '0.75rem 0 0',
-                marginTop: '0.5rem',
-                borderTop: '2px solid rgba(0, 176, 240, 0.4)',
-                fontSize: '1.15rem',
-                fontWeight: 700,
-                color: '#38bdf8'
-              }}>
-                <span>Grand Total:</span>
-                <span>₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                {taxType === 'INTRA_STATE' ? (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+                      <span>CGST ({cgstRate}%):</span>
+                      <span>₹{cgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+                      <span>SGST ({sgstRate}%):</span>
+                      <span>₹{sgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    </div>
+                  </>
+                ) : taxType === 'INTER_STATE' ? (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+                    <span>IGST ({igstRate}%):</span>
+                    <span>₹{igstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+                    <span>Tax (Exempt):</span>
+                    <span>₹0.00</span>
+                  </div>
+                )}
+
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  borderTop: '2px solid #0f172a',
+                  paddingTop: '0.5rem',
+                  marginTop: '0.4rem',
+                  fontSize: '1.05rem',
+                  fontWeight: 800,
+                  color: '#0284c7'
+                }}>
+                  <span>Grand Total:</span>
+                  <span>₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
               </div>
             </div>
           </div>
@@ -692,50 +959,74 @@ export default function InvoicePreparationModal({
 
         {/* Footer Actions */}
         <div style={{
-          padding: '1.25rem 1.75rem',
-          borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+          padding: '1rem 1.75rem',
+          borderTop: '1px solid #e2e8f0',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          background: 'rgba(0, 0, 0, 0.2)'
+          backgroundColor: '#f8fafc'
         }}>
-          <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-            ℹ️ Generating PI creates an immutable Revision 1 and sequential PI number.
-          </div>
-          <div style={{ display: 'flex', gap: '0.75rem' }}>
-            <Button
-              variant="outline"
+          <button
+            type="button"
+            onClick={handlePreview}
+            disabled={previewing || items.length === 0}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              backgroundColor: '#ffffff',
+              border: '1px solid #cbd5e1',
+              color: '#334155',
+              padding: '0.5rem 0.85rem',
+              borderRadius: '6px',
+              fontSize: '0.825rem',
+              fontWeight: 600,
+              cursor: previewing || items.length === 0 ? 'not-allowed' : 'pointer'
+            }}
+          >
+            <Eye size={15} />
+            <span>{previewing ? 'Rendering Preview...' : 'Preview in New Tab'}</span>
+          </button>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+            <button
+              type="button"
               onClick={onClose}
-              disabled={submitting || previewing}
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={handlePreview}
-              disabled={submitting || previewing || items.length === 0}
-              style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: '#334155' }}
-            >
-              <ExternalLink size={16} />
-              {previewing ? 'Generating Preview...' : 'Preview in New Tab'}
-            </Button>
-            <Button
-              variant="primary"
-              onClick={handleSaveInvoice}
-              disabled={submitting || previewing || items.length === 0}
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                background: '#00B0F0',
-                borderColor: '#00B0F0',
-                color: 'white',
-                fontWeight: 700
+                backgroundColor: '#ffffff',
+                border: '1px solid #cbd5e1',
+                color: '#475569',
+                padding: '0.5rem 1rem',
+                borderRadius: '6px',
+                fontSize: '0.85rem',
+                cursor: 'pointer'
               }}
             >
-              <CheckCircle size={16} />
-              {submitting ? 'Creating Invoice...' : 'Confirm & Issue PI'}
-            </Button>
+              Cancel
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSaveInvoice}
+              disabled={submitting || items.length === 0}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                backgroundColor: isEditMode ? '#d97706' : '#059669',
+                color: '#ffffff',
+                border: 'none',
+                padding: '0.5rem 1.25rem',
+                borderRadius: '6px',
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                cursor: submitting || items.length === 0 ? 'not-allowed' : 'pointer',
+                opacity: submitting || items.length === 0 ? 0.7 : 1
+              }}
+            >
+              <Send size={15} />
+              <span>{submitting ? 'Processing...' : isEditMode ? 'Save PI Changes' : 'Generate Proforma Invoice'}</span>
+            </button>
           </div>
         </div>
       </div>

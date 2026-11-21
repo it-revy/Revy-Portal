@@ -336,6 +336,9 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
         if (onQualifiedSuccess) {
           onQualifiedSuccess(res.data);
         }
+        if (onClose) {
+          onClose();
+        }
       } else {
         setSubmitError(res.data?.message || 'Qualification was not successful.');
       }
@@ -347,6 +350,8 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
       setSubmitting(false);
     }
   };
+
+  if (!isOpen || !lead) return null;
 
   return (
     <div className="modal-backdrop" style={{
@@ -404,8 +409,16 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
             </p>
           </div>
           <button
-            onClick={onClose}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '0.25rem' }}
+            onClick={!submitting ? onClose : undefined}
+            disabled={submitting}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: submitting ? 'not-allowed' : 'pointer',
+              color: 'var(--text-muted)',
+              padding: '0.25rem',
+              opacity: submitting ? 0.5 : 1
+            }}
             aria-label="Close"
           >
             <X size={20} />
@@ -711,10 +724,8 @@ export default function LeadQualifyWizard({ lead, isOpen, onClose, onQualifiedSu
                         <span>Enquiry Details</span>
                       </div>
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                        <div><strong>Requirement Types:</strong> {lead.requirementTypes?.join(', ') || lead.requirementType || 'Consulting'}</div>
                         <div><strong>Business Area:</strong> {lead.businessArea || 'Biogas'}</div>
                         <div><strong>Lead Source:</strong> {lead.leadSource || 'Website'}</div>
-                        <div><strong>Rating:</strong> {lead.rating || 'Warm'}</div>
                         <div><strong>Relationship:</strong> {lead.clientStatus || 'New'}</div>
                         <div><strong>Owner:</strong> {lead.assignedToName || 'Unassigned'}</div>
                       </div>

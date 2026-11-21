@@ -41,9 +41,7 @@ const CANONICAL_LEAD_SOURCES = [
 
 const CANONICAL_CONTACT_METHODS = ['Email', 'Phone', 'WhatsApp', 'Meeting'];
 
-const CANONICAL_REQUIREMENT_TYPES = ['Consulting', 'Sample Testing', 'Product'];
-
-const CANONICAL_BUSINESS_AREAS = ['Biogas', 'Bio-CNG', 'Wastewater', 'Solid Waste', 'Other'];
+const CANONICAL_BUSINESS_AREAS = ['Biogas', 'Waste Water'];
 
 const CANONICAL_CURRENCIES = ['INR', 'USD', 'EUR', 'GBP'];
 
@@ -89,16 +87,13 @@ export default function CrmLeadCreatePage() {
 
     // Section 3 - Additional Lead Information
     leadSource: 'Website',
-    rating: 'Warm',
     clientStatus: 'New', // New or Existing
     assignedToUserId: '',
 
     // Section 4 - Description & Business Information
     description: '',
     industry: '',
-    numberOfEmployees: '',
     currency: 'INR',
-    requirementTypes: [],
     businessArea: 'Biogas',
 
     // Contact Method
@@ -151,16 +146,13 @@ export default function CrmLeadCreatePage() {
             connectedDate: l.connectedDate ? l.connectedDate.slice(0, 10) : new Date().toISOString().slice(0, 10),
 
             leadSource: l.leadSource || 'Website',
-            rating: l.rating || 'Warm',
             clientStatus: l.clientStatus || 'New',
             assignedToUserId: l.assignedToUserId || '',
 
             description: l.description || l.requirementSummary || '',
             industry: l.industry || l.account?.industry || '',
-            numberOfEmployees: l.numberOfEmployees !== null && l.numberOfEmployees !== undefined ? String(l.numberOfEmployees) : '',
             currency: l.currency || 'INR',
-            requirementTypes: Array.isArray(l.requirementTypes) ? l.requirementTypes : [],
-            businessArea: l.businessArea || 'Biogas',
+            businessArea: (l.businessArea === 'WWT' || l.businessArea === 'Waste Water' || (l.businessArea && l.businessArea.toLowerCase().includes('waste'))) ? 'Waste Water' : (l.businessArea || 'Biogas'),
 
             contactMethods: l.contactMethods && l.contactMethods.length > 0 ? l.contactMethods : ['Email'],
             preferredContactMethod: l.preferredContactMethod || (l.contactMethods?.[0] || 'Email')
@@ -190,21 +182,6 @@ export default function CrmLeadCreatePage() {
         return next;
       });
     }
-  };
-
-  const handleRequirementTypeToggle = (type) => {
-    setIsDirty(true);
-    setFormData(prev => {
-      const current = prev.requirementTypes || [];
-      let updated;
-      if (current.includes(type)) {
-        if (current.length === 1) return prev; // Keep at least one
-        updated = current.filter(t => t !== type);
-      } else {
-        updated = [...current, type];
-      }
-      return { ...prev, requirementTypes: updated };
-    });
   };
 
   const handleContactMethodToggle = (method) => {
@@ -272,14 +249,6 @@ export default function CrmLeadCreatePage() {
       errors.companyEmail = 'Please enter a valid company email address.';
     }
 
-    // Number of employees must be non-negative integer if provided
-    if (formData.numberOfEmployees) {
-      const num = Number(formData.numberOfEmployees);
-      if (isNaN(num) || !Number.isInteger(num) || num < 0) {
-        errors.numberOfEmployees = 'Number of employees must be a non-negative integer.';
-      }
-    }
-
     setFieldErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -314,15 +283,12 @@ export default function CrmLeadCreatePage() {
       companyEmail: formData.companyEmail.trim() || undefined,
 
       leadSource: formData.leadSource,
-      rating: formData.rating,
       clientStatus: formData.clientStatus,
       assignedToUserId: formData.assignedToUserId || undefined,
 
       description: formData.description.trim() || undefined,
       industry: formData.industry.trim() || undefined,
-      numberOfEmployees: formData.numberOfEmployees ? parseInt(formData.numberOfEmployees, 10) : undefined,
       currency: formData.currency,
-      requirementTypes: formData.requirementTypes,
       businessArea: formData.businessArea,
 
       contactMethods: formData.contactMethods,
@@ -911,7 +877,7 @@ export default function CrmLeadCreatePage() {
                     Additional Lead Information
                   </h2>
                   <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    Lead Source, Rating, Relationship Status, and Owner assignment
+                    Lead Source, Relationship Status, and Owner assignment
                   </span>
                 </div>
               </div>
@@ -940,22 +906,6 @@ export default function CrmLeadCreatePage() {
                       {CANONICAL_LEAD_SOURCES.map(source => (
                         <option key={source} value={source}>{source}</option>
                       ))}
-                    </select>
-                  </div>
-
-                  {/* Rating */}
-                  <div>
-                    <label className="form-label">Rating</label>
-                    <select
-                      name="rating"
-                      value={formData.rating}
-                      onChange={handleChange}
-                      className="form-select"
-                      style={{ width: '100%' }}
-                    >
-                      <option value="Hot">Hot — Urgent / High Intent</option>
-                      <option value="Warm">Warm — Active Interest</option>
-                      <option value="Cold">Cold — Future / Exploration</option>
                     </select>
                   </div>
 
@@ -1032,55 +982,9 @@ export default function CrmLeadCreatePage() {
                   Description and Business Information
                 </h2>
                 <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  Enquiry details, requirement types, business area, and company profile
+                  Enquiry details, business area, and company profile
                 </span>
               </div>
-            </div>
-
-            {/* Requirement Types Multi-Select */}
-            <div style={{ marginBottom: '1.25rem' }}>
-              <label className="form-label" style={{ fontWeight: 600, marginBottom: '0.5rem', display: 'block' }}>
-                Requirement Types
-                <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '0.8rem', marginLeft: '0.5rem' }}>
-                  (Optional — select any that apply; can be added later)
-                </span>
-              </label>
-              <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                {CANONICAL_REQUIREMENT_TYPES.map(type => {
-                  const isChecked = formData.requirementTypes.includes(type);
-                  return (
-                    <label
-                      key={type}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '0.5rem',
-                        padding: '0.6rem 1rem',
-                        borderRadius: 'var(--radius-sm)',
-                        border: `1px solid ${isChecked ? 'var(--accent-primary)' : 'var(--border-color)'}`,
-                        background: isChecked ? 'var(--accent-light)' : 'var(--bg-secondary)',
-                        color: isChecked ? 'var(--accent-primary)' : 'var(--text-primary)',
-                        cursor: 'pointer',
-                        fontWeight: isChecked ? 600 : 400,
-                        transition: 'all 0.15s ease'
-                      }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => handleRequirementTypeToggle(type)}
-                        style={{ accentColor: 'var(--accent-primary)' }}
-                      />
-                      <span>{type}</span>
-                    </label>
-                  );
-                })}
-              </div>
-              {fieldErrors.requirementTypes && (
-                <span style={{ fontSize: '0.75rem', color: 'var(--danger)', marginTop: '0.25rem', display: 'block' }}>
-                  {fieldErrors.requirementTypes}
-                </span>
-              )}
             </div>
 
             {/* Description Textarea */}
@@ -1127,27 +1031,6 @@ export default function CrmLeadCreatePage() {
                   className="form-input"
                   style={{ width: '100%' }}
                 />
-              </div>
-
-              {/* Number of Employees */}
-              <div>
-                <label className="form-label">Number of Employees</label>
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  name="numberOfEmployees"
-                  value={formData.numberOfEmployees}
-                  onChange={handleChange}
-                  placeholder="e.g. 150"
-                  className={`form-input ${fieldErrors.numberOfEmployees ? 'input-error' : ''}`}
-                  style={{ width: '100%' }}
-                />
-                {fieldErrors.numberOfEmployees && (
-                  <span style={{ fontSize: '0.75rem', color: 'var(--danger)', marginTop: '0.25rem', display: 'block' }}>
-                    {fieldErrors.numberOfEmployees}
-                  </span>
-                )}
               </div>
 
               {/* Currency */}

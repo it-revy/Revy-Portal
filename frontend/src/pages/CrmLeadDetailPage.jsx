@@ -599,7 +599,7 @@ export default function CrmLeadDetailPage() {
               <span>Business Requirement & Specification</span>
             </h3>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem', marginBottom: '1.25rem' }}>
+            <div style={{ marginBottom: '1.25rem' }}>
               <div>
                 <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
                   Business Area
@@ -615,30 +615,6 @@ export default function CrmLeadDetailPage() {
                   }}>
                     {lead.businessArea}
                   </span>
-                </div>
-              </div>
-
-              <div>
-                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
-                  Requirement Types
-                </label>
-                <div style={{ marginTop: '0.2rem', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  {(lead.requirementTypes && lead.requirementTypes.length > 0 ? lead.requirementTypes : [lead.requirementType || 'Consulting']).map((type, idx) => (
-                    <span
-                      key={idx}
-                      style={{
-                        padding: '3px 8px',
-                        borderRadius: '4px',
-                        fontSize: '0.825rem',
-                        fontWeight: 600,
-                        background: '#f1f5f9',
-                        color: '#334155',
-                        border: '1px solid #cbd5e1'
-                      }}
-                    >
-                      {type}
-                    </span>
-                  ))}
                 </div>
               </div>
             </div>
@@ -730,32 +706,10 @@ export default function CrmLeadDetailPage() {
                 </div>
               </div>
 
-              <div>
-                <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Rating</label>
-                <div style={{ fontSize: '0.875rem', fontWeight: 600, marginTop: '2px' }}>
-                  <span style={{
-                    padding: '2px 8px',
-                    borderRadius: '4px',
-                    fontSize: '0.78rem',
-                    background: lead.rating === 'Hot' ? '#fef2f2' : lead.rating === 'Warm' ? '#fffbeb' : '#f0fdf4',
-                    color: lead.rating === 'Hot' ? '#b91c1c' : lead.rating === 'Warm' ? '#b45309' : '#15803d'
-                  }}>
-                    {lead.rating || 'Warm'}
-                  </span>
-                </div>
-              </div>
-
               {lead.currency && (
                 <div>
                   <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Currency</label>
                   <div style={{ fontSize: '0.875rem', fontWeight: 500 }}>{lead.currency}</div>
-                </div>
-              )}
-
-              {lead.numberOfEmployees !== undefined && lead.numberOfEmployees !== null && (
-                <div>
-                  <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Employees</label>
-                  <div style={{ fontSize: '0.875rem', fontWeight: 500 }}>{lead.numberOfEmployees}</div>
                 </div>
               )}
 
@@ -1763,8 +1717,13 @@ export default function CrmLeadDetailPage() {
           lead={lead}
           isOpen={isQualifyWizardOpen}
           onClose={() => setIsQualifyWizardOpen(false)}
-          onQualifiedSuccess={() => {
+          onQualifiedSuccess={(result) => {
+            setIsQualifyWizardOpen(false);
             fetchLeadDetails();
+            const oppCode = result?.opportunity?.opportunityId || result?.opportunity_id || '';
+            const oppSuffix = oppCode ? ` into Opportunity ${oppCode}` : '';
+            setSuccessNotification(`Lead ${lead.leadId || ''} successfully qualified${oppSuffix}!`);
+            setTimeout(() => setSuccessNotification(null), 5000);
           }}
         />
       )}

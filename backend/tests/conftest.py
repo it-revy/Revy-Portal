@@ -55,7 +55,19 @@ def setup_test_database():
 
             opp_cols = conn.exec_driver_sql("PRAGMA table_info(crm_opportunities)").fetchall()
             opp_acc_col = next((c for c in opp_cols if c[1] == 'account_id'), None)
+            opp_sql_row = conn.exec_driver_sql("SELECT sql FROM sqlite_master WHERE type='table' AND name='crm_opportunities'").fetchone()
+            needs_opp_recreate = False
             if opp_cols and (not any(c[1] == 'stage' for c in opp_cols) or (opp_acc_col and opp_acc_col[3] == 1)):
+                needs_opp_recreate = True
+            if opp_sql_row and "'PI Issued'" not in (opp_sql_row[0] or ""):
+                needs_opp_recreate = True
+
+            if needs_opp_recreate:
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_opportunity_stage_history")
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_opportunity_quotation_items")
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_proforma_invoice_items")
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_proforma_invoice_revisions")
+                conn.exec_driver_sql("DROP TABLE IF EXISTS crm_proforma_invoices")
                 conn.exec_driver_sql("DROP TABLE IF EXISTS crm_opportunity_quotations")
                 conn.exec_driver_sql("DROP TABLE IF EXISTS crm_milestones")
                 conn.exec_driver_sql("DROP TABLE IF EXISTS crm_product_transactions")
@@ -128,6 +140,27 @@ def setup_test_database():
             if q_item_cols and "discount_amount" not in existing_q_items:
                 conn.exec_driver_sql("ALTER TABLE crm_opportunity_quotation_items ADD COLUMN discount_amount NUMERIC(18, 4) DEFAULT 0.0")
                 conn.commit()
+
+            pi_item_cols = conn.exec_driver_sql("PRAGMA table_info(crm_proforma_invoice_items)").fetchall()
+            existing_pi_items = [c[1] for c in pi_item_cols]
+            for col, col_type in [
+                ("unit_price", "NUMERIC(14, 2) DEFAULT 0.0"),
+                ("discount_amount", "NUMERIC(14, 2) DEFAULT 0.0"),
+            ]:
+                if pi_item_cols and col not in existing_pi_items:
+                    conn.exec_driver_sql(f"ALTER TABLE crm_proforma_invoice_items ADD COLUMN {col} {col_type}")
+            conn.commit()
+
+            pi_cols = conn.exec_driver_sql("PRAGMA table_info(crm_proforma_invoices)").fetchall()
+            existing_pi = [c[1] for c in pi_cols]
+            for col, col_type in [
+                ("subtotal_amount", "NUMERIC(14, 2) DEFAULT 0.0"),
+                ("discount_amount", "NUMERIC(14, 2) DEFAULT 0.0"),
+                ("taxable_amount", "NUMERIC(14, 2) DEFAULT 0.0"),
+            ]:
+                if pi_cols and col not in existing_pi:
+                    conn.exec_driver_sql(f"ALTER TABLE crm_proforma_invoices ADD COLUMN {col} {col_type}")
+            conn.commit()
 
             con_cols = conn.exec_driver_sql("PRAGMA table_info(contacts)").fetchall()
             existing_con = [c[1] for c in con_cols]

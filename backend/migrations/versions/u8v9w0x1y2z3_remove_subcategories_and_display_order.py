@@ -23,22 +23,25 @@ def upgrade():
 
     # 1. Backfill category_id for crm_services if any nulls exist
     if 'crm_services' in tables and 'crm_service_subcategories' in tables:
-        # Check if there are any services with null category_id but valid subcategory_id
-        bind.execute(sa.text("""
-            UPDATE crm_services s
-            SET category_id = sub.category_id
-            FROM crm_service_subcategories sub
-            WHERE s.subcategory_id = sub.id AND (s.category_id IS NULL OR s.category_id = '')
-        """))
+        service_cols = [c['name'] for c in inspector.get_columns('crm_services')]
+        if 'subcategory_id' in service_cols:
+            bind.execute(sa.text("""
+                UPDATE crm_services s
+                SET category_id = sub.category_id
+                FROM crm_service_subcategories sub
+                WHERE s.subcategory_id = sub.id AND (s.category_id IS NULL OR s.category_id = '')
+            """))
 
     # 2. Backfill category_id for crm_packages if any nulls exist
     if 'crm_packages' in tables and 'crm_service_subcategories' in tables:
-        bind.execute(sa.text("""
-            UPDATE crm_packages p
-            SET category_id = sub.category_id
-            FROM crm_service_subcategories sub
-            WHERE p.subcategory_id = sub.id AND (p.category_id IS NULL OR p.category_id = '')
-        """))
+        package_cols = [c['name'] for c in inspector.get_columns('crm_packages')]
+        if 'subcategory_id' in package_cols:
+            bind.execute(sa.text("""
+                UPDATE crm_packages p
+                SET category_id = sub.category_id
+                FROM crm_service_subcategories sub
+                WHERE p.subcategory_id = sub.id AND (p.category_id IS NULL OR p.category_id = '')
+            """))
 
     # 3. Ensure category_id on crm_services is NOT NULL
     if 'crm_services' in tables:

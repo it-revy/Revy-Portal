@@ -13,7 +13,10 @@ import {
   Building,
   ArrowRight,
   TrendingUp,
-  Briefcase
+  Briefcase,
+  FileText,
+  Receipt,
+  Percent
 } from 'lucide-react';
 import crmService from '../services/crmService';
 import { PageHeader, Button } from '../components/ui';
@@ -348,6 +351,254 @@ export default function CrmDashboardPage() {
                 <span style={{ fontSize: '0.75rem', color: '#ea580c', display: 'flex', alignItems: 'center', gap: '2px', fontWeight: 600 }}>
                   Attention Required <ArrowRight size={12} />
                 </span>
+              </div>
+            </div>
+          </div>
+
+          {/* CRM Sales Funnel & Pipeline Overview (Cumulative Milestones & Stage Distribution) */}
+          <div className="glass-panel" style={{ padding: '1.75rem', marginBottom: '2rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '0.6rem', color: 'var(--text-primary)' }}>
+                  <TrendingUp size={22} color="var(--accent-primary)" />
+                  <span>CRM Sales Funnel & Conversion Milestones</span>
+                </h2>
+                <p style={{ margin: '0.35rem 0 0 0', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                  Live cumulative funnel tracking across all CRM sales milestones and conversion efficiencies
+                </p>
+              </div>
+              <Button
+                variant="secondary"
+                size="sm"
+                icon={Briefcase}
+                onClick={() => navigate('/crm/opportunities')}
+              >
+                View Opportunities Pipeline
+              </Button>
+            </div>
+
+            {/* 1. Cumulative Funnel Milestones (4-Step Sequential Flow) */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+              gap: '1rem',
+              marginBottom: '1.75rem'
+            }}>
+              {/* Milestone 1: Total Leads */}
+              <div
+                onClick={() => handleCardClick('/crm/leads?view=all')}
+                style={{
+                  background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
+                  border: '1px solid #bfdbfe',
+                  borderRadius: '10px',
+                  padding: '1.25rem',
+                  cursor: 'pointer'
+                }}
+                title="Click to view all leads"
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#1e40af', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    1. Total Leads Created
+                  </span>
+                  <Layers size={18} color="#2563eb" />
+                </div>
+                <div style={{ fontSize: '2.25rem', fontWeight: 800, color: '#1e3a8a', lineHeight: 1.1 }}>
+                  {metrics.totalLeads ?? 0}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#3b82f6', marginTop: '0.5rem', fontWeight: 500 }}>
+                  Top of Funnel Pool
+                </div>
+              </div>
+
+              {/* Milestone 2: Qualified Leads */}
+              <div
+                onClick={() => handleCardClick('/crm/leads?view=all&lifecycleStatus=Qualified')}
+                style={{
+                  background: 'linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%)',
+                  border: '1px solid #a7f3d0',
+                  borderRadius: '10px',
+                  padding: '1.25rem',
+                  cursor: 'pointer'
+                }}
+                title="Click to view qualified leads / enquiry opportunities"
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#065f46', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    2. Qualified Leads
+                  </span>
+                  <CheckCircle2 size={18} color="#059669" />
+                </div>
+                <div style={{ fontSize: '2.25rem', fontWeight: 800, color: '#064e3b', lineHeight: 1.1 }}>
+                  {metrics.qualifiedLeads ?? 0}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#059669', marginTop: '0.5rem', fontWeight: 600 }}>
+                  {metrics.leadToQualificationRate ?? 0}% from Leads
+                </div>
+              </div>
+
+              {/* Milestone 3: Quotations Created */}
+              <div
+                onClick={() => handleCardClick('/crm/opportunities?stage=Offer')}
+                style={{
+                  background: 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)',
+                  border: '1px solid #fde68a',
+                  borderRadius: '10px',
+                  padding: '1.25rem',
+                  cursor: 'pointer'
+                }}
+                title="Click to view quotation opportunities (Offer/Negotiation)"
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#92400e', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    3. Quotations Created
+                  </span>
+                  <FileText size={18} color="#d97706" />
+                </div>
+                <div style={{ fontSize: '2.25rem', fontWeight: 800, color: '#78350f', lineHeight: 1.1 }}>
+                  {metrics.quotationsCreated ?? 0}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#b45309', marginTop: '0.5rem', fontWeight: 600 }}>
+                  {metrics.qualificationToQuotationRate ?? 0}% from Qualified
+                </div>
+              </div>
+
+              {/* Milestone 4: Proforma Invoices Created */}
+              <div
+                onClick={() => handleCardClick('/crm/opportunities?stage=PI+Issued')}
+                style={{
+                  background: 'linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)',
+                  border: '1px solid #ddd6fe',
+                  borderRadius: '10px',
+                  padding: '1.25rem',
+                  cursor: 'pointer'
+                }}
+                title="Click to view Proforma Invoice opportunities"
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#5b21b6', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    4. PIs Created
+                  </span>
+                  <Receipt size={18} color="#7c3aed" />
+                </div>
+                <div style={{ fontSize: '2.25rem', fontWeight: 800, color: '#4c1d95', lineHeight: 1.1 }}>
+                  {metrics.pisCreated ?? 0}
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#6d28d9', marginTop: '0.5rem', fontWeight: 600 }}>
+                  {metrics.quotationToPiRate ?? 0}% from Quotes ({metrics.overallLeadToPiRate ?? 0}% Overall)
+                </div>
+              </div>
+            </div>
+
+            {/* 2. Conversion Rate KPI Strip */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '0.85rem',
+              background: '#f8fafc',
+              border: '1px solid var(--border-color)',
+              borderRadius: '8px',
+              padding: '1rem',
+              marginBottom: '1.75rem'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ padding: '8px', background: '#ecfdf5', borderRadius: '6px', color: '#059669' }}>
+                  <Percent size={16} />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Lead &rarr; Qualification</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#059669' }}>
+                    {metrics.leadToQualificationRate ?? 0}%
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ padding: '8px', background: '#fffbeb', borderRadius: '6px', color: '#d97706' }}>
+                  <Percent size={16} />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Qualification &rarr; Quotation</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#d97706' }}>
+                    {metrics.qualificationToQuotationRate ?? 0}%
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ padding: '8px', background: '#f5f3ff', borderRadius: '6px', color: '#7c3aed' }}>
+                  <Percent size={16} />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Quotation &rarr; PI</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#7c3aed' }}>
+                    {metrics.quotationToPiRate ?? 0}%
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ padding: '8px', background: '#eff6ff', borderRadius: '6px', color: '#2563eb' }}>
+                  <Percent size={16} />
+                </div>
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Overall Lead &rarr; PI</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: 700, color: '#2563eb' }}>
+                    {metrics.overallLeadToPiRate ?? 0}%
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 3. Opportunity Count by Stage (7 Stages) */}
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem' }}>
+                <h4 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  Opportunity Stage Distribution (7-Stage Pipeline)
+                </h4>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  Automated by CRM business events
+                </span>
+              </div>
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                gap: '0.75rem'
+              }}>
+                {[
+                  { stage: 'Enquiry', color: '#3b82f6', bg: '#eff6ff' },
+                  { stage: 'Offer', color: '#d97706', bg: '#fffbeb' },
+                  { stage: 'Negotiation', color: '#ea580c', bg: '#fff7ed' },
+                  { stage: 'PI Issued', color: '#7c3aed', bg: '#f5f3ff' },
+                  { stage: 'Supply', color: '#0284c7', bg: '#f0f9ff' },
+                  { stage: 'Payment', color: '#059669', bg: '#ecfdf5' },
+                  { stage: 'Dormant', color: '#64748b', bg: '#f1f5f9' }
+                ].map(({ stage, color, bg }) => {
+                  const count = metrics.opportunityCountByStage?.[stage] ?? 0;
+                  return (
+                    <div
+                      key={stage}
+                      onClick={() => navigate(`/crm/opportunities?stage=${encodeURIComponent(stage)}`)}
+                      style={{
+                        background: bg,
+                        border: `1px solid ${color}33`,
+                        borderTop: `3px solid ${color}`,
+                        borderRadius: '6px',
+                        padding: '0.85rem 0.75rem',
+                        textAlign: 'center',
+                        cursor: 'pointer',
+                        transition: 'transform 0.15s ease'
+                      }}
+                      title={`View ${stage} opportunities`}
+                    >
+                      <div style={{ fontSize: '0.75rem', fontWeight: 600, color: color, marginBottom: '0.25rem' }}>
+                        {stage}
+                      </div>
+                      <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#1e293b' }}>
+                        {count}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </div>

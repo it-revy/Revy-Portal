@@ -14,6 +14,8 @@ from app.core.exceptions import (
 )
 from app.audit.service import AuditService
 from app.core.dependencies import CurrentUser
+from app.crm.permissions import is_crm_admin_or_manager
+from app.crm.financial_service import money, format_inr, format_qty, FinancialCalculator
 from app.crm.catalogue_model import (
     ServiceCategory,
     BillingUnit,
@@ -57,7 +59,7 @@ from app.crm.catalogue_schema import (
     QuotationItemInput
 )
 from app.crm.model import CrmSequence, OpportunityQuotation, Opportunity
-from app.crm.service import get_next_sequence_id
+from app.crm.service import get_next_sequence_id, record_opportunity_stage_transition
 
 logger = logging.getLogger("revy.crm.catalogue")
 
@@ -597,8 +599,12 @@ class CatalogueService:
         min_price: Optional[Decimal] = None,
         max_price: Optional[Decimal] = None,
         page: int = 1,
-        page_size: int = 25
+        page_size: int = 25,
+        limit: Optional[int] = None
     ) -> Tuple[List[Service], int]:
+        if limit is not None and limit > 0:
+            page_size = limit
+
         q = self.db.query(Service).filter(Service.is_deleted == False)
 
         if category_id:
@@ -1180,29 +1186,30 @@ class CatalogueService:
         tax_config: Optional[TaxConfiguration]
     ) -> Dict[str, Any]:
         """
-        Decimal-safe calculation of CGST, SGST, IGST and final totals.
+        Decimal-safe calculation of CGST, SGST, IGST and final totals with paise rounding.
         """
+        taxable = money(taxable_amount)
         result = {
             "tax_type": tax_config.tax_type if tax_config else "EXEMPT",
             "cgst_rate": Decimal("0.0"),
-            "cgst_amount": Decimal("0.0"),
+            "cgst_amount": Decimal("0.00"),
             "sgst_rate": Decimal("0.0"),
-            "sgst_amount": Decimal("0.0"),
+            "sgst_amount": Decimal("0.00"),
             "igst_rate": Decimal("0.0"),
-            "igst_amount": Decimal("0.0"),
-            "total_tax": Decimal("0.0"),
-            "final_total": taxable_amount
+            "igst_amount": Decimal("0.00"),
+            "total_tax": Decimal("0.00"),
+            "final_total": taxable
         }
 
-        if not tax_config or not tax_config.rates:
+        if not tax_config or not tax_config.rates or tax_config.tax_type == "EXEMPT":
             return result
 
-        total_tax = Decimal("0.0")
+        total_tax = Decimal("0.00")
         for rate in tax_config.rates:
             if not rate.is_active:
                 continue
             rate_pct = Decimal(str(rate.rate_percentage))
-            comp_amount = (taxable_amount * (rate_pct / Decimal("100.0"))).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+            comp_amount = money(taxable * (rate_pct / Decimal("100.0")))
             comp_name = rate.component_name.upper()
 
             if "CGST" in comp_name:
@@ -1218,7 +1225,7 @@ class CatalogueService:
             total_tax += comp_amount
 
         result["total_tax"] = total_tax
-        result["final_total"] = taxable_amount + total_tax
+        result["final_total"] = taxable + total_tax
         return result
 
     def add_item_to_quotation(
@@ -1228,6 +1235,9 @@ class CatalogueService:
         payload: QuotationItemInput,
         request: Any = None
     ) -> OpportunityQuotationItem:
+        if not is_crm_admin_or_manager(actor):
+            raise PermissionDeniedError("Only CRM Admin and CRM Manager have permission to modify quotations.")
+
         quotation = self.db.query(OpportunityQuotation).filter(
             OpportunityQuotation.id == quotation_id
         ).first()
@@ -1249,20 +1259,39 @@ class CatalogueService:
                 TaxConfiguration.is_active == True
             ).first()
 
+        qty = Decimal(str(payload.quantity if payload.quantity is not None else 1))
+        if qty < 1:
+            raise ValidationError("Quantity must be at least 1.")
+
         if payload.itemType == "SERVICE":
             if not payload.serviceId:
                 raise ValidationError("Service ID is mandatory for service line items.")
             svc = self.get_service(payload.serviceId, as_of_date=quotation_date)
+            if not svc.is_active:
+                raise ValidationError(f"Service '{svc.name}' is inactive and cannot be added.")
 
-            if payload.quantity < svc.minimum_billing_quantity:
+            if qty < svc.minimum_billing_quantity:
                 raise ValidationError(
-                    f"Quantity {payload.quantity} is below minimum billing quantity {svc.minimum_billing_quantity} for '{svc.name}'."
+                    f"Quantity {qty} is below minimum billing quantity {svc.minimum_billing_quantity} for '{svc.name}'."
                 )
 
             std_price = svc.effective_price or svc.standard_price
-            unit_price = getattr(payload, "unitPrice", None) if getattr(payload, "unitPrice", None) is not None else (getattr(payload, "negotiatedUnitPrice", None) if getattr(payload, "negotiatedUnitPrice", None) is not None else std_price)
-            taxable_amount = Decimal(str(unit_price)) * Decimal(str(payload.quantity))
+            raw_unit_price = getattr(payload, "unitPrice", None) if getattr(payload, "unitPrice", None) is not None else (getattr(payload, "negotiatedUnitPrice", None) if getattr(payload, "negotiatedUnitPrice", None) is not None else std_price)
+            unit_price = money(raw_unit_price if raw_unit_price is not None else 0)
+            if unit_price < Decimal("0.00"):
+                raise ValidationError("Unit price cannot be negative.")
 
+            gross_amount = money(qty * unit_price)
+            raw_disc = getattr(payload, "discountAmount", None) or getattr(payload, "discount_amount", 0) or 0
+            discount_amount = money(raw_disc)
+            if discount_amount < Decimal("0.00"):
+                raise ValidationError("Discount cannot be negative.")
+            if discount_amount > gross_amount:
+                raise ValidationError(
+                    f"Discount ({format_inr(discount_amount)}) cannot exceed gross line amount ({format_inr(gross_amount)}) for '{svc.name}'."
+                )
+
+            taxable_amount = money(gross_amount - discount_amount)
             tax_res = self.calculate_tax(taxable_amount, tax_config)
 
             # Testing method snapshot
@@ -1318,10 +1347,11 @@ class CatalogueService:
                 item_name=svc.name,
                 description=svc.description,
                 billing_unit=svc.billing_unit.code if svc.billing_unit else None,
-                quantity=payload.quantity,
+                quantity=int(qty),
                 standard_price=std_price,
                 unit_price=unit_price,
-                total_price=taxable_amount,
+                discount_amount=discount_amount,
+                total_price=gross_amount,
                 currency=svc.currency.code if svc.currency else "INR",
                 testing_method_snapshot=method_snapshot,
                 reporting_parameters_snapshot=reporting_snapshot,
@@ -1351,6 +1381,8 @@ class CatalogueService:
             if not payload.packageId:
                 raise ValidationError("Package ID is mandatory for package line items.")
             pkg = self.get_package(payload.packageId)
+            if not pkg.is_active:
+                raise ValidationError(f"Package '{pkg.name}' is inactive and cannot be added.")
 
             # Get latest active version or specified version
             if payload.packageVersionId:
@@ -1364,9 +1396,22 @@ class CatalogueService:
                 raise ValidationError("Package has no active versions.")
 
             std_price = ver.fixed_price
-            unit_price = payload.negotiatedUnitPrice if payload.negotiatedUnitPrice is not None else std_price
-            taxable_amount = Decimal(str(unit_price)) * Decimal(str(payload.quantity))
+            raw_unit_price = getattr(payload, "unitPrice", None) if getattr(payload, "unitPrice", None) is not None else (payload.negotiatedUnitPrice if payload.negotiatedUnitPrice is not None else std_price)
+            unit_price = money(raw_unit_price if raw_unit_price is not None else 0)
+            if unit_price < Decimal("0.00"):
+                raise ValidationError("Unit price cannot be negative.")
 
+            gross_amount = money(qty * unit_price)
+            raw_disc = getattr(payload, "discountAmount", None) or getattr(payload, "discount_amount", 0) or 0
+            discount_amount = money(raw_disc)
+            if discount_amount < Decimal("0.00"):
+                raise ValidationError("Discount cannot be negative.")
+            if discount_amount > gross_amount:
+                raise ValidationError(
+                    f"Discount ({format_inr(discount_amount)}) cannot exceed gross line amount ({format_inr(gross_amount)}) for '{pkg.name}'."
+                )
+
+            taxable_amount = money(gross_amount - discount_amount)
             tax_res = self.calculate_tax(taxable_amount, tax_config)
 
             # Snapshot components with quantities multiplied by package quantity
@@ -1378,7 +1423,7 @@ class CatalogueService:
                     "service_code": svc.service_code if svc else None,
                     "service_name": svc.name if svc else None,
                     "unit_quantity": comp.quantity,
-                    "total_quantity": comp.quantity * payload.quantity,
+                    "total_quantity": comp.quantity * int(qty),
                     "reference_price": float(comp.reference_price)
                 })
 
@@ -1391,10 +1436,11 @@ class CatalogueService:
                 item_name=pkg.name,
                 description=pkg.description,
                 billing_unit="PACKAGE",
-                quantity=payload.quantity,
+                quantity=int(qty),
                 standard_price=std_price,
                 unit_price=unit_price,
-                total_price=taxable_amount,
+                discount_amount=discount_amount,
+                total_price=gross_amount,
                 currency=ver.currency.code if ver.currency else "INR",
                 package_components_snapshot=json.dumps(component_snapshots),
                 tax_configuration_id=tax_config.id if tax_config else None,
@@ -1424,27 +1470,75 @@ class CatalogueService:
             if not payload.serviceId:
                 raise ValidationError("Add-on service ID is mandatory.")
             svc = self.get_service(payload.serviceId, as_of_date=quotation_date)
+            if not svc.is_active:
+                raise ValidationError(f"Service '{svc.name}' is not active.")
             if not svc.is_addon_eligible:
                 raise ValidationError(f"Service '{svc.name}' is not marked as add-on eligible.")
 
-            std_price = svc.effective_price or svc.standard_price
-            unit_price = getattr(payload, "unitPrice", None) if getattr(payload, "unitPrice", None) is not None else (getattr(payload, "negotiatedUnitPrice", None) if getattr(payload, "negotiatedUnitPrice", None) is not None else std_price)
-            taxable_amount = Decimal(str(unit_price)) * Decimal(str(payload.quantity))
+            # Validate Parent Item
+            if not payload.parentItemId:
+                raise ValidationError("An add-on must be attached to a parent package item in the quotation.")
+            parent_item = self.db.query(OpportunityQuotationItem).filter(
+                OpportunityQuotationItem.id == payload.parentItemId
+            ).first()
+            if not parent_item:
+                raise ValidationError("Parent quotation item not found.")
+            if parent_item.quotation_id != quotation.id:
+                raise ValidationError("Parent item does not belong to the same quotation.")
+            if parent_item.item_type != "PACKAGE":
+                raise ValidationError("Parent item must be a package item.")
+
+            # Validate that this add-on service is configured for the parent package version
+            pkg_ver_id = parent_item.package_version_id
+            if not pkg_ver_id and parent_item.package_id:
+                pkg = self.get_package(parent_item.package_id)
+                pkg_ver_id = pkg.versions[0].id if pkg.versions else None
+
+            addon_config = self.db.query(PackageAddOnConfiguration).filter(
+                PackageAddOnConfiguration.package_version_id == pkg_ver_id,
+                PackageAddOnConfiguration.addon_service_id == svc.id
+            ).first()
+            if not addon_config:
+                raise ValidationError(
+                    f"Service '{svc.name}' is not configured as an eligible add-on for package '{parent_item.item_name}'."
+                )
+
+            # Price override and default quantity
+            std_price = addon_config.override_price if addon_config.override_price is not None else (svc.effective_price or svc.standard_price)
+            raw_unit_price = getattr(payload, "unitPrice", None) if getattr(payload, "unitPrice", None) is not None else (getattr(payload, "negotiatedUnitPrice", None) if getattr(payload, "negotiatedUnitPrice", None) is not None else std_price)
+            unit_price = money(raw_unit_price if raw_unit_price is not None else 0)
+            if unit_price < Decimal("0.00"):
+                raise ValidationError("Unit price cannot be negative.")
+
+            item_qty = addon_config.default_quantity if (payload.quantity is None or payload.quantity == 1) else int(payload.quantity)
+
+            gross_amount = money(Decimal(str(item_qty)) * unit_price)
+            raw_disc = getattr(payload, "discountAmount", None) or getattr(payload, "discount_amount", 0) or 0
+            discount_amount = money(raw_disc)
+            if discount_amount < Decimal("0.00"):
+                raise ValidationError("Discount cannot be negative.")
+            if discount_amount > gross_amount:
+                raise ValidationError(
+                    f"Discount ({format_inr(discount_amount)}) cannot exceed gross line amount ({format_inr(gross_amount)}) for '[Add-On] {svc.name}'."
+                )
+
+            taxable_amount = money(gross_amount - discount_amount)
             tax_res = self.calculate_tax(taxable_amount, tax_config)
 
             item = OpportunityQuotationItem(
                 quotation_id=quotation.id,
                 item_type="ADDON",
                 service_id=svc.id,
-                parent_item_id=payload.parentItemId,
+                parent_item_id=parent_item.id,
                 item_code=svc.service_code,
                 item_name=f"[Add-On] {svc.name}",
                 description=svc.description,
                 billing_unit="ADDON",
-                quantity=payload.quantity,
+                quantity=item_qty,
                 standard_price=std_price,
                 unit_price=unit_price,
-                total_price=taxable_amount,
+                discount_amount=discount_amount,
+                total_price=gross_amount,
                 currency=svc.currency.code if svc.currency else "INR",
                 tax_configuration_id=tax_config.id if tax_config else None,
                 tax_type=tax_res["tax_type"],
@@ -1470,10 +1564,10 @@ class CatalogueService:
 
         elif payload.itemType in ("CUSTOM_SERVICE", "CUSTOM_PRODUCT", "PRODUCT"):
             item_name = (getattr(payload, "itemName", None) or "Custom Item").strip()
-            unit_price = getattr(payload, "unitPrice", None) if getattr(payload, "unitPrice", None) is not None else getattr(payload, "negotiatedUnitPrice", Decimal("0.0"))
-            if unit_price is None:
-                unit_price = Decimal("0.0")
-            unit_price = Decimal(str(unit_price))
+            raw_unit_price = getattr(payload, "unitPrice", None) if getattr(payload, "unitPrice", None) is not None else getattr(payload, "negotiatedUnitPrice", Decimal("0.0"))
+            unit_price = money(raw_unit_price if raw_unit_price is not None else 0)
+            if unit_price < Decimal("0.00"):
+                raise ValidationError("Unit price cannot be negative.")
 
             service_rec = None
             if getattr(payload, "savePermanently", False):
@@ -1508,10 +1602,17 @@ class CatalogueService:
                 self.db.add(service_rec)
                 self.db.flush()
 
-            line_discount = Decimal(str(getattr(payload, "discountAmount", 0) or 0))
-            taxable_amount = (Decimal(str(payload.quantity)) * unit_price) - line_discount
-            if taxable_amount < 0:
-                taxable_amount = Decimal("0.0")
+            gross_amount = money(qty * unit_price)
+            raw_disc = getattr(payload, "discountAmount", None) or getattr(payload, "discount_amount", 0) or 0
+            discount_amount = money(raw_disc)
+            if discount_amount < Decimal("0.00"):
+                raise ValidationError("Discount cannot be negative.")
+            if discount_amount > gross_amount:
+                raise ValidationError(
+                    f"Discount ({format_inr(discount_amount)}) cannot exceed gross line amount ({format_inr(gross_amount)})."
+                )
+
+            taxable_amount = money(gross_amount - discount_amount)
             tax_res = self.calculate_tax(taxable_amount, tax_config)
 
             item = OpportunityQuotationItem(
@@ -1522,11 +1623,11 @@ class CatalogueService:
                 item_name=item_name,
                 description=getattr(payload, "description", None),
                 billing_unit=getattr(payload, "billingUnit", None) or (service_rec.billing_unit.code if (service_rec and service_rec.billing_unit) else "Unit"),
-                quantity=payload.quantity,
+                quantity=int(qty),
                 standard_price=unit_price,
                 unit_price=unit_price,
-                discount_amount=line_discount,
-                total_price=taxable_amount,
+                discount_amount=discount_amount,
+                total_price=gross_amount,
                 currency="INR",
                 tax_configuration_id=tax_config.id if tax_config else None,
                 tax_type=tax_res["tax_type"],
@@ -1564,6 +1665,9 @@ class CatalogueService:
         return items
 
     def remove_quotation_item(self, actor: CurrentUser, quotation_id: str, item_id: str, request: Any = None):
+        if not is_crm_admin_or_manager(actor):
+            raise PermissionDeniedError("Only CRM Admin and CRM Manager have permission to modify quotations.")
+
         item = self.db.query(OpportunityQuotationItem).filter(
             OpportunityQuotationItem.id == item_id,
             OpportunityQuotationItem.quotation_id == quotation_id
@@ -1589,9 +1693,14 @@ class CatalogueService:
         request: Any = None
     ) -> OpportunityQuotation:
         """
-        Maintains only the single current quotation per opportunity.
-        Replaces existing quotation line items cleanly without creating revision history.
+        Saves the quotation for the specified opportunity.
+        Enforces automatic revisioning (R1 -> R2 -> R3) when material changes are made,
+        preserving previous revisions and historical data.
+        Non-material changes (notes, terms, title) update the existing revision without creating spurious revisions.
         """
+        if not is_crm_admin_or_manager(actor):
+            raise PermissionDeniedError("Only CRM Admin and CRM Manager have permission to save quotations.")
+
         opp = self.db.query(Opportunity).filter(
             or_(Opportunity.id == opp_id, Opportunity.opportunity_id == opp_id)
         ).first()
@@ -1599,7 +1708,7 @@ class CatalogueService:
             raise NotFoundError(f"Opportunity '{opp_id}' not found.")
 
         # Find existing active quotation
-        quotation = self.db.query(OpportunityQuotation).filter(
+        active_quotation = self.db.query(OpportunityQuotation).filter(
             OpportunityQuotation.opportunity_id == opp.id,
             OpportunityQuotation.is_active == True
         ).first()
@@ -1612,21 +1721,39 @@ class CatalogueService:
         currency = payload.get("currency") or "INR"
         tax_type = payload.get("taxType") or "INTRA_STATE"
         tax_config_id = payload.get("taxConfigurationId")
-        if not tax_config_id and tax_type in ("INTRA_STATE", "INTER_STATE"):
+        matched_tax = None
+        if tax_config_id:
+            matched_tax = self.db.query(TaxConfiguration).filter(
+                TaxConfiguration.id == tax_config_id,
+                TaxConfiguration.tax_type == tax_type,
+                TaxConfiguration.is_active == True
+            ).first()
+
+        if not matched_tax and tax_type in ("INTRA_STATE", "INTER_STATE", "EXEMPT"):
             def_tax = self.db.query(TaxConfiguration).filter(
                 TaxConfiguration.tax_type == tax_type,
                 TaxConfiguration.is_active == True
             ).first()
             if def_tax:
                 tax_config_id = def_tax.id
+        elif matched_tax:
+            tax_config_id = matched_tax.id
 
-        if not quotation:
+        raw_items = payload.get("items") or []
+
+        # Determine whether this is a new quotation, a revision, or an in-place update
+        target_quotation = None
+        is_material_revision = False
+        is_first_quotation = (active_quotation is None)
+
+        if not active_quotation:
+            # First quotation for this opportunity: Revision 1
             quotation_num = get_next_sequence_id(self.db, "QUOTATION", "QT", padding=5, commit=False)
-            quotation = OpportunityQuotation(
+            target_quotation = OpportunityQuotation(
                 quotation_number=quotation_num,
                 opportunity_id=opp.id,
                 revision_number=1,
-                version="v1",
+                version="R1",
                 is_active=True,
                 title=title,
                 status="Draft",
@@ -1640,27 +1767,100 @@ class CatalogueService:
                 created_by_id=str(actor.id) if getattr(actor, "id", None) else None,
                 updated_by_id=str(actor.id) if getattr(actor, "id", None) else None
             )
-            self.db.add(quotation)
+            self.db.add(target_quotation)
             self.db.flush()
         else:
-            quotation.title = title
-            quotation.quotation_date = q_date
-            quotation.valid_until_date = valid_until
-            quotation.terms_and_conditions = terms
-            quotation.notes = notes
-            quotation.currency = currency
-            quotation.tax_type = tax_type
-            quotation.tax_configuration_id = tax_config_id
-            quotation.updated_by_id = str(actor.id) if getattr(actor, "id", None) else None
-            quotation.updated_at = datetime.now(timezone.utc)
-            # Remove old items to replace with updated set
-            self.db.query(OpportunityQuotationItem).filter(
-                OpportunityQuotationItem.quotation_id == quotation.id
-            ).delete()
-            self.db.flush()
+            # Check if active quotation already has commercial items
+            existing_items = active_quotation.items or []
+            if len(existing_items) > 0 and len(raw_items) > 0:
+                # Material change detection: Compare commercial properties
+                items_changed = False
+                if len(existing_items) != len(raw_items):
+                    items_changed = True
+                else:
+                    for e_it, r_it in zip(existing_items, raw_items):
+                        r_code = r_it.get("itemCode") or r_it.get("item_code") or ""
+                        r_type = r_it.get("itemType") or r_it.get("item_type") or ""
+                        r_qty = int(r_it.get("quantity") or 1)
+                        r_price = money(r_it.get("unitPrice") if r_it.get("unitPrice") is not None else (r_it.get("negotiatedUnitPrice") or 0))
+                        r_disc = money(r_it.get("discountAmount") or r_it.get("discount_amount") or 0)
 
-        # Add all line items
-        raw_items = payload.get("items") or []
+                        r_srv = r_it.get("serviceId") or r_it.get("service_id")
+                        r_pkg = r_it.get("packageId") or r_it.get("package_id")
+
+                        id_mismatch = False
+                        if r_srv and e_it.service_id != r_srv:
+                            id_mismatch = True
+                        elif r_pkg and e_it.package_id != r_pkg:
+                            id_mismatch = True
+                        elif r_code and e_it.item_code != r_code:
+                            id_mismatch = True
+
+                        if (id_mismatch or
+                            e_it.item_type != r_type or
+                            e_it.quantity != r_qty or
+                            money(e_it.unit_price) != r_price or
+                            money(e_it.discount_amount) != r_disc):
+                            items_changed = True
+                            break
+
+                if items_changed or active_quotation.tax_type != tax_type:
+                    is_material_revision = True
+
+            if is_material_revision:
+                # Supersede previous revision and create next revision
+                active_quotation.is_active = False
+                active_quotation.status = "Superseded"
+                active_quotation.updated_at = datetime.now(timezone.utc)
+
+                next_rev_num = active_quotation.revision_number + 1
+                target_quotation = OpportunityQuotation(
+                    quotation_number=active_quotation.quotation_number,
+                    opportunity_id=opp.id,
+                    revision_number=next_rev_num,
+                    version=f"R{next_rev_num}",
+                    is_active=True,
+                    title=title,
+                    status="Draft",
+                    currency=currency,
+                    quotation_date=q_date,
+                    valid_until_date=valid_until,
+                    terms_and_conditions=terms,
+                    notes=notes,
+                    tax_type=tax_type,
+                    tax_configuration_id=tax_config_id,
+                    created_by_id=str(actor.id) if getattr(actor, "id", None) else None,
+                    updated_by_id=str(actor.id) if getattr(actor, "id", None) else None
+                )
+                self.db.add(target_quotation)
+                self.db.flush()
+            else:
+                # Non-material change or initially empty quotation: Update in-place
+                target_quotation = active_quotation
+                target_quotation.title = title
+                target_quotation.quotation_date = q_date
+                target_quotation.valid_until_date = valid_until
+                target_quotation.terms_and_conditions = terms
+                target_quotation.notes = notes
+                target_quotation.currency = currency
+                target_quotation.tax_type = tax_type
+                target_quotation.tax_configuration_id = tax_config_id
+                target_quotation.updated_by_id = str(actor.id) if getattr(actor, "id", None) else None
+                target_quotation.updated_at = datetime.now(timezone.utc)
+                if not (target_quotation.version or "").startswith("R"):
+                    target_quotation.version = f"R{target_quotation.revision_number}"
+
+                # Only clear items if it had items and we are repopulating
+                self.db.query(OpportunityQuotationItem).filter(
+                    OpportunityQuotationItem.quotation_id == target_quotation.id
+                ).delete()
+                self.db.flush()
+
+        # Add line items to target quotation
+        parent_map = {}
+        non_addon_items = [it for it in raw_items if (it.get("itemType") or it.get("item_type")) != "ADDON"]
+        addon_items = [it for it in raw_items if (it.get("itemType") or it.get("item_type")) == "ADDON"]
+
         subtotal = Decimal("0.00")
         total_cgst = Decimal("0.00")
         total_sgst = Decimal("0.00")
@@ -1668,36 +1868,87 @@ class CatalogueService:
         total_tax = Decimal("0.00")
         total_discount = Decimal("0.00")
 
-        for raw_item in raw_items:
+        for raw_item in non_addon_items:
             item_input = QuotationItemInput.model_validate(raw_item)
             if not item_input.taxConfigurationId:
                 item_input.taxConfigurationId = tax_config_id
-            created_item = self.add_item_to_quotation(actor, quotation.id, item_input, request)
-            subtotal += Decimal(str(created_item.total_price))
+            created_item = self.add_item_to_quotation(actor, target_quotation.id, item_input, request)
+            if raw_item.get("id"):
+                parent_map[str(raw_item["id"])] = created_item.id
+            if created_item.item_type == "PACKAGE":
+                parent_map[f"pkg_{created_item.package_id}"] = created_item.id
+
+            subtotal += Decimal(str(created_item.taxable_amount))
             total_cgst += Decimal(str(created_item.cgst_amount))
             total_sgst += Decimal(str(created_item.sgst_amount))
             total_igst += Decimal(str(created_item.igst_amount))
             total_tax += Decimal(str(created_item.total_tax))
             total_discount += Decimal(str(created_item.discount_amount or 0))
 
-        grand_total = subtotal + total_tax
-        quotation.subtotal = subtotal
-        quotation.cgst_amount = total_cgst
-        quotation.sgst_amount = total_sgst
-        quotation.igst_amount = total_igst
-        quotation.total_tax = total_tax
-        quotation.discount_amount = total_discount
-        quotation.amount = grand_total
+        # Second pass: ADDON items
+        for raw_item in addon_items:
+            p_id = raw_item.get("parentItemId") or raw_item.get("parent_item_id")
+            if p_id and str(p_id) in parent_map:
+                raw_item["parentItemId"] = parent_map[str(p_id)]
+            elif not p_id and len(parent_map) > 0:
+                raw_item["parentItemId"] = list(parent_map.values())[0]
+
+            item_input = QuotationItemInput.model_validate(raw_item)
+            if not item_input.taxConfigurationId:
+                item_input.taxConfigurationId = tax_config_id
+            created_item = self.add_item_to_quotation(actor, target_quotation.id, item_input, request)
+
+            subtotal += Decimal(str(created_item.taxable_amount))
+            total_cgst += Decimal(str(created_item.cgst_amount))
+            total_sgst += Decimal(str(created_item.sgst_amount))
+            total_igst += Decimal(str(created_item.igst_amount))
+            total_tax += Decimal(str(created_item.total_tax))
+            total_discount += Decimal(str(created_item.discount_amount or 0))
+
+        grand_total = money(subtotal + total_tax)
+        target_quotation.subtotal = subtotal
+        target_quotation.cgst_amount = total_cgst
+        target_quotation.sgst_amount = total_sgst
+        target_quotation.igst_amount = total_igst
+        target_quotation.total_tax = total_tax
+        target_quotation.discount_amount = total_discount
+        target_quotation.amount = grand_total
+
+        if is_first_quotation:
+            if opp.stage == "Enquiry":
+                record_opportunity_stage_transition(
+                    db=self.db,
+                    opp=opp,
+                    new_stage="Offer",
+                    triggering_event="FIRST_QUOTATION_CREATED",
+                    actor=actor,
+                    remarks=f"First quotation created: {target_quotation.quotation_number}",
+                    commit=False
+                )
+        elif is_material_revision:
+            if opp.stage in ("Enquiry", "Offer"):
+                record_opportunity_stage_transition(
+                    db=self.db,
+                    opp=opp,
+                    new_stage="Negotiation",
+                    triggering_event="COMMERCIAL_QUOTATION_REVISED",
+                    actor=actor,
+                    remarks=f"Commercial quotation revised to {target_quotation.version}",
+                    commit=False
+                )
 
         self.db.commit()
-        self.db.refresh(quotation)
+        self.db.refresh(target_quotation)
 
-        self._audit(actor, "CRM_QUOTATION_SAVED", "OpportunityQuotation", quotation.id, {
-            "quotation_number": quotation.quotation_number,
+        action_name = "CRM_QUOTATION_REVISED" if is_material_revision else "CRM_QUOTATION_SAVED"
+        self._audit(actor, action_name, "OpportunityQuotation", target_quotation.id, {
+            "quotation_number": target_quotation.quotation_number,
+            "revision_number": target_quotation.revision_number,
+            "version": target_quotation.version,
             "opportunity_id": opp.opportunity_id,
             "items_count": len(raw_items),
             "amount": float(grand_total)
         }, request)
 
-        return quotation
+        return target_quotation
 

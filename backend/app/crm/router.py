@@ -72,7 +72,12 @@ from app.crm.schema import (
     NurturingCancelRequest,
     NurturingDetailsResponse,
     NextActivityResponse,
-    UnifiedTimelineResponse
+    UnifiedTimelineResponse,
+    OrderConfirmationRequest,
+    PaymentTrackingRequest,
+    OpportunityDormantRequest,
+    OpportunityReactivateRequest,
+    OpportunityStageHistoryListResponse
 )
 from app.crm.nurturing_service import LeadNurturingService
 
@@ -906,6 +911,120 @@ def reopen_opportunity(
         request=request
     )
     return {"success": True, "opportunity": opp}
+
+
+@router.post("/opportunities/{opportunity_id}/confirm-order", response_model=OpportunityDetailResponse)
+def confirm_opportunity_order(
+    opportunity_id: str,
+    payload: OrderConfirmationRequest,
+    request: Request,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.edit")),
+    db: Session = Depends(get_db)
+):
+    """
+    Business event: Confirm client order and start supply/work execution.
+    Automatically transitions opportunity stage to 'Supply'.
+    """
+    service = CrmService(db)
+    opp = service.confirm_order_and_start_supply(
+        actor=current_user,
+        opp_id=opportunity_id,
+        order_reference=payload.orderReference,
+        execution_start_date=payload.executionStartDate,
+        notes=payload.notes,
+        request=request
+    )
+    return {"success": True, "opportunity": opp}
+
+
+@router.post("/opportunities/{opportunity_id}/track-payment", response_model=OpportunityDetailResponse)
+def start_opportunity_payment_tracking(
+    opportunity_id: str,
+    payload: PaymentTrackingRequest,
+    request: Request,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.edit")),
+    db: Session = Depends(get_db)
+):
+    """
+    Business event: Begin payment collection or outstanding payment tracking.
+    Automatically transitions opportunity stage to 'Payment'.
+    """
+    service = CrmService(db)
+    opp = service.start_payment_tracking(
+        actor=current_user,
+        opp_id=opportunity_id,
+        payment_terms=payload.paymentTerms,
+        expected_payment_date=payload.expectedPaymentDate,
+        outstanding_amount=payload.outstandingAmount,
+        notes=payload.notes,
+        request=request
+    )
+    return {"success": True, "opportunity": opp}
+
+
+@router.post("/opportunities/{opportunity_id}/mark-dormant", response_model=OpportunityDetailResponse)
+def mark_opportunity_dormant(
+    opportunity_id: str,
+    payload: OpportunityDormantRequest,
+    request: Request,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.edit")),
+    db: Session = Depends(get_db)
+):
+    """
+    Business event: Place opportunity on hold or mark inactive with mandatory reason.
+    Automatically transitions opportunity stage to 'Dormant'.
+    """
+    service = CrmService(db)
+    opp = service.mark_opportunity_dormant(
+        actor=current_user,
+        opp_id=opportunity_id,
+        dormancy_reason=payload.dormancyReason,
+        notes=payload.notes,
+        request=request
+    )
+    return {"success": True, "opportunity": opp}
+
+
+@router.post("/opportunities/{opportunity_id}/reactivate", response_model=OpportunityDetailResponse)
+def reactivate_opportunity(
+    opportunity_id: str,
+    payload: OpportunityReactivateRequest,
+    request: Request,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.edit")),
+    db: Session = Depends(get_db)
+):
+    """
+    Business event: Reactivate a Dormant opportunity back to its active operational pipeline stage.
+    """
+    service = CrmService(db)
+    opp = service.reactivate_opportunity(
+        actor=current_user,
+        opp_id=opportunity_id,
+        notes=payload.reactivationNotes,
+        request=request
+    )
+    return {"success": True, "opportunity": opp}
+
+
+@router.get("/opportunities/{opportunity_id}/stage-history", response_model=OpportunityStageHistoryListResponse)
+def get_opportunity_stage_history(
+    opportunity_id: str,
+    current_user: CurrentUser = Depends(require_permission("crm.lead.view")),
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieve chronological stage change history for an opportunity.
+    """
+    service = CrmService(db)
+    opp = service._get_opportunity_or_404(opportunity_id)
+    history = service.get_opportunity_stage_history(opportunity_id)
+    return {
+        "success": True,
+        "opportunityId": opp.opportunity_id,
+        "currentStage": opp.stage or "Enquiry",
+        "count": len(history),
+        "history": history
+    }
 
 
 @router.get("/analytics/revenue-metrics", response_model=RevenueMetricsResponse)

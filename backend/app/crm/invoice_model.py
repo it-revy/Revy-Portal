@@ -83,6 +83,37 @@ class ProformaInvoice(Base):
     created_by = relationship("User", foreign_keys=[created_by_id])
     revisions = relationship("ProformaInvoiceRevision", back_populates="proforma_invoice", cascade="all, delete-orphan", order_by="desc(ProformaInvoiceRevision.revision_number)")
 
+    @property
+    def current_revision(self):
+        if not self.revisions:
+            return None
+        return next((r for r in self.revisions if r.revision_number == self.current_revision_number), self.revisions[0])
+
+    @property
+    def total_amount(self):
+        rev = self.current_revision
+        return rev.grand_total if rev else Decimal("0.00")
+
+    @property
+    def subtotal_amount(self):
+        rev = self.current_revision
+        return rev.subtotal if rev else Decimal("0.00")
+
+    @property
+    def discount_amount(self):
+        rev = self.current_revision
+        if not rev:
+            return Decimal("0.00")
+        total_disc = Decimal("0.00")
+        for it in rev.items:
+            qty = Decimal(str(it.quantity or 0))
+            rate = Decimal(str(it.rate or 0))
+            amt = Decimal(str(it.amount or 0))
+            line_gross = qty * rate
+            if line_gross > amt:
+                total_disc += (line_gross - amt)
+        return total_disc
+
 
 class ProformaInvoiceRevision(Base):
     __tablename__ = "crm_proforma_invoice_revisions"

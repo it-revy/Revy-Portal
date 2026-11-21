@@ -32,8 +32,21 @@
 }
 
 * { box-sizing: border-box; }
-html { font-family: Arial, "Liberation Sans", "DejaVu Sans", Helvetica, sans-serif; font-size: 9.5pt; color: #000; }
-body { margin: 0; background-color: #f1f5f9; }
+html {
+  font-family: Arial, "Liberation Sans", "DejaVu Sans", Helvetica, sans-serif;
+  font-size: 9.5pt;
+  color: #000;
+  -webkit-print-color-adjust: exact !important;
+  print-color-adjust: exact !important;
+  color-adjust: exact !important;
+}
+body {
+  margin: 0;
+  background-color: #f1f5f9;
+  -webkit-print-color-adjust: exact !important;
+  print-color-adjust: exact !important;
+  color-adjust: exact !important;
+}
 
 .document-container {
   max-width: 210mm;
@@ -46,16 +59,48 @@ body { margin: 0; background-color: #f1f5f9; }
 }
 
 @media print {
-  body { background: transparent; }
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+  body { background: transparent !important; }
   .document-container {
-    max-width: 100%;
-    margin: 0;
-    padding: 0;
-    box-shadow: none;
-    min-height: auto;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    min-height: auto !important;
   }
   .no-print {
     display: none !important;
+  }
+  .items th {
+    background-color: var(--blue) !important;
+    color: #fff !important;
+  }
+  .items tbody tr:nth-child(even) td {
+    background-color: var(--stripe) !important;
+  }
+  .to-label {
+    background-color: var(--green) !important;
+    color: #fff !important;
+  }
+  .terms-label {
+    background-color: var(--blue) !important;
+    color: #fff !important;
+  }
+  .totals tr.grand td {
+    background-color: var(--blue) !important;
+    color: #fff !important;
+  }
+  #page-footer, .footer-bar {
+    background-color: var(--blue) !important;
+    color: #fff !important;
+  }
+  tr, .keep-together, .signature {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
   }
 }
 
@@ -299,6 +344,9 @@ td.c-sr { text-align: center; font-weight: 600; }
         <th class="c-desc">SERVICE(S) / PRODUCT(S) OFFERED</th>
         <th class="c-rate num">Rate ({{ currency_symbol or '₹' }})</th>
         <th class="c-qty num">Qty</th>
+        {% if has_discount %}
+        <th class="c-disc num">Disc ({{ currency_symbol or '₹' }})</th>
+        {% endif %}
         <th class="c-amt num">AMOUNT ({{ currency_symbol or '₹' }})</th>
       </tr>
     </thead>
@@ -317,6 +365,9 @@ td.c-sr { text-align: center; font-weight: 600; }
         </td>
         <td class="num">{{ l.rate_formatted }}</td>
         <td class="num">{{ l.quantity_formatted }} {% if l.unit %}<small>{{ l.unit }}</small>{% endif %}</td>
+        {% if has_discount %}
+        <td class="num">{{ l.discount_formatted }}</td>
+        {% endif %}
         <td class="num">{{ l.amount_formatted }}</td>
       </tr>
       {% endfor %}
@@ -347,10 +398,25 @@ td.c-sr { text-align: center; font-weight: 600; }
         </td>
         <td class="totals-cell">
           <table class="totals">
+            {% if has_discount %}
+            <tr>
+              <td class="tk">Gross Subtotal</td>
+              <td class="tv"><span class="cur">{{ currency_symbol or '₹' }}</span>{{ subtotal_gross_formatted }}</td>
+            </tr>
+            <tr>
+              <td class="tk">Discount</td>
+              <td class="tv shade">- <span class="cur">{{ currency_symbol or '₹' }}</span>{{ discount_amount_formatted }}</td>
+            </tr>
+            <tr>
+              <td class="tk">Taxable Amount</td>
+              <td class="tv"><span class="cur">{{ currency_symbol or '₹' }}</span>{{ taxable_amount_formatted }}</td>
+            </tr>
+            {% else %}
             <tr>
               <td class="tk">TOTAL</td>
-              <td class="tv"><span class="cur">{{ currency_symbol or '₹' }}</span>{{ subtotal_formatted }}</td>
+              <td class="tv"><span class="cur">{{ currency_symbol or '₹' }}</span>{{ taxable_amount_formatted }}</td>
             </tr>
+            {% endif %}
             {% if tax_type == 'INTRA_STATE' %}
               <tr>
                 <td class="tk">CGST<span class="rate"> ({{ cgst_rate_formatted }}%)</span></td>
@@ -372,7 +438,7 @@ td.c-sr { text-align: center; font-weight: 600; }
               </tr>
             {% endif %}
             <tr class="grand">
-              <td class="tk">T. Amount</td>
+              <td class="tk">Grand Total</td>
               <td class="tv"><span class="cur">{{ currency_symbol or '₹' }}</span>{{ grand_total_formatted }}</td>
             </tr>
           </table>

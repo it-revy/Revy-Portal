@@ -33,7 +33,6 @@ import {
 import { useAuth } from '../context/AuthContext';
 import crmService from '../services/crmService';
 import invoiceService from '../services/invoiceService';
-import OpportunityStageModal from '../modules/crm/components/OpportunityStageModal';
 import QuotationManagerModal from '../components/crm/QuotationManagerModal';
 import InvoicePreparationModal from '../components/crm/InvoicePreparationModal';
 import QuotationCatalogueSelector from '../components/crm/QuotationCatalogueSelector';
@@ -76,6 +75,7 @@ export default function CrmOpportunityDetailPage() {
   // Quotations and Invoicing State
   const [activeQuotation, setActiveQuotation] = useState(null);
   const [proformaInvoices, setProformaInvoices] = useState([]);
+  const [editingInvoice, setEditingInvoice] = useState(null);
   const [copyingText, setCopyingText] = useState(false);
 
   // Interaction History State
@@ -91,6 +91,16 @@ export default function CrmOpportunityDetailPage() {
     outcome: 'Follow-up Required',
     nextFollowUpDate: ''
   });
+
+  const userRoles = [
+    ...(user?.roles || []),
+    user?.role,
+    user?.user_metadata?.role
+  ].filter(Boolean).map(r => String(r).toUpperCase());
+
+  const isCrmAdminOrManager = userRoles.some(r =>
+    ['CRM_ADMIN', 'CRM_MANAGER', 'ADMIN', 'SUPERADMIN', 'DIRECTOR', 'IT_ADMIN'].includes(r)
+  );
 
   const canEdit = hasPermission('crm.opportunity.edit') || hasPermission('crm.lead.edit');
   const canChangeStage = hasPermission('crm.opportunity.edit') || hasPermission('crm.stage.update');
@@ -218,12 +228,96 @@ export default function CrmOpportunityDetailPage() {
     fetchOpportunityDetails();
   }, [fetchOpportunityDetails]);
 
+  // Stage History state & fetcher
+  const [stageHistory, setStageHistory] = useState([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  const fetchStageHistory = useCallback(async () => {
+    if (!id) return;
+    setLoadingHistory(true);
+    try {
+      const res = await crmService.getOpportunityStageHistory(id);
+      if (res.data?.success) {
+        setStageHistory(res.data.history || []);
+      }
+    } catch (err) {
+      console.error('Failed to load stage history:', err);
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, [id]);
+
   useEffect(() => {
     if (opportunity?.id) {
       fetchQuotationAndInvoices();
       fetchCommunications();
+      fetchStageHistory();
     }
-  }, [opportunity?.id, fetchQuotationAndInvoices, fetchCommunications]);
+  }, [opportunity?.id, fetchQuotationAndInvoices, fetchCommunications, fetchStageHistory]);
+
+  // Automated Stage Transition Business Handlers
+  const handleConfirmOrder = async () => {
+    const notes = window.prompt('Enter work execution / order confirmation details:', 'Order confirmed and execution initiated');
+    if (!notes) return;
+    try {
+      const res = await crmService.confirmOpportunityOrder(id, { workExecutionNotes: notes });
+      if (res.data?.success) {
+        setSuccessMsg('Order confirmed! Opportunity stage advanced to Supply.');
+        setTimeout(() => setSuccessMsg(null), 4000);
+        fetchOpportunityDetails();
+        fetchStageHistory();
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to confirm order.');
+    }
+  };
+
+  const handleTrackPayment = async () => {
+    const ref = window.prompt('Enter payment tracking reference / notes:', 'Payment tracking initiated');
+    if (!ref) return;
+    try {
+      const res = await crmService.trackOpportunityPayment(id, { paymentReference: ref });
+      if (res.data?.success) {
+        setSuccessMsg('Payment tracking started! Opportunity stage advanced to Payment.');
+        setTimeout(() => setSuccessMsg(null), 4000);
+        fetchOpportunityDetails();
+        fetchStageHistory();
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to start payment tracking.');
+    }
+  };
+
+  const handleMarkDormant = async () => {
+    const reason = window.prompt('Enter reason for marking opportunity dormant / on hold:', 'Client delayed project decision');
+    if (!reason) return;
+    try {
+      const res = await crmService.markOpportunityDormant(id, { dormantReason: reason });
+      if (res.data?.success) {
+        setSuccessMsg('Opportunity moved to Dormant stage.');
+        setTimeout(() => setSuccessMsg(null), 4000);
+        fetchOpportunityDetails();
+        fetchStageHistory();
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to mark opportunity dormant.');
+    }
+  };
+
+  const handleReactivate = async () => {
+    if (!window.confirm('Reactivate this dormant opportunity back to Enquiry stage?')) return;
+    try {
+      const res = await crmService.reactivateOpportunity(id);
+      if (res.data?.success) {
+        setSuccessMsg('Opportunity reactivated to Enquiry stage.');
+        setTimeout(() => setSuccessMsg(null), 4000);
+        fetchOpportunityDetails();
+        fetchStageHistory();
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to reactivate opportunity.');
+    }
+  };
 
   // Handle Save Overview
   const handleSaveOverview = async (e) => {
@@ -489,15 +583,52 @@ export default function CrmOpportunityDetailPage() {
               </Button>
             )}
 
-            {/* Change Stage Action */}
-            {canChangeStage && (
+            {/* Automated Stage Business Transition Actions */}
+            {opportunity?.stage === 'PI Issued' && (
+              <Button
+                variant="primary"
+                size="md"
+                icon={CheckCircle2}
+                onClick={handleConfirmOrder}
+                title="Confirm client order and initiate supply execution"
+              >
+                Confirm Order & Supply
+              </Button>
+            )}
+
+            {opportunity?.stage === 'Supply' && (
+              <Button
+                variant="primary"
+                size="md"
+                icon={DollarSign}
+                onClick={handleTrackPayment}
+                title="Commence payment collection and outstanding tracking"
+              >
+                Track Payment
+              </Button>
+            )}
+
+            {opportunity?.stage !== 'Dormant' && (
               <Button
                 variant="secondary"
                 size="md"
-                icon={RefreshCw}
-                onClick={() => setIsStageModalOpen(true)}
+                icon={Clock}
+                onClick={handleMarkDormant}
+                title="Mark opportunity inactive or put on hold"
               >
-                Change Stage
+                Mark Dormant
+              </Button>
+            )}
+
+            {opportunity?.stage === 'Dormant' && (
+              <Button
+                variant="primary"
+                size="md"
+                icon={RefreshCw}
+                onClick={handleReactivate}
+                title="Reactivate dormant opportunity"
+              >
+                Reactivate
               </Button>
             )}
 
@@ -890,10 +1021,13 @@ export default function CrmOpportunityDetailPage() {
                   <Receipt size={16} />
                   <span>Proforma Invoices & Revisions ({proformaInvoices.length})</span>
                 </h4>
-                {activeQuotation && (
+                {activeQuotation && isCrmAdminOrManager && (
                   <button
                     type="button"
-                    onClick={() => setInvoiceModalOpen(true)}
+                    onClick={() => {
+                      setEditingInvoice(null);
+                      setInvoiceModalOpen(true);
+                    }}
                     style={{ background: 'none', border: 'none', color: '#047857', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '4px' }}
                   >
                     <Plus size={13} />
@@ -947,7 +1081,22 @@ export default function CrmOpportunityDetailPage() {
                             </span>
                           </td>
                           <td style={{ padding: '8px 12px', textAlign: 'right' }}>
-                            <div style={{ display: 'inline-flex', gap: '0.5rem' }}>
+                            <div style={{ display: 'inline-flex', gap: '0.4rem', alignItems: 'center' }}>
+                              {isCrmAdminOrManager && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingInvoice(pi);
+                                    setInvoiceModalOpen(true);
+                                  }}
+                                  className="crm-btn crm-btn-secondary crm-btn-sm"
+                                  style={{ padding: '2px 7px', fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: '3px', cursor: 'pointer' }}
+                                  title="Edit Proforma Invoice"
+                                >
+                                  <Edit size={11} />
+                                  <span>Edit PI</span>
+                                </button>
+                              )}
                               <a
                                 href={invoiceService.getInvoiceHtmlUrl(pi.id)}
                                 target="_blank"
@@ -1397,23 +1546,78 @@ export default function CrmOpportunityDetailPage() {
               </div>
             </div>
           )}
+
+          {/* H. Automated Stage History Audit Trail */}
+          <div className="glass-panel" style={{ padding: '1.25rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.85rem' }}>
+              <h4 style={{
+                margin: 0,
+                fontSize: '0.95rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                color: 'var(--text-primary)'
+              }}>
+                <Clock size={16} color="var(--accent-primary)" />
+                <span>Stage History ({stageHistory.length})</span>
+              </h4>
+              <button
+                onClick={fetchStageHistory}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                title="Refresh stage history"
+              >
+                <RefreshCw size={13} className={loadingHistory ? 'spin' : ''} />
+              </button>
+            </div>
+
+            {loadingHistory ? (
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', padding: '0.75rem' }}>
+                Loading stage history...
+              </div>
+            ) : stageHistory.length === 0 ? (
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', padding: '0.75rem' }}>
+                No stage transitions recorded yet.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
+                {stageHistory.map((item) => (
+                  <div
+                    key={item.id}
+                    style={{
+                      padding: '0.65rem 0.75rem',
+                      background: '#f8fafc',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '6px',
+                      fontSize: '0.8rem'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.3rem' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', fontWeight: 600 }}>
+                        <span style={{ color: 'var(--text-muted)' }}>{item.previousStage || 'Start'}</span>
+                        <span>&rarr;</span>
+                        <span style={{ color: 'var(--accent-primary)' }}>{item.newStage}</span>
+                      </div>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                        {item.createdAt ? formatDateTime(item.createdAt) : ''}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '0.725rem', color: 'var(--text-secondary)' }}>
+                      <strong>Event:</strong> {item.triggeringEvent}
+                      {item.triggeringUserName && <span> &bull; {item.triggeringUserName}</span>}
+                    </div>
+                    {item.remarks && (
+                      <div style={{ fontSize: '0.725rem', color: 'var(--text-muted)', marginTop: '0.2rem', fontStyle: 'italic' }}>
+                        &ldquo;{item.remarks}&rdquo;
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
-
-      {/* Stage Change Modal */}
-      {isStageModalOpen && (
-        <OpportunityStageModal
-          isOpen={isStageModalOpen}
-          onClose={() => setIsStageModalOpen(false)}
-          opportunity={opportunity}
-          onSuccess={() => {
-            setIsStageModalOpen(false);
-            setSuccessMsg('Opportunity stage updated successfully.');
-            setTimeout(() => setSuccessMsg(null), 4000);
-            fetchOpportunityDetails();
-          }}
-        />
-      )}
 
       {/* Quotation Manager Modal */}
       {quotationModalOpen && (
@@ -1439,18 +1643,27 @@ export default function CrmOpportunityDetailPage() {
       )}
 
       {/* Invoice Preparation Modal */}
-      {invoiceModalOpen && activeQuotation && (
+      {invoiceModalOpen && (activeQuotation || editingInvoice) && (
         <InvoicePreparationModal
           isOpen={invoiceModalOpen}
           onClose={() => {
             setInvoiceModalOpen(false);
+            setEditingInvoice(null);
             fetchQuotationAndInvoices();
           }}
           opportunity={opportunity}
           quotation={activeQuotation}
+          editingInvoice={editingInvoice}
           onInvoiceCreated={(piData) => {
+            setEditingInvoice(null);
             fetchQuotationAndInvoices();
             setSuccessMsg(`Proforma Invoice ${piData?.piNumber || ''} created successfully.`);
+            setTimeout(() => setSuccessMsg(null), 4000);
+          }}
+          onInvoiceUpdated={(piData) => {
+            setEditingInvoice(null);
+            fetchQuotationAndInvoices();
+            setSuccessMsg(`Proforma Invoice ${piData?.piNumber || ''} updated successfully.`);
             setTimeout(() => setSuccessMsg(null), 4000);
           }}
         />

@@ -14,10 +14,12 @@ from app.crm.invoice_schema import (
     ProformaInvoicePreviewRequest,
     ProformaInvoiceCreate,
     ProformaInvoiceRevisionCreate,
+    ProformaInvoiceUpdate,
     ProformaInvoiceDetailResponse,
     ProformaInvoiceRevisionResponse,
     CollateralListResponse
 )
+from app.crm.permissions import require_crm_read, require_crm_write
 
 router = APIRouter(prefix="/crm", tags=["CRM Collateral & Proforma Invoices"])
 
@@ -28,7 +30,7 @@ router = APIRouter(prefix="/crm", tags=["CRM Collateral & Proforma Invoices"])
 @router.get("/company-settings", response_model=CompanySettingsResponse)
 def get_company_settings(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_crm_read)
 ):
     service = ProformaInvoiceService(db)
     settings = service.get_company_settings()
@@ -40,7 +42,7 @@ def update_company_settings(
     payload: CompanySettingsUpdate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_crm_write)
 ):
     service = ProformaInvoiceService(db)
     try:
@@ -57,7 +59,7 @@ async def upload_company_signature(
     request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_crm_write)
 ):
     service = ProformaInvoiceService(db)
     try:
@@ -82,7 +84,7 @@ async def upload_company_signature(
 def delete_company_signature(
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_crm_write)
 ):
     service = ProformaInvoiceService(db)
     try:
@@ -140,7 +142,7 @@ def get_collateral(
     page: int = Query(1, ge=1),
     page_size: int = Query(25, ge=1, le=100),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_crm_read)
 ):
     service = ProformaInvoiceService(db)
     result = service.get_collateral_summary(view_type=view, search=search, page=page, page_size=page_size)
@@ -154,7 +156,7 @@ def get_collateral(
 def preview_proforma_invoice(
     payload: ProformaInvoicePreviewRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_crm_read)
 ):
     service = ProformaInvoiceService(db)
     try:
@@ -170,7 +172,7 @@ def preview_proforma_invoice(
 def preview_proforma_invoice_tab(
     payload: ProformaInvoicePreviewRequest,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_crm_read)
 ):
     """
     Renders preview directly as HTML for opening in a new browser tab.
@@ -186,14 +188,14 @@ def preview_proforma_invoice_tab(
 
 
 # =============================================================================
-# 4. CREATE / REVISE PROFORMA INVOICES
+# 4. CREATE / REVISE / DIRECT EDIT PROFORMA INVOICES
 # =============================================================================
 @router.post("/proforma-invoices")
 def create_proforma_invoice(
     payload: ProformaInvoiceCreate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_crm_write)
 ):
     service = ProformaInvoiceService(db)
     try:
@@ -204,6 +206,8 @@ def create_proforma_invoice(
             "proformaInvoiceId": pi.id,
             "piNumber": pi.pi_number
         }
+    except PermissionError as pe:
+        raise HTTPException(status_code=403, detail=str(pe))
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
@@ -216,7 +220,7 @@ def create_proforma_invoice_revision(
     payload: ProformaInvoiceRevisionCreate,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_crm_write)
 ):
     service = ProformaInvoiceService(db)
     try:
@@ -227,6 +231,33 @@ def create_proforma_invoice_revision(
             "revisionNumber": rev.revision_number,
             "proformaInvoiceId": pi_id
         }
+    except PermissionError as pe:
+        raise HTTPException(status_code=403, detail=str(pe))
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/proforma-invoices/{pi_id}")
+def update_proforma_invoice(
+    pi_id: str,
+    payload: ProformaInvoiceUpdate,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_crm_write)
+):
+    service = ProformaInvoiceService(db)
+    try:
+        pi = service.update_proforma_invoice(current_user, pi_id, payload, request)
+        return {
+            "success": True,
+            "message": f"Proforma Invoice {pi.pi_number} updated successfully.",
+            "proformaInvoiceId": pi.id,
+            "piNumber": pi.pi_number
+        }
+    except PermissionError as pe:
+        raise HTTPException(status_code=403, detail=str(pe))
     except ValueError as ve:
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
@@ -237,7 +268,7 @@ def create_proforma_invoice_revision(
 def get_proforma_invoice(
     pi_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_crm_read)
 ):
     service = ProformaInvoiceService(db)
     pi = service.get_proforma_invoice(pi_id)
@@ -320,7 +351,7 @@ def get_proforma_invoice(
 def get_opportunity_proforma_invoices(
     opp_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_crm_read)
 ):
     """Returns all proforma invoices linked to a given opportunity."""
     from app.crm.invoice_model import ProformaInvoice
@@ -364,7 +395,7 @@ def get_proforma_invoice_html(
     pi_id: str,
     revision: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_crm_read)
 ):
     service = ProformaInvoiceService(db)
     try:
@@ -383,7 +414,7 @@ def get_proforma_invoice_html(
 def get_quotation_email_text(
     quotation_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(require_crm_read)
 ):
     service = ProformaInvoiceService(db)
     try:

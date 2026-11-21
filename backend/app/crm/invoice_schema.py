@@ -1,5 +1,5 @@
 from typing import List, Optional, Any, Dict
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 from datetime import date as py_date, datetime
 from decimal import Decimal
 from app.crm.catalogue_schema import CamelResponseModel
@@ -71,13 +71,31 @@ class ProformaInvoiceItemInput(BaseModel):
     itemType: str = Field(default="SERVICE", alias="item_type")  # SERVICE, PACKAGE, ADDON, CUSTOM_SERVICE, CUSTOM_PRODUCT
     serviceId: Optional[str] = Field(None, alias="service_id")
     packageId: Optional[str] = Field(None, alias="package_id")
+    packageVersionId: Optional[str] = Field(None, alias="package_version_id")
     itemCode: Optional[str] = Field(None, alias="item_code")
     name: str
     description: Optional[str] = None
     quantity: Decimal = Field(default=Decimal("1.0"), gt=0)
     unit: Optional[str] = None
     rate: Decimal = Field(default=Decimal("0.0"), ge=0)
+    unitPrice: Optional[Decimal] = Field(None, alias="unit_price")
+    discountAmount: Optional[Decimal] = Field(default=Decimal("0.0"), ge=0, alias="discount_amount")
     notes: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def sync_rate_and_prices(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            r = data.get("rate") if data.get("rate") is not None else data.get("unitPrice")
+            if r is None:
+                r = data.get("unit_price", Decimal("0.0"))
+            data["rate"] = r
+            data["unitPrice"] = r
+            disc = data.get("discountAmount") if data.get("discountAmount") is not None else data.get("discount_amount")
+            if disc is None:
+                disc = data.get("discount", Decimal("0.0"))
+            data["discountAmount"] = disc
+        return data
 
 
 class ProformaInvoiceItemResponse(BaseModel):
@@ -94,6 +112,7 @@ class ProformaInvoiceItemResponse(BaseModel):
     quantity: float
     unit: Optional[str] = None
     rate: float
+    discountAmount: float = Field(default=0.0, alias="discount_amount")
     amount: float
     notes: Optional[str] = None
 
@@ -111,6 +130,8 @@ class ProformaInvoicePreviewRequest(BaseModel):
 
 
 class ProformaInvoiceCreate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     opportunityId: str = Field(..., alias="opportunity_id")
     quotationId: str = Field(..., alias="quotation_id")
     items: List[ProformaInvoiceItemInput]
@@ -123,6 +144,8 @@ class ProformaInvoiceCreate(BaseModel):
 
 
 class ProformaInvoiceRevisionCreate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     items: List[ProformaInvoiceItemInput]
     taxType: str = Field(default="INTRA_STATE", alias="tax_type")
     taxConfigurationId: Optional[str] = Field(None, alias="tax_configuration_id")
@@ -130,6 +153,19 @@ class ProformaInvoiceRevisionCreate(BaseModel):
     referenceNote: Optional[str] = Field(None, alias="reference_note")
     terms: Optional[List[str]] = None
     notes: Optional[str] = None
+
+
+class ProformaInvoiceUpdate(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    items: Optional[List[ProformaInvoiceItemInput]] = None
+    taxType: Optional[str] = Field(None, alias="tax_type")
+    taxConfigurationId: Optional[str] = Field(None, alias="tax_configuration_id")
+    piDate: Optional[py_date] = Field(None, alias="pi_date")
+    referenceNote: Optional[str] = Field(None, alias="reference_note")
+    terms: Optional[List[str]] = None
+    notes: Optional[str] = None
+    overrideReason: Optional[str] = Field(None, alias="override_reason")
 
 
 class ProformaInvoiceRevisionResponse(BaseModel):

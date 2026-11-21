@@ -267,7 +267,11 @@ export const catalogueService = {
     if (params.isActive !== undefined && params.isActive !== 'ALL') query.append('isActive', params.isActive);
     if (params.isAddonEligible !== undefined) query.append('isAddonEligible', params.isAddonEligible);
     if (params.page) query.append('page', params.page);
-    if (params.pageSize) query.append('pageSize', params.pageSize);
+    const effectivePageSize = params.pageSize || params.limit;
+    if (effectivePageSize) {
+      query.append('pageSize', effectivePageSize);
+      query.append('limit', effectivePageSize);
+    }
     const res = await API.get(`/crm/catalogue/services?${query.toString()}`);
     return wrapListResponse(res, 'services');
   },
@@ -305,7 +309,11 @@ export const catalogueService = {
     if (params.search) query.append('search', params.search);
     if (params.isActive !== undefined && params.isActive !== 'ALL') query.append('isActive', params.isActive);
     if (params.page) query.append('page', params.page);
-    if (params.pageSize) query.append('pageSize', params.pageSize);
+    const effectivePackagePageSize = params.pageSize || params.limit;
+    if (effectivePackagePageSize) {
+      query.append('pageSize', effectivePackagePageSize);
+      query.append('limit', effectivePackagePageSize);
+    }
     const res = await API.get(`/crm/catalogue/packages?${query.toString()}`);
     return wrapListResponse(res, 'packages');
   },

@@ -24,18 +24,18 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import crmService from '../services/crmService';
-import OpportunityStageModal from '../modules/crm/components/OpportunityStageModal';
 import { PageHeader, Button, SearchInput, Select, FilterBar, FilterField, Pagination } from '../components/ui';
 
-const STAGES = ['Enquiry', 'Offer', 'Negotiation', 'Supply', 'Payment', 'Dormant'];
+const STAGES = ['Enquiry', 'Offer', 'Negotiation', 'PI Issued', 'Supply', 'Payment', 'Dormant'];
 
 const STAGE_ORDER = {
   'Enquiry': 0,
   'Offer': 1,
   'Negotiation': 2,
-  'Supply': 3,
-  'Payment': 4,
-  'Dormant': 5
+  'PI Issued': 3,
+  'Supply': 4,
+  'Payment': 5,
+  'Dormant': 6
 };
 
 const BUSINESS_AREAS = ['Biogas', 'Wastewater Treatment (WWT)', 'R&D Lab', 'Solid Waste', 'Other'];
@@ -794,15 +794,15 @@ export default function CrmOpportunitiesPage() {
                         return (
                           <div
                             key={opp.id}
-                            draggable
-                            onDragStart={(e) => handleDragStart(e, opp)}
+                            draggable={false}
                             onClick={() => navigate(`/crm/opportunities/${opp.id}`)}
                             className="crm-kanban-card"
                             style={{
                               background: cardBg,
-                              border: `1px solid ${cardBorder}`
+                              border: `1px solid ${cardBorder}`,
+                              cursor: 'pointer'
                             }}
-                            title="Click to view details, or drag to request stage transition"
+                            title="Click to view full details. Stage is managed automatically via CRM business events."
                           >
                             {/* Top Bar: Code and Outcome Badge */}
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.4rem' }}>
@@ -924,25 +924,6 @@ export default function CrmOpportunitiesPage() {
                                   <Edit3 size={11} />
                                   <span>Edit</span>
                                 </Link>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setStageModalOpp(opp);
-                                  }}
-                                  className="crm-btn crm-btn-secondary crm-btn-sm"
-                                  style={{
-                                    fontSize: '0.725rem',
-                                    padding: '2px 8px',
-                                    height: 'auto',
-                                    display: 'inline-flex',
-                                    alignItems: 'center',
-                                    gap: '3px'
-                                  }}
-                                >
-                                  <TrendingUp size={11} />
-                                  <span>Stage</span>
-                                </button>
                               </div>
                             </div>
                           </div>
@@ -1098,13 +1079,6 @@ export default function CrmOpportunitiesPage() {
                             <Edit3 size={12} />
                             <span>Edit</span>
                           </Link>
-                          <button
-                            onClick={() => setStageModalOpp(opp)}
-                            className="crm-btn crm-btn-secondary crm-btn-sm"
-                            title="Advance / Transition Stage"
-                          >
-                            Stage
-                          </button>
                           <Link
                             to={`/crm/opportunities/${opp.id}`}
                             className="crm-btn crm-btn-secondary crm-btn-sm"
@@ -1131,16 +1105,6 @@ export default function CrmOpportunitiesPage() {
             onPageChange={newPage => setPage(newPage)}
           />
         </div>
-      )}
-
-      {/* Opportunity Stage Transition Modal */}
-      {stageModalOpp && (
-        <OpportunityStageModal
-          isOpen={!!stageModalOpp}
-          opportunity={stageModalOpp}
-          onClose={() => setStageModalOpp(null)}
-          onSuccess={handleOpportunityUpdated}
-        />
       )}
     </div>
   );

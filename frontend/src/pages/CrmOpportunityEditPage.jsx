@@ -24,12 +24,14 @@ import crmService from '../services/crmService';
 import { invoiceService } from '../services/invoiceService';
 import QuotationManagerModal from '../components/crm/QuotationManagerModal';
 import InvoicePreparationModal from '../components/crm/InvoicePreparationModal';
+import StatusBadge from '../components/ui/StatusBadge';
 import { PageHeader, Button } from '../components/ui';
 
 const CANONICAL_STAGES = [
   'Enquiry',
   'Offer',
   'Negotiation',
+  'PI Issued',
   'Supply',
   'Payment',
   'Dormant'
@@ -39,9 +41,10 @@ const STAGE_ORDER = {
   'Enquiry': 0,
   'Offer': 1,
   'Negotiation': 2,
-  'Supply': 3,
-  'Payment': 4,
-  'Dormant': 5
+  'PI Issued': 3,
+  'Supply': 4,
+  'Payment': 5,
+  'Dormant': 6
 };
 
 const BUSINESS_AREAS = [
@@ -859,41 +862,25 @@ export default function CrmOpportunityEditPage() {
             </p>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1.25rem' }}>
-              {/* Pipeline Stage */}
+              {/* Pipeline Stage - Controlled strictly by CRM events */}
               <div>
                 <label className="form-label" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '0.35rem' }}>
-                  Pipeline Stage <span style={{ color: 'var(--danger)' }}>*</span>
+                  Pipeline Stage (Automated)
                 </label>
-                <select
-                  className={`form-control ${fieldErrors.stage ? 'is-invalid' : ''}`}
-                  value={formData.stage}
-                  onChange={(e) => handleStageChange(e.target.value)}
-                >
-                  {CANONICAL_STAGES.map((stg) => {
-                    const originalStage = originalOpp?.stage === 'Propose' ? 'Propose/Offer' : (originalOpp?.stage || 'Enquiry');
-                    const origOrder = STAGE_ORDER[originalStage] ?? 0;
-                    const stgOrder = STAGE_ORDER[stg] ?? 0;
-                    const isBackward = stgOrder < origOrder;
-                    const disabled = isBackward && !isManager;
-
-                    return (
-                      <option key={stg} value={stg} disabled={disabled}>
-                        {stg} {disabled ? '(Requires Sales Manager)' : ''}
-                      </option>
-                    );
-                  })}
-                </select>
-                {fieldErrors.stage && (
-                  <div style={{ color: 'var(--danger)', fontSize: '0.775rem', marginTop: '0.25rem' }}>
-                    {fieldErrors.stage}
-                  </div>
-                )}
-                {!isManager && (
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.35rem', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                    <Lock size={12} />
-                    <span>Backward stage transitions disabled for non-manager role.</span>
-                  </div>
-                )}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.75rem',
+                  padding: '0.55rem 0.85rem',
+                  background: '#f8fafc',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '6px'
+                }}>
+                  <StatusBadge status={formData.stage} />
+                  <span style={{ fontSize: '0.785rem', color: 'var(--text-muted)' }}>
+                    Automated by business events (Qualify, Quotation, PI, Order, Payment)
+                  </span>
+                </div>
               </div>
 
               {/* Opportunity Outcome */}

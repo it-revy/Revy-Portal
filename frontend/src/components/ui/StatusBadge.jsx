@@ -16,7 +16,7 @@ export default function StatusBadge({
   let ResolvedIcon = null;
 
   if (!resolvedVariant) {
-    if (['ACTIVE', 'WON', 'CLOSED WON', 'QUALIFIED', 'APPROVED', 'PROVIDED', 'SUCCESS', 'NORMAL'].includes(normalized)) {
+    if (['ACTIVE', 'WON', 'CLOSED WON', 'QUALIFIED', 'APPROVED', 'PROVIDED', 'SUCCESS', 'NORMAL', 'PAYMENT'].includes(normalized)) {
       resolvedVariant = 'success';
       ResolvedIcon = CheckCircle2;
     } else if (['PENDING', 'DORMANT', 'NEGOTIATION', 'PROPOSE', 'PROPOSE/OFFER', 'DEVELOP', 'ENQUIRY', 'OFFER', 'WARNING'].includes(normalized)) {
@@ -25,7 +25,7 @@ export default function StatusBadge({
     } else if (['INACTIVE', 'LOST', 'CLOSED LOST', 'DISQUALIFIED', 'REJECTED', 'DANGER', 'PERMANENT_NON_TAKER'].includes(normalized)) {
       resolvedVariant = 'danger';
       ResolvedIcon = XCircle;
-    } else if (['OPEN', 'OPEN PIPELINE', 'INFO', 'DAILY_ENTRY', 'ADDITIONAL_ORDER'].includes(normalized)) {
+    } else if (['OPEN', 'OPEN PIPELINE', 'INFO', 'DAILY_ENTRY', 'ADDITIONAL_ORDER', 'PI ISSUED', 'SUPPLY'].includes(normalized)) {
       resolvedVariant = 'info';
       ResolvedIcon = Info;
     } else {

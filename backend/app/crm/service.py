@@ -18,7 +18,8 @@ from app.core.exceptions import (
     ConflictError
 )
 from app.users.model import User
-import app.models  # Ensure Employee, User, and core declarative models are registered in SQLAlchemy registry
+from app.crm.permissions import is_crm_admin_or_manager
+from app.crm.catalogue_model import OpportunityQuotationItem
 from app.modules.model import Module, ModuleRole, UserModuleMembership
 from app.crm.model import (
     Account,
@@ -36,8 +37,10 @@ from app.crm.model import (
     ProductTransaction,
     Milestone,
     OpportunityQuotation,
+    OpportunityStageHistory,
     CrmIdempotencyRecord
 )
+from app.crm.invoice_model import ProformaInvoice
 from app.files.model import FileMetadata
 from app.crm.schema import (
     AccountCreate,
@@ -154,6 +157,48 @@ def get_next_sequence_id(db: Session, entity_name: str, prefix: str, padding: in
                 time.sleep(0.05 * (attempt + 1))
                 continue
             raise
+
+
+def record_opportunity_stage_transition(
+    db: Session,
+    opp: Opportunity,
+    new_stage: str,
+    triggering_event: str,
+    actor: Any = None,
+    remarks: Optional[str] = None,
+    commit: bool = False
+) -> OpportunityStageHistory:
+    """
+    Centralized stage transition service for CRM Opportunities.
+    Enforces automated business transitions, updates opportunity.stage,
+    and records an immutable stage history entry.
+    """
+    old_stage = opp.stage or "Enquiry"
+
+    history_entry = OpportunityStageHistory(
+        opportunity_id=opp.id,
+        previous_stage=old_stage,
+        new_stage=new_stage,
+        triggering_event=triggering_event,
+        triggering_user_id=str(actor.id) if actor and getattr(actor, "id", None) else None,
+        triggering_user_name=getattr(actor, "name", None) or getattr(actor, "username", "System"),
+        remarks=remarks,
+        created_at=datetime.now(timezone.utc)
+    )
+    db.add(history_entry)
+
+    opp.stage = new_stage
+    opp.updated_at = datetime.now(timezone.utc)
+    if actor and getattr(actor, "id", None):
+        opp.updated_by_id = str(actor.id)
+
+    if commit:
+        db.commit()
+        db.refresh(opp)
+    else:
+        db.flush()
+
+    return history_entry
 
 
 INTERNAL_EVENT_KEYWORDS = [
@@ -2435,7 +2480,11 @@ class CrmService:
 
         # 2. Facet Filters
         if business_area and business_area != "ALL":
-            query = query.filter(Lead.business_area == business_area.strip())
+            clean_ba = business_area.strip()
+            if clean_ba.lower() in ("waste water", "wwt", "wastewater", "wastewater treatment (wwt)"):
+                query = query.filter(Lead.business_area.in_(["Waste Water", "WWT", "Wastewater", "Wastewater Treatment (WWT)"]))
+            else:
+                query = query.filter(Lead.business_area == clean_ba)
 
         if requirement_type and requirement_type != "ALL":
             clean_rt = requirement_type.strip()
@@ -3507,6 +3556,16 @@ class CrmService:
                     updated_by_id=actor_user_id
                 )
                 self.db.add(opportunity)
+                self.db.flush()
+                record_opportunity_stage_transition(
+                    db=self.db,
+                    opp=opportunity,
+                    new_stage="Enquiry",
+                    triggering_event="LEAD_QUALIFIED",
+                    actor=actor,
+                    remarks=f"Qualified from Lead {lead.lead_id}",
+                    commit=False
+                )
 
             self.db.flush()
 
@@ -3811,7 +3870,11 @@ class CrmService:
             base_query = base_query.filter(Opportunity.stage == raw_stg)
 
         if business_area and business_area.strip().upper() != "ALL":
-            base_query = base_query.filter(Opportunity.business_area == business_area.strip())
+            clean_ba = business_area.strip()
+            if clean_ba.lower() in ("waste water", "wwt", "wastewater", "wastewater treatment (wwt)"):
+                base_query = base_query.filter(Opportunity.business_area.in_(["Waste Water", "WWT", "Wastewater", "Wastewater Treatment (WWT)"]))
+            else:
+                base_query = base_query.filter(Opportunity.business_area == clean_ba)
         if assigned_to_user_id and assigned_to_user_id.strip().upper() != "ALL":
             base_query = base_query.filter(Opportunity.assigned_to_user_id == assigned_to_user_id.strip())
         if account_id and account_id.strip().upper() != "ALL":
@@ -3944,6 +4007,16 @@ class CrmService:
             updated_by_id=str(actor.id) if actor.id else None
         )
         self.db.add(opp)
+        self.db.flush()
+        record_opportunity_stage_transition(
+            db=self.db,
+            opp=opp,
+            new_stage=raw_stage,
+            triggering_event="OPPORTUNITY_CREATED",
+            actor=actor,
+            remarks="Opportunity created",
+            commit=False
+        )
         self.db.commit()
         self.db.refresh(opp)
 
@@ -4125,6 +4198,15 @@ class CrmService:
         new_stage = (payload.newStage or "").strip()
         if new_stage not in valid_stages:
             raise ValidationError(f"Invalid stage '{new_stage}'. Permitted stages are: {', '.join(valid_stages)}")
+
+        # Automated Stage Transition Governance:
+        # Opportunity stages are automated strictly by CRM business events; direct manual stage hopping is rejected.
+        if new_stage and new_stage != opp.stage:
+            raise ValidationError(
+                "Direct manual stage transitions are disabled. Opportunity stages are strictly controlled "
+                "by CRM business events (e.g. Lead Qualification, Quotation Creation, Commercial Revision, "
+                "Proforma Invoice Issuance, Order Confirmation, Payment Tracking)."
+            )
 
         STAGE_INDEX = {s: i for i, s in enumerate(valid_stages)}
         old_stage = opp.stage or "Enquiry"
@@ -4334,6 +4416,11 @@ class CrmService:
             clean_stg = payload.stage.strip()
             if clean_stg not in valid_stages:
                 raise ValidationError(f"Invalid stage '{clean_stg}'. Permitted stages are: {', '.join(valid_stages)}")
+            if clean_stg != opp.stage:
+                raise ValidationError(
+                    "Opportunity stages are fully automated by CRM business events (Quotation, PI, Order confirmation) "
+                    "and cannot be manually modified."
+                )
             proposed_stage = clean_stg
 
         proposed_status = opp.status or "Open"
@@ -4420,6 +4507,15 @@ class CrmService:
             changes["sub_status"] = {"old": opp.sub_status, "new": clean_sub}
             opp.sub_status = clean_sub
 
+        # Safely synchronize updated opportunity info into active quotation without touching commercial line items
+        if "name" in changes:
+            active_q = self.db.query(OpportunityQuotation).filter(
+                OpportunityQuotation.opportunity_id == opp.id,
+                OpportunityQuotation.is_active == True
+            ).first()
+            if active_q and (not active_q.title or "Quotation for" in active_q.title):
+                active_q.title = f"Quotation for {opp.name}"
+
         opp.updated_by_id = str(actor.id) if actor.id else None
         opp.updated_at = datetime.now(timezone.utc)
         self.db.commit()
@@ -4438,6 +4534,262 @@ class CrmService:
             logger.warning(f"Audit log failed for opportunity update {opp.opportunity_id}: {audit_err}")
 
         return self._format_opportunity(opp)
+
+    def confirm_order_and_start_supply(
+        self,
+        actor: CurrentUser,
+        opp_id: str,
+        order_reference: Optional[str] = None,
+        execution_start_date: Optional[date] = None,
+        notes: Optional[str] = None,
+        request: Optional[Request] = None
+    ) -> Dict[str, Any]:
+        opp = self.db.query(Opportunity).options(
+            joinedload(Opportunity.account),
+            joinedload(Opportunity.contact),
+            joinedload(Opportunity.originating_lead),
+            joinedload(Opportunity.assigned_to),
+            joinedload(Opportunity.created_by),
+            joinedload(Opportunity.milestones),
+            joinedload(Opportunity.consulting_engagements),
+            joinedload(Opportunity.sample_submissions),
+            joinedload(Opportunity.product_transactions),
+            selectinload(Opportunity.quotations)
+        ).filter(
+            or_(Opportunity.id == opp_id, Opportunity.opportunity_id == opp_id)
+        ).with_for_update(of=Opportunity).first()
+        if not opp:
+            raise NotFoundError(f"Opportunity '{opp_id}' not found.")
+
+        remarks_parts = []
+        if order_reference:
+            remarks_parts.append(f"Order Ref: {order_reference}")
+        if execution_start_date:
+            remarks_parts.append(f"Start Date: {execution_start_date}")
+        if notes:
+            remarks_parts.append(notes)
+        remarks_str = " | ".join(remarks_parts) if remarks_parts else "Order confirmed and supply execution started"
+
+        record_opportunity_stage_transition(
+            db=self.db,
+            opp=opp,
+            new_stage="Supply",
+            triggering_event="ORDER_CONFIRMED_SUPPLY_STARTED",
+            actor=actor,
+            remarks=remarks_str,
+            commit=True
+        )
+
+        try:
+            self.audit_service.log(
+                action="CRM_OPPORTUNITY_ORDER_CONFIRMED",
+                request=request,
+                performed_by_employee_id=str(actor.id) if actor.id else None,
+                performed_by_name=actor.name or actor.username,
+                role_used=actor.active_role,
+                target_info={"opportunity_id": opp.opportunity_id, "stage": "Supply", "order_reference": order_reference}
+            )
+        except Exception:
+            pass
+
+        return self._format_opportunity(opp)
+
+    def start_payment_tracking(
+        self,
+        actor: CurrentUser,
+        opp_id: str,
+        payment_terms: Optional[str] = None,
+        expected_payment_date: Optional[date] = None,
+        outstanding_amount: Optional[float] = None,
+        notes: Optional[str] = None,
+        request: Optional[Request] = None
+    ) -> Dict[str, Any]:
+        opp = self.db.query(Opportunity).options(
+            joinedload(Opportunity.account),
+            joinedload(Opportunity.contact),
+            joinedload(Opportunity.originating_lead),
+            joinedload(Opportunity.assigned_to),
+            joinedload(Opportunity.created_by),
+            joinedload(Opportunity.milestones),
+            joinedload(Opportunity.consulting_engagements),
+            joinedload(Opportunity.sample_submissions),
+            joinedload(Opportunity.product_transactions),
+            selectinload(Opportunity.quotations)
+        ).filter(
+            or_(Opportunity.id == opp_id, Opportunity.opportunity_id == opp_id)
+        ).with_for_update(of=Opportunity).first()
+        if not opp:
+            raise NotFoundError(f"Opportunity '{opp_id}' not found.")
+
+        remarks_parts = []
+        if payment_terms:
+            remarks_parts.append(f"Terms: {payment_terms}")
+        if expected_payment_date:
+            remarks_parts.append(f"Expected Date: {expected_payment_date}")
+        if outstanding_amount is not None:
+            remarks_parts.append(f"Amount: {outstanding_amount}")
+        if notes:
+            remarks_parts.append(notes)
+        remarks_str = " | ".join(remarks_parts) if remarks_parts else "Payment tracking and collection started"
+
+        record_opportunity_stage_transition(
+            db=self.db,
+            opp=opp,
+            new_stage="Payment",
+            triggering_event="PAYMENT_TRACKING_STARTED",
+            actor=actor,
+            remarks=remarks_str,
+            commit=True
+        )
+
+        try:
+            self.audit_service.log(
+                action="CRM_OPPORTUNITY_PAYMENT_TRACKING_STARTED",
+                request=request,
+                performed_by_employee_id=str(actor.id) if actor.id else None,
+                performed_by_name=actor.name or actor.username,
+                role_used=actor.active_role,
+                target_info={"opportunity_id": opp.opportunity_id, "stage": "Payment"}
+            )
+        except Exception:
+            pass
+
+        return self._format_opportunity(opp)
+
+    def mark_opportunity_dormant(
+        self,
+        actor: CurrentUser,
+        opp_id: str,
+        dormancy_reason: str,
+        notes: Optional[str] = None,
+        request: Optional[Request] = None
+    ) -> Dict[str, Any]:
+        if not dormancy_reason or not dormancy_reason.strip():
+            raise ValidationError("Dormancy reason is mandatory when marking an Opportunity as Dormant.")
+
+        opp = self.db.query(Opportunity).options(
+            joinedload(Opportunity.account),
+            joinedload(Opportunity.contact),
+            joinedload(Opportunity.originating_lead),
+            joinedload(Opportunity.assigned_to),
+            joinedload(Opportunity.created_by),
+            joinedload(Opportunity.milestones),
+            joinedload(Opportunity.consulting_engagements),
+            joinedload(Opportunity.sample_submissions),
+            joinedload(Opportunity.product_transactions),
+            selectinload(Opportunity.quotations)
+        ).filter(
+            or_(Opportunity.id == opp_id, Opportunity.opportunity_id == opp_id)
+        ).with_for_update(of=Opportunity).first()
+        if not opp:
+            raise NotFoundError(f"Opportunity '{opp_id}' not found.")
+
+        remarks_str = f"Reason: {dormancy_reason.strip()}"
+        if notes and notes.strip():
+            remarks_str += f" | Notes: {notes.strip()}"
+
+        record_opportunity_stage_transition(
+            db=self.db,
+            opp=opp,
+            new_stage="Dormant",
+            triggering_event="OPPORTUNITY_MARKED_DORMANT",
+            actor=actor,
+            remarks=remarks_str,
+            commit=True
+        )
+
+        try:
+            self.audit_service.log(
+                action="CRM_OPPORTUNITY_MARKED_DORMANT",
+                request=request,
+                performed_by_employee_id=str(actor.id) if actor.id else None,
+                performed_by_name=actor.name or actor.username,
+                role_used=actor.active_role,
+                target_info={"opportunity_id": opp.opportunity_id, "stage": "Dormant", "reason": dormancy_reason.strip()}
+            )
+        except Exception:
+            pass
+
+        return self._format_opportunity(opp)
+
+    def reactivate_opportunity(
+        self,
+        actor: CurrentUser,
+        opp_id: str,
+        notes: Optional[str] = None,
+        request: Optional[Request] = None
+    ) -> Dict[str, Any]:
+        opp = self.db.query(Opportunity).options(
+            joinedload(Opportunity.account),
+            joinedload(Opportunity.contact),
+            joinedload(Opportunity.originating_lead),
+            joinedload(Opportunity.assigned_to),
+            joinedload(Opportunity.created_by),
+            joinedload(Opportunity.milestones),
+            joinedload(Opportunity.consulting_engagements),
+            joinedload(Opportunity.sample_submissions),
+            joinedload(Opportunity.product_transactions),
+            selectinload(Opportunity.quotations)
+        ).filter(
+            or_(Opportunity.id == opp_id, Opportunity.opportunity_id == opp_id)
+        ).with_for_update(of=Opportunity).first()
+        if not opp:
+            raise NotFoundError(f"Opportunity '{opp_id}' not found.")
+
+        if opp.stage != "Dormant":
+            raise ValidationError(f"Opportunity '{opp.opportunity_id}' is not in Dormant stage.")
+
+        prev_hist = self.db.query(OpportunityStageHistory).filter(
+            OpportunityStageHistory.opportunity_id == opp.id,
+            OpportunityStageHistory.new_stage != "Dormant"
+        ).order_by(OpportunityStageHistory.created_at.desc()).first()
+
+        target_stage = prev_hist.new_stage if prev_hist else "Enquiry"
+
+        record_opportunity_stage_transition(
+            db=self.db,
+            opp=opp,
+            new_stage=target_stage,
+            triggering_event="OPPORTUNITY_REACTIVATED",
+            actor=actor,
+            remarks=notes or f"Opportunity reactivated from Dormant to {target_stage}",
+            commit=True
+        )
+
+        try:
+            self.audit_service.log(
+                action="CRM_OPPORTUNITY_REACTIVATED",
+                request=request,
+                performed_by_employee_id=str(actor.id) if actor.id else None,
+                performed_by_name=actor.name or actor.username,
+                role_used=actor.active_role,
+                target_info={"opportunity_id": opp.opportunity_id, "new_stage": target_stage}
+            )
+        except Exception:
+            pass
+
+        return self._format_opportunity(opp)
+
+    def get_opportunity_stage_history(self, opp_id: str) -> List[Dict[str, Any]]:
+        opp = self._get_opportunity_or_404(opp_id)
+        entries = self.db.query(OpportunityStageHistory).filter(
+            OpportunityStageHistory.opportunity_id == opp.id
+        ).order_by(desc(OpportunityStageHistory.created_at)).all()
+
+        return [
+            {
+                "id": e.id,
+                "opportunityId": e.opportunity_id,
+                "previousStage": e.previous_stage,
+                "newStage": e.new_stage,
+                "triggeringEvent": e.triggering_event,
+                "triggeringUserId": e.triggering_user_id,
+                "triggeringUserName": e.triggering_user_name,
+                "remarks": e.remarks,
+                "createdAt": e.created_at.isoformat() if e.created_at else None
+            }
+            for e in entries
+        ]
 
     def get_opportunity_workstreams(self, opp_id: str) -> List[Dict[str, Any]]:
         opp = self.db.query(Opportunity).filter(
@@ -5029,6 +5381,9 @@ class CrmService:
         payload: OpportunityQuotationCreate,
         request: Optional[Request] = None
     ) -> Dict[str, Any]:
+        if not is_crm_admin_or_manager(actor):
+            raise PermissionDeniedError("Only CRM Admin and CRM Manager have permission to create quotations.")
+
         opp = self._get_opportunity_or_404(opp_id, for_update=True)
 
         currency_val = (payload.currency or opp.currency or "INR").strip().upper()
@@ -5054,7 +5409,7 @@ class CrmService:
             quotation_number=quotation_num,
             opportunity_id=opp.id,
             revision_number=1,
-            version="v1",
+            version="R1",
             is_active=True,
             title=(payload.title or f"Quotation for {opp.name}").strip(),
             status="Draft",
@@ -5070,6 +5425,17 @@ class CrmService:
             updated_by_id=str(actor.id) if actor.id else None
         )
         self.db.add(q)
+        self.db.flush()
+        if opp.stage == "Enquiry":
+            record_opportunity_stage_transition(
+                db=self.db,
+                opp=opp,
+                new_stage="Offer",
+                triggering_event="FIRST_QUOTATION_CREATED",
+                actor=actor,
+                remarks=f"First quotation created: {q.quotation_number}",
+                commit=False
+            )
         self.db.commit()
         self.db.refresh(q)
 
@@ -5102,6 +5468,9 @@ class CrmService:
         payload: OpportunityQuotationUpdate,
         request: Optional[Request] = None
     ) -> Dict[str, Any]:
+        if not is_crm_admin_or_manager(actor):
+            raise PermissionDeniedError("Only CRM Admin and CRM Manager have permission to edit quotations.")
+
         opp = self._get_opportunity_or_404(opp_id)
         q = self.db.query(OpportunityQuotation).filter(
             OpportunityQuotation.opportunity_id == opp.id,
@@ -5382,6 +5751,9 @@ class CrmService:
         payload: OpportunityQuotationCreate,
         request: Optional[Request] = None
     ) -> Dict[str, Any]:
+        if not is_crm_admin_or_manager(actor):
+            raise PermissionDeniedError("Only CRM Admin and CRM Manager have permission to revise quotations.")
+
         opp = self._get_opportunity_or_404(opp_id, for_update=True)
         base_q = self.db.query(OpportunityQuotation).filter(
             OpportunityQuotation.opportunity_id == opp.id,
@@ -5408,7 +5780,7 @@ class CrmService:
                 eq.status = "Superseded"
 
         next_rev_num = base_q.revision_number + 1
-        ver_label = f"v{next_rev_num}"
+        ver_label = f"R{next_rev_num}"
 
         revised_q = OpportunityQuotation(
             quotation_number=base_q.quotation_number,
@@ -5418,7 +5790,15 @@ class CrmService:
             is_active=True,
             title=(payload.title or base_q.title or f"Quotation for {opp.name}").strip(),
             status="Draft",
-            amount=payload.amount,
+            amount=payload.amount if payload.amount is not None and payload.amount > 0 else base_q.amount,
+            subtotal=base_q.subtotal,
+            tax_type=base_q.tax_type,
+            tax_configuration_id=base_q.tax_configuration_id,
+            cgst_amount=base_q.cgst_amount,
+            sgst_amount=base_q.sgst_amount,
+            igst_amount=base_q.igst_amount,
+            total_tax=base_q.total_tax,
+            discount_amount=base_q.discount_amount,
             currency=currency_val,
             quotation_date=payload.quotationDate or date.today(),
             valid_until_date=payload.validUntilDate or base_q.valid_until_date,
@@ -5430,6 +5810,66 @@ class CrmService:
             updated_by_id=str(actor.id) if actor.id else None
         )
         self.db.add(revised_q)
+        self.db.flush()
+
+        # Copy line items over from base_q to revised_q to preserve commercial continuity
+        item_id_map = {}
+        for base_item in base_q.items:
+            new_item = OpportunityQuotationItem(
+                quotation_id=revised_q.id,
+                item_type=base_item.item_type,
+                service_id=base_item.service_id,
+                package_id=base_item.package_id,
+                package_version_id=base_item.package_version_id,
+                item_code=base_item.item_code,
+                item_name=base_item.item_name,
+                description=base_item.description,
+                billing_unit=base_item.billing_unit,
+                quantity=base_item.quantity,
+                standard_price=base_item.standard_price,
+                unit_price=base_item.unit_price,
+                discount_amount=base_item.discount_amount,
+                total_price=base_item.total_price,
+                currency=base_item.currency,
+                testing_method_snapshot=base_item.testing_method_snapshot,
+                reporting_parameters_snapshot=base_item.reporting_parameters_snapshot,
+                package_components_snapshot=base_item.package_components_snapshot,
+                tax_configuration_id=base_item.tax_configuration_id,
+                tax_type=base_item.tax_type,
+                taxable_amount=base_item.taxable_amount,
+                cgst_rate=base_item.cgst_rate,
+                cgst_amount=base_item.cgst_amount,
+                sgst_rate=base_item.sgst_rate,
+                sgst_amount=base_item.sgst_amount,
+                igst_rate=base_item.igst_rate,
+                igst_amount=base_item.igst_amount,
+                total_tax=base_item.total_tax,
+                final_total=base_item.final_total
+            )
+            self.db.add(new_item)
+            self.db.flush()
+            item_id_map[base_item.id] = new_item.id
+
+        # Remap parent_item_id on copied child add-on items
+        for base_item in base_q.items:
+            if base_item.parent_item_id and base_item.parent_item_id in item_id_map:
+                new_item_id = item_id_map[base_item.id]
+                new_parent_id = item_id_map[base_item.parent_item_id]
+                copied_item = self.db.query(OpportunityQuotationItem).filter(OpportunityQuotationItem.id == new_item_id).first()
+                if copied_item:
+                    copied_item.parent_item_id = new_parent_id
+
+        if opp.stage in ("Enquiry", "Offer"):
+            record_opportunity_stage_transition(
+                db=self.db,
+                opp=opp,
+                new_stage="Negotiation",
+                triggering_event="COMMERCIAL_QUOTATION_REVISED",
+                actor=actor,
+                remarks=f"Commercial quotation revised to {revised_q.version}",
+                commit=False
+            )
+
         self.db.commit()
         self.db.refresh(revised_q)
 
@@ -5726,6 +6166,20 @@ class CrmService:
             Lead.next_follow_up_date < today_ist
         ).scalar() or 0
 
+        # Sales Funnel Metrics
+        quotations_created = self.db.query(func.count(func.distinct(OpportunityQuotation.opportunity_id))).scalar() or 0
+        pis_created = self.db.query(func.count(func.distinct(ProformaInvoice.opportunity_id))).scalar() or 0
+
+        lead_to_qual_rate = round((qualified_leads / total_leads * 100), 1) if total_leads > 0 else 0.0
+        qual_to_quote_rate = round((quotations_created / qualified_leads * 100), 1) if qualified_leads > 0 else 0.0
+        quote_to_pi_rate = round((pis_created / quotations_created * 100), 1) if quotations_created > 0 else 0.0
+        overall_lead_to_pi_rate = round((pis_created / total_leads * 100), 1) if total_leads > 0 else 0.0
+
+        stage_counts = {}
+        for stg in OPPORTUNITY_STAGES:
+            cnt = self.db.query(func.count(Opportunity.id)).filter(Opportunity.stage == stg).scalar() or 0
+            stage_counts[stg] = cnt
+
         return {
             "success": True,
             "totalLeads": total_leads,
@@ -5734,7 +6188,14 @@ class CrmService:
             "disqualifiedLeads": disqualified_leads,
             "myLeads": my_leads,
             "followUpsDue": follow_ups_due,
-            "overdueFollowUps": overdue_follow_ups
+            "overdueFollowUps": overdue_follow_ups,
+            "quotationsCreated": quotations_created,
+            "pisCreated": pis_created,
+            "leadToQualificationRate": lead_to_qual_rate,
+            "qualificationToQuotationRate": qual_to_quote_rate,
+            "quotationToPiRate": quote_to_pi_rate,
+            "overallLeadToPiRate": overall_lead_to_pi_rate,
+            "opportunityCountByStage": stage_counts
         }
 
     def list_eligible_assignees(self) -> List[Dict[str, Any]]:

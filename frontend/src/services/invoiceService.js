@@ -54,6 +54,10 @@ export const invoiceService = {
     return API.post('/crm/proforma-invoices', data);
   },
 
+  updateProformaInvoice: async (piId, data) => {
+    return API.put(`/crm/proforma-invoices/${piId}`, data);
+  },
+
   createInvoiceRevision: async (piId, data) => {
     return API.post(`/crm/proforma-invoices/${piId}/revisions`, data);
   },

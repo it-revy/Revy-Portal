@@ -55,7 +55,6 @@ export default function CrmLeadsPage() {
 
   const [search, setSearch] = useState('');
   const [businessArea, setBusinessArea] = useState('ALL');
-  const [requirementType, setRequirementType] = useState('ALL');
   const [lifecycleStatus, setLifecycleStatus] = useState(urlStatus);
   const [sortBy, setSortBy] = useState('created_at');
   const [sortOrder, setSortOrder] = useState('desc');
@@ -88,7 +87,6 @@ export default function CrmLeadsPage() {
 
       if (search.trim()) params.search = search.trim();
       if (businessArea !== 'ALL') params.businessArea = businessArea;
-      if (requirementType !== 'ALL') params.requirementType = requirementType;
       if (currentView === 'all' && lifecycleStatus !== 'ALL') {
         params.lifecycleStatus = lifecycleStatus;
       }
@@ -112,7 +110,7 @@ export default function CrmLeadsPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentView, page, pageSize, sortBy, sortOrder, search, businessArea, requirementType, lifecycleStatus]);
+  }, [currentView, page, pageSize, sortBy, sortOrder, search, businessArea, lifecycleStatus]);
 
   useEffect(() => {
     if (location.state?.successMessage) {
@@ -309,22 +307,7 @@ export default function CrmLeadsPage() {
               options={[
                 { value: 'ALL', label: 'All Areas' },
                 { value: 'Biogas', label: 'Biogas' },
-                { value: 'WWT', label: 'WWT' }
-              ]}
-            />
-          </FilterField>
-
-          {/* Requirement Type */}
-          <FilterField label="Requirement">
-            <Select
-              size="md"
-              value={requirementType}
-              onChange={e => { setRequirementType(e.target.value); setPage(1); }}
-              options={[
-                { value: 'ALL', label: 'All Types' },
-                { value: 'Consulting', label: 'Consulting' },
-                { value: 'Sample Testing', label: 'Sample Testing' },
-                { value: 'Product', label: 'Product' }
+                { value: 'Waste Water', label: 'Waste Water' }
               ]}
             />
           </FilterField>
@@ -456,7 +439,7 @@ export default function CrmLeadsPage() {
                     </div>
                   </th>
                   <th style={{ minWidth: '200px' }}>Account</th>
-                  <th style={{ minWidth: '170px' }}>Area & Type</th>
+                  <th style={{ minWidth: '130px' }}>Business Area</th>
                   <th
                     onClick={() => handleSortChange('next_follow_up_date')}
                     className="sortable"
@@ -493,7 +476,7 @@ export default function CrmLeadsPage() {
                     </div>
                   </th>
                   <th style={{ minWidth: '200px' }}>Account & Contact</th>
-                  <th style={{ minWidth: '170px' }}>Area & Type</th>
+                  <th style={{ minWidth: '130px' }}>Business Area</th>
                   <th style={{ width: '120px', minWidth: '110px' }}>Status</th>
                   <th style={{ minWidth: '150px' }}>Assigned To</th>
                   <th
@@ -593,18 +576,11 @@ export default function CrmLeadsPage() {
                           )}
                         </td>
 
-                        {/* 3. Area & Type */}
+                        {/* 3. Business Area */}
                         <td>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
-                            <span className={`crm-badge ${lead.businessArea === 'Biogas' ? 'crm-badge-area-biogas' : 'crm-badge-area-wwt'}`}>
-                              {lead.businessArea}
-                            </span>
-                            {(lead.requirementTypes && lead.requirementTypes.length > 0 ? lead.requirementTypes : [lead.requirementType || 'Consulting']).map((type, idx) => (
-                              <span key={idx} className="crm-badge crm-badge-type">
-                                {type}
-                              </span>
-                            ))}
-                          </div>
+                          <span className={`crm-badge ${lead.businessArea === 'Biogas' ? 'crm-badge-area-biogas' : 'crm-badge-area-wwt'}`}>
+                            {lead.businessArea}
+                          </span>
                         </td>
 
                         {/* 4. Next Follow-up */}
@@ -733,18 +709,11 @@ export default function CrmLeadsPage() {
                         )}
                       </td>
 
-                      {/* 4. Area & Type */}
+                      {/* 4. Business Area */}
                       <td>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                          <span className={`crm-badge ${lead.businessArea === 'Biogas' ? 'crm-badge-area-biogas' : 'crm-badge-area-wwt'}`}>
-                            {lead.businessArea}
-                          </span>
-                          {(lead.requirementTypes && lead.requirementTypes.length > 0 ? lead.requirementTypes : [lead.requirementType || 'Consulting']).map((type, idx) => (
-                            <span key={idx} className="crm-badge crm-badge-type">
-                              {type}
-                            </span>
-                          ))}
-                        </div>
+                        <span className={`crm-badge ${lead.businessArea === 'Biogas' ? 'crm-badge-area-biogas' : 'crm-badge-area-wwt'}`}>
+                          {lead.businessArea}
+                        </span>
                       </td>
 
                       {/* 5. Status */}

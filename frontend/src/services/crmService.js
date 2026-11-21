@@ -103,6 +103,27 @@ export const crmService = {
     return API.post(`/crm/opportunities/${id}/reopen`, data);
   },
 
+  // Automated stage transition business operations
+  confirmOpportunityOrder: async (id, data = {}) => {
+    return API.post(`/crm/opportunities/${id}/confirm-order`, data);
+  },
+
+  trackOpportunityPayment: async (id, data = {}) => {
+    return API.post(`/crm/opportunities/${id}/track-payment`, data);
+  },
+
+  markOpportunityDormant: async (id, data = {}) => {
+    return API.post(`/crm/opportunities/${id}/mark-dormant`, data);
+  },
+
+  reactivateOpportunity: async (id, data = {}) => {
+    return API.post(`/crm/opportunities/${id}/reactivate`, data);
+  },
+
+  getOpportunityStageHistory: async (id) => {
+    return API.get(`/crm/opportunities/${id}/stage-history`);
+  },
+
   getRevenueMetrics: async () => {
     return API.get('/crm/analytics/revenue-metrics');
   },

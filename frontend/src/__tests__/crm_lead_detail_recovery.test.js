@@ -197,10 +197,14 @@ describe('CRM Workflow Recovery & Lead Detail Integrity Tests', () => {
     assert.match(leadCreateContent, /CANONICAL_LEAD_SOURCES/, 'CANONICAL_LEAD_SOURCES must exist');
     assert.match(leadCreateContent, /CANONICAL_BUSINESS_AREAS/, 'CANONICAL_BUSINESS_AREAS must exist');
 
-    // Rating options
-    assert.match(leadCreateContent, /Hot — Urgent \/ High Intent/, 'Rating options must preserve Hot');
-    assert.match(leadCreateContent, /Warm — Active Interest/, 'Rating options must preserve Warm');
-    assert.match(leadCreateContent, /Cold — Future \/ Exploration/, 'Rating options must preserve Cold');
+    // Business Area restricted to only 2 options: Biogas and Waste Water
+    assert.match(leadCreateContent, /'Biogas'/, 'CANONICAL_BUSINESS_AREAS must contain Biogas');
+    assert.match(leadCreateContent, /'Waste Water'/, 'CANONICAL_BUSINESS_AREAS must contain Waste Water');
+
+    // Rating, Number of employees, and Requirement types removed from form
+    assert.ok(!leadCreateContent.includes('name="rating"'), 'Rating field must be removed from Lead form');
+    assert.ok(!leadCreateContent.includes('name="numberOfEmployees"'), 'Number of employees must be removed from Lead form');
+    assert.ok(!leadCreateContent.includes('CANONICAL_REQUIREMENT_TYPES'), 'Requirement types must be removed from Lead form');
 
     // Client Relationship Status
     assert.match(leadCreateContent, /New — First time enquiry/, 'Client Relationship Status must preserve New');

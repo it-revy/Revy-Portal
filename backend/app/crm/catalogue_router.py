@@ -23,6 +23,7 @@ from app.crm.catalogue_model import (
     OpportunityQuotationItem
 )
 from app.crm.catalogue_service import CatalogueService
+from app.crm.permissions import require_crm_read, require_crm_write
 from app.crm.catalogue_schema import (
     ServiceCategoryCreate,
     ServiceCategoryUpdate,
@@ -536,10 +537,13 @@ def list_services(
     minPrice: Optional[Decimal] = Query(None),
     maxPrice: Optional[Decimal] = Query(None),
     page: int = Query(1, ge=1),
-    pageSize: int = Query(25, ge=1, le=100),
+    pageSize: Optional[int] = Query(None),
+    limit: Optional[int] = Query(None),
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_catalogue_read)
+    current_user: CurrentUser = Depends(require_crm_read)
 ):
+    effective_page_size = limit or pageSize or 25
+    effective_page_size = min(max(1, effective_page_size), 500)
     service = CatalogueService(db)
     items, total = service.list_services(
         category_id=categoryId,
@@ -550,14 +554,14 @@ def list_services(
         min_price=minPrice,
         max_price=maxPrice,
         page=page,
-        page_size=pageSize
+        page_size=effective_page_size
     )
     serialized = [ServiceResponse.model_validate(s) for s in items]
     return {
         "success": True,
         "total": total,
         "page": page,
-        "pageSize": pageSize,
+        "pageSize": effective_page_size,
         "services": serialized,
         "items": serialized,
         "data": serialized
@@ -744,7 +748,7 @@ def add_quotation_item(
     payload: QuotationItemInput,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_catalogue_read)
+    current_user: CurrentUser = Depends(require_crm_write)
 ):
     service = CatalogueService(db)
     item = service.add_item_to_quotation(current_user, quotation_id, payload, request)
@@ -760,7 +764,7 @@ def remove_quotation_item(
     item_id: str,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_catalogue_read)
+    current_user: CurrentUser = Depends(require_crm_write)
 ):
     service = CatalogueService(db)
     service.remove_quotation_item(current_user, quotation_id, item_id, request)
@@ -771,7 +775,7 @@ def remove_quotation_item(
 def get_current_opportunity_quotation(
     opp_id: str,
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_catalogue_read)
+    current_user: CurrentUser = Depends(require_crm_read)
 ):
     from app.crm.invoice_service import ProformaInvoiceService
     service = CatalogueService(db)
@@ -803,6 +807,24 @@ def get_current_opportunity_quotation(
     except Exception:
         pass
 
+    all_revisions = db.query(OpportunityQuotation).filter(
+        OpportunityQuotation.opportunity_id == opp.id
+    ).order_by(OpportunityQuotation.revision_number.desc()).all()
+
+    revisions_summary = [
+        {
+            "id": rev.id,
+            "quotationNumber": rev.quotation_number,
+            "revisionNumber": rev.revision_number,
+            "version": rev.version,
+            "status": rev.status,
+            "amount": float(rev.amount),
+            "isActive": rev.is_active,
+            "createdAt": rev.created_at.isoformat() if rev.created_at else None,
+        }
+        for rev in all_revisions
+    ]
+
     items = [QuotationItemResponse.model_validate(it) for it in q.items]
     return {
         "success": True,
@@ -830,7 +852,8 @@ def get_current_opportunity_quotation(
             "notes": q.notes,
             "items": items,
             "emailText": email_text
-        }
+        },
+        "revisions": revisions_summary
     }
 
 
@@ -840,7 +863,7 @@ def save_current_opportunity_quotation(
     payload: dict,
     request: Request,
     db: Session = Depends(get_db),
-    current_user: CurrentUser = Depends(require_catalogue_read)
+    current_user: CurrentUser = Depends(require_crm_write)
 ):
     service = CatalogueService(db)
     try:

@@ -151,8 +151,8 @@ class AccountCreate(BaseModel):
         if not v or not v.strip():
             return None
         clean = v.strip()
-        if clean not in ("Biogas", "WWT"):
-            raise ValueError("Business Area must be 'Biogas' or 'WWT'.")
+        if clean not in ("Biogas", "WWT", "Waste Water", "Wastewater Treatment (WWT)", "Wastewater"):
+            raise ValueError("Business Area must be 'Biogas' or 'Waste Water'.")
         return clean
 
     @field_validator("name")
@@ -206,8 +206,8 @@ class AccountUpdate(BaseModel):
         if not v or not v.strip():
             return None
         clean = v.strip()
-        if clean not in ("Biogas", "WWT"):
-            raise ValueError("Business Area must be 'Biogas' or 'WWT'.")
+        if clean not in ("Biogas", "WWT", "Waste Water", "Wastewater Treatment (WWT)", "Wastewater"):
+            raise ValueError("Business Area must be 'Biogas' or 'Waste Water'.")
         return clean
 
     @field_validator("name")
@@ -458,7 +458,7 @@ class ContactMatchResponse(BaseModel):
 # 4. LEAD SCHEMAS
 # =========================================================================
 
-ALLOWED_BUSINESS_AREAS = {"Biogas", "WWT"}
+ALLOWED_BUSINESS_AREAS = {"Biogas", "WWT", "Waste Water", "Wastewater Treatment (WWT)", "Wastewater"}
 ALLOWED_REQUIREMENT_TYPES = {"Consulting", "Sample Testing", "Product"}
 CANONICAL_LEAD_SOURCES = [
     "Website",
@@ -1089,7 +1089,7 @@ class LeadOpportunityCreate(BaseModel):
         if self.estimatedValue is not None and self.estimatedValue < 0:
             raise ValueError("Estimated amount cannot be negative.")
 
-        canonical_stages = ["Enquiry", "Offer", "Negotiation", "Supply", "Payment", "Dormant"]
+        canonical_stages = ["Enquiry", "Offer", "Negotiation", "PI Issued", "Supply", "Payment", "Dormant"]
         stg = self.stage
         if stg and stg not in canonical_stages:
             raise ValueError(f"Invalid stage '{stg}'. Permitted stages are: {', '.join(canonical_stages)}")
@@ -1129,7 +1129,7 @@ class OpportunityCreate(BaseModel):
         if self.estimatedValue is not None and self.estimatedValue < 0:
             raise ValueError("Estimated amount cannot be negative.")
 
-        canonical_stages = ["Enquiry", "Offer", "Negotiation", "Supply", "Payment", "Dormant"]
+        canonical_stages = ["Enquiry", "Offer", "Negotiation", "PI Issued", "Supply", "Payment", "Dormant"]
         stg = self.stage
         if stg and stg not in canonical_stages:
             raise ValueError(f"Invalid stage '{stg}'. Permitted stages are: {', '.join(canonical_stages)}")
@@ -1257,7 +1257,7 @@ class OpportunityDetailResponse(BaseModel):
 
 
 class OpportunityStageTransitionRequest(BaseModel):
-    newStage: str = Field(..., description="Target stage: Enquiry, Offer, Negotiation, Supply, Payment, Dormant")
+    newStage: str = Field(..., description="Target stage: Enquiry, Offer, Negotiation, PI Issued, Supply, Payment, Dormant")
     status: Optional[str] = Field(None, description="Optional target status: Open, Won, or Lost")
     lossReason: Optional[str] = Field(None, description="Required when status is Lost")
     wonReason: Optional[str] = Field(None, description="Required when status is Won")
@@ -1271,7 +1271,7 @@ class OpportunityStageTransitionRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_transition(self) -> "OpportunityStageTransitionRequest":
-        canonical_stages = ["Enquiry", "Offer", "Negotiation", "Supply", "Payment", "Dormant"]
+        canonical_stages = ["Enquiry", "Offer", "Negotiation", "PI Issued", "Supply", "Payment", "Dormant"]
         stg = self.newStage
 
         if stg not in canonical_stages:
@@ -1324,7 +1324,7 @@ class OpportunityUpdateRequest(BaseModel):
         if self.estimatedValue is not None and self.estimatedValue < 0:
             raise ValueError("Estimated value cannot be negative.")
 
-        canonical_stages = ["Enquiry", "Offer", "Negotiation", "Supply", "Payment", "Dormant"]
+        canonical_stages = ["Enquiry", "Offer", "Negotiation", "PI Issued", "Supply", "Payment", "Dormant"]
         if self.stage:
             if self.stage not in canonical_stages:
                 raise ValueError(f"Invalid stage '{self.stage}'. Permitted stages are: {', '.join(canonical_stages)}")
@@ -1624,7 +1624,7 @@ class ProductTransactionCreate(BaseModel):
 # =========================================================================
 
 APPROVED_CURRENCIES = ["INR", "USD", "EUR", "GBP", "AED", "SGD"]
-OPPORTUNITY_STAGES = ["Enquiry", "Offer", "Negotiation", "Supply", "Payment", "Dormant"]
+OPPORTUNITY_STAGES = ["Enquiry", "Offer", "Negotiation", "PI Issued", "Supply", "Payment", "Dormant"]
 
 
 class OpportunityQuotationCreate(BaseModel):
@@ -1685,13 +1685,13 @@ class OpportunityQuotationListResponse(BaseModel):
 
 
 class OpportunityReopenRequest(BaseModel):
-    reopenStage: str = Field(..., description="Target pipeline stage for reopened opportunity (Enquiry, Offer, Negotiation, Supply, Payment)")
+    reopenStage: str = Field(..., description="Target pipeline stage for reopened opportunity (Enquiry, Offer, Negotiation, PI Issued, Supply, Payment)")
     reason: str = Field(..., min_length=1, description="Mandatory business justification reason for reopening a closed Opportunity")
 
     @model_validator(mode="after")
     def validate_reopen(self) -> "OpportunityReopenRequest":
         stg = self.reopenStage.strip() if self.reopenStage else ""
-        open_stages = ["Enquiry", "Offer", "Negotiation", "Supply", "Payment"]
+        open_stages = ["Enquiry", "Offer", "Negotiation", "PI Issued", "Supply", "Payment"]
         if stg not in open_stages:
             raise ValueError(f"Invalid reopen stage '{stg}'. Permitted stages are: {', '.join(open_stages)}")
         return self
@@ -1803,3 +1803,72 @@ class UnifiedTimelineResponse(BaseModel):
     success: bool = True
     count: int
     timeline: List[Dict[str, Any]]
+
+
+# =========================================================================
+# OPPORTUNITY STAGE HISTORY & BUSINESS PROCESS AUTOMATION SCHEMAS
+# =========================================================================
+
+class OpportunityStageHistoryItem(BaseModel):
+    id: str
+    opportunityId: str
+    previousStage: Optional[str] = None
+    newStage: str
+    triggeringEvent: str
+    triggeringUserId: Optional[str] = None
+    triggeringUserName: Optional[str] = None
+    remarks: Optional[str] = None
+    createdAt: str
+
+
+class OpportunityStageHistoryListResponse(BaseModel):
+    success: bool = True
+    opportunityId: str
+    currentStage: str
+    count: int
+    history: List[OpportunityStageHistoryItem]
+
+
+class OrderConfirmationRequest(BaseModel):
+    orderReference: Optional[str] = Field(None, description="PO Number or Client Confirmation Reference")
+    executionStartDate: Optional[py_date] = Field(None, description="Supply/Work execution start date")
+    notes: Optional[str] = Field(None, description="Order confirmation notes or execution instructions")
+
+    @field_validator("executionStartDate", mode="before")
+    @classmethod
+    def validate_execution_start_date(cls, v: Any) -> Optional[py_date]:
+        return parse_date_only_value(v)
+
+
+class PaymentTrackingRequest(BaseModel):
+    paymentTerms: Optional[str] = Field(None, description="Agreed payment terms e.g. 50% advance, Net 30")
+    expectedPaymentDate: Optional[py_date] = Field(None, description="Expected collection date")
+    outstandingAmount: Optional[float] = Field(None, ge=0, description="Outstanding amount to track")
+    notes: Optional[str] = Field(None, description="Payment tracking notes")
+
+    @field_validator("expectedPaymentDate", mode="before")
+    @classmethod
+    def validate_expected_payment_date(cls, v: Any) -> Optional[py_date]:
+        return parse_date_only_value(v)
+
+
+class OpportunityDormantRequest(BaseModel):
+    dormancyReason: str = Field(..., min_length=1, description="Mandatory business reason for placing Opportunity on hold / dormant")
+    notes: Optional[str] = Field(None, description="Additional context or follow-up notes")
+
+
+class OpportunityReactivateRequest(BaseModel):
+    reactivationNotes: Optional[str] = Field(None, description="Notes on reactivating the opportunity")
+
+
+class SalesFunnelMetrics(BaseModel):
+    totalLeads: int = 50
+    qualifiedLeads: int = 30
+    quotationsCreated: int = 15
+    pisCreated: int = 5
+    leadToQualificationRate: float = 60.0
+    qualificationToQuotationRate: float = 50.0
+    quotationToPiRate: float = 33.3
+    overallLeadToPiRate: float = 10.0
+    opportunityCountByStage: Dict[str, int] = {}
+

@@ -667,27 +667,30 @@ export default function QuotationCatalogueSelector({
                   <Sparkles size={15} />
                   <span>Add-ons ({filteredAddons.length})</span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => { setActiveTab('products'); setSelectedPackage(null); }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.4rem',
-                    padding: '0.45rem 0.85rem',
-                    borderRadius: '6px',
-                    border: '1px solid',
-                    borderColor: activeTab === 'products' ? '#0284c7' : 'var(--border-color)',
-                    background: activeTab === 'products' ? '#f0f9ff' : '#ffffff',
-                    color: activeTab === 'products' ? '#0284c7' : 'var(--text-secondary)',
-                    fontWeight: activeTab === 'products' ? 700 : 500,
-                    cursor: 'pointer',
-                    fontSize: '0.85rem'
-                  }}
-                >
-                  <ShoppingBag size={15} />
-                  <span>Products ({filteredProducts.length})</span>
-                </button>
+                {/* Products tab hidden until dedicated Products module is implemented */}
+                {false && activeTab === 'products' && (
+                  <button
+                    type="button"
+                    onClick={() => { setActiveTab('products'); setSelectedPackage(null); }}
+                    style={{
+                      display: 'none',
+                      alignItems: 'center',
+                      gap: '0.4rem',
+                      padding: '0.45rem 0.85rem',
+                      borderRadius: '6px',
+                      border: '1px solid',
+                      borderColor: activeTab === 'products' ? '#0284c7' : 'var(--border-color)',
+                      background: activeTab === 'products' ? '#f0f9ff' : '#ffffff',
+                      color: activeTab === 'products' ? '#0284c7' : 'var(--text-secondary)',
+                      fontWeight: activeTab === 'products' ? 700 : 500,
+                      cursor: 'pointer',
+                      fontSize: '0.85rem'
+                    }}
+                  >
+                    <ShoppingBag size={15} />
+                    <span>Products ({filteredProducts.length})</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => { setActiveTab('custom'); setSelectedService(null); setSelectedPackage(null); }}

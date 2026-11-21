@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   FileText,
   Plus,
@@ -16,7 +16,15 @@ import {
   HelpCircle,
   Save,
   Check,
-  Send
+  Send,
+  History,
+  FileSpreadsheet,
+  ChevronDown,
+  Building,
+  User,
+  MapPin,
+  Calendar,
+  Clock
 } from 'lucide-react';
 import { invoiceService } from '../../services/invoiceService';
 import catalogueService from '../../services/catalogueService';
@@ -28,11 +36,20 @@ export default function QuotationManagerModal({
   onClose,
   opportunity,
   onQuotationSaved,
-  onApproveAndCreateInvoice
+  onApproveAndCreateInvoice,
+  onGenerateInvoice
 }) {
-  const { hasRole, isGlobalAdmin, hasPermission } = useAuth();
+  const { user, isGlobalAdmin, hasRole, hasPermission } = useAuth?.() || {};
   const globalAdminActive = typeof isGlobalAdmin === 'function' ? isGlobalAdmin() : Boolean(isGlobalAdmin);
-  const canManageCatalogue = globalAdminActive || hasRole('CRM_ADMIN') || hasPermission('crm.catalogue.manage');
+  const userRoles = [
+    ...(user?.roles || []),
+    user?.role,
+    user?.user_metadata?.role
+  ].filter(Boolean).map(r => String(r).toUpperCase());
+
+  // CRM Admin and CRM Manager have full write / generate permissions; others have read-only view
+  const canEdit = globalAdminActive ||
+    userRoles.some(r => ['CRM_ADMIN', 'CRM_MANAGER', 'ADMIN', 'SUPERADMIN', 'DIRECTOR', 'IT_ADMIN'].includes(r));
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -43,8 +60,9 @@ export default function QuotationManagerModal({
   // Active Quotation State
   const [quotationId, setQuotationId] = useState(null);
   const [quotationNumber, setQuotationNumber] = useState(null);
+  const [revisionNumber, setRevisionNumber] = useState(1);
+  const [quotationStatus, setQuotationStatus] = useState('Draft');
   const [title, setTitle] = useState('');
-  const [validUntilDays, setValidUntilDays] = useState(30);
   const [validUntilDate, setValidUntilDate] = useState('');
   const [termsAndConditions, setTermsAndConditions] = useState('');
   const [notes, setNotes] = useState('');
@@ -52,6 +70,8 @@ export default function QuotationManagerModal({
   const [taxType, setTaxType] = useState('INTRA_STATE');
   const [selectedTaxConfigId, setSelectedTaxConfigId] = useState('');
   const [emailText, setEmailText] = useState('');
+  const [revisions, setRevisions] = useState([]);
+  const [showRevisionHistory, setShowRevisionHistory] = useState(false);
 
   // Items
   const [items, setItems] = useState([]);
@@ -104,29 +124,34 @@ export default function QuotationManagerModal({
       ]);
 
       // Categories
-      if (catRes.data?.success) {
-        setCategories(catRes.data.categories || []);
-        if (catRes.data.categories?.length > 0) {
-          setCustomCategoryId(catRes.data.categories[0].id);
+      if (catRes.data?.categories || catRes.data?.success) {
+        const catList = catRes.data?.categories || catRes.data?.data || [];
+        setCategories(catList);
+        if (catList.length > 0) {
+          setCustomCategoryId(catList[0].id);
         }
       }
 
       // Services
-      if (srvRes.data?.success) {
-        setServices(srvRes.data.services || []);
+      if (srvRes.data?.services || srvRes.data?.success) {
+        setServices(srvRes.data?.services || srvRes.data?.data || []);
       }
 
       // Packages
-      if (pkgRes.data?.success) {
-        setPackages(pkgRes.data.packages || []);
+      if (pkgRes.data?.packages || pkgRes.data?.success) {
+        setPackages(pkgRes.data?.packages || pkgRes.data?.data || []);
       }
 
-      // Taxes
-      if (taxRes.data?.success) {
-        const taxes = taxRes.data.taxConfigurations || [];
+  // Taxes
+      let taxes = [];
+      if (taxRes.data?.taxConfigurations || taxRes.data?.success) {
+        taxes = taxRes.data?.taxConfigurations || taxRes.data?.data || [];
         setTaxConfigurations(taxes);
-        const def = taxes.find(t => t.isDefault) || taxes[0];
-        if (def) setSelectedTaxConfigId(def.id);
+      }
+
+      // Revisions summary
+      if (quoteRes.data?.revisions) {
+        setRevisions(quoteRes.data.revisions);
       }
 
       // Company Defaults for Terms
@@ -140,38 +165,57 @@ export default function QuotationManagerModal({
       if (q) {
         setQuotationId(q.id);
         setQuotationNumber(q.quotationNumber);
+        setRevisionNumber(q.revisionNumber || 1);
+        setQuotationStatus(q.status || 'Active');
         setTitle(q.title || `Quotation for ${opportunity.name}`);
         setValidUntilDate(q.validUntilDate || '');
         setTermsAndConditions(q.termsAndConditions || defaultTermsText);
         setNotes(q.notes || '');
         setCurrency(q.currency || 'INR');
-        setTaxType(q.taxType || 'INTRA_STATE');
-        setSelectedTaxConfigId(q.taxConfigurationId || '');
+        const qTaxType = q.taxType || 'INTRA_STATE';
+        setTaxType(qTaxType);
+        if (q.taxConfigurationId) {
+          setSelectedTaxConfigId(q.taxConfigurationId);
+        } else {
+          const matching = taxes.find(t => (t.taxType || t.tax_type) === qTaxType);
+          if (matching) setSelectedTaxConfigId(matching.id);
+        }
         setEmailText(q.emailText || '');
 
-        const mapped = (q.items || []).map(it => ({
-          id: it.id,
-          itemType: it.itemType || 'SERVICE',
-          serviceId: it.serviceId,
-          packageId: it.packageId,
-          packageVersionId: it.packageVersionId,
-          itemName: it.itemName || it.name,
-          itemCode: it.itemCode,
-          description: it.description || '',
-          billingUnit: it.billingUnit || 'Test',
-          standardPrice: Number(it.unitPrice || 0),
-          unitPrice: Number(it.negotiatedUnitPrice !== null && it.negotiatedUnitPrice !== undefined ? it.negotiatedUnitPrice : it.unitPrice || 0),
-          quantity: Number(it.quantity || 1),
-          discountAmount: Number(it.discountAmount || 0),
-          savePermanently: false,
-          categoryId: null
-        }));
+        const mapped = (q.items || []).map(it => {
+          const qty = Number(it.quantity || 1);
+          const price = Number(it.negotiatedUnitPrice !== null && it.negotiatedUnitPrice !== undefined ? it.negotiatedUnitPrice : it.unitPrice || 0);
+          const disc = Number(it.discountAmount || 0);
+          return {
+            id: it.id,
+            itemType: it.itemType || 'SERVICE',
+            serviceId: it.serviceId,
+            packageId: it.packageId,
+            packageVersionId: it.packageVersionId,
+            parentItemId: it.parentItemId || null,
+            itemName: it.itemName || it.name,
+            itemCode: it.itemCode,
+            description: it.description || '',
+            billingUnit: it.billingUnit || 'Test',
+            standardPrice: Number(it.unitPrice || price),
+            unitPrice: price,
+            quantity: qty,
+            discountAmount: disc,
+            savePermanently: false,
+            categoryId: null
+          };
+        });
         setItems(mapped);
       } else {
         // Draft defaults
         setQuotationId(null);
         setQuotationNumber(null);
+        setRevisionNumber(1);
+        setQuotationStatus('Draft');
         setTitle(`Quotation for ${opportunity.name}`);
+        setTaxType('INTRA_STATE');
+        const matching = taxes.find(t => (t.taxType || t.tax_type) === 'INTRA_STATE') || taxes.find(t => t.isDefault) || taxes[0];
+        if (matching) setSelectedTaxConfigId(matching.id);
         setTermsAndConditions(defaultTermsText || [
           '1. 100% Advance along with Purchase Order / Work Order.',
           '2. Payment to be made in favour of "REVY Environmental Solutions Pvt. Ltd."',
@@ -190,29 +234,105 @@ export default function QuotationManagerModal({
     }
   };
 
-  // Calculations
-  const subtotal = items.reduce((sum, item) => {
-    const lineTotal = (Number(item.quantity || 1) * Number(item.unitPrice || 0)) - Number(item.discountAmount || 0);
-    return sum + Math.max(0, lineTotal);
-  }, 0);
+  // Active Tax Configuration matching current taxType and/or selectedTaxConfigId
+  const activeTaxConfig = useMemo(() => {
+    if (selectedTaxConfigId) {
+      const match = taxConfigurations.find(t => t.id === selectedTaxConfigId);
+      if (match && (match.taxType || match.tax_type) === taxType) {
+        return match;
+      }
+    }
+    return taxConfigurations.find(t => (t.taxType || t.tax_type) === taxType) || null;
+  }, [taxConfigurations, selectedTaxConfigId, taxType]);
 
-  let cgstAmount = 0;
-  let sgstAmount = 0;
-  let igstAmount = 0;
-  let totalTax = 0;
+  // Dynamically extract rates from active configuration with robust fallbacks
+  const { cgstRate, sgstRate, igstRate } = useMemo(() => {
+    let c = 9;
+    let s = 9;
+    let i = 18;
 
-  if (taxType === 'INTRA_STATE') {
-    cgstAmount = Math.round(subtotal * 0.09 * 100) / 100;
-    sgstAmount = Math.round(subtotal * 0.09 * 100) / 100;
-    totalTax = cgstAmount + sgstAmount;
-  } else if (taxType === 'INTER_STATE') {
-    igstAmount = Math.round(subtotal * 0.18 * 100) / 100;
-    totalTax = igstAmount;
-  } else {
-    totalTax = 0;
-  }
+    if (activeTaxConfig && Array.isArray(activeTaxConfig.rates) && activeTaxConfig.rates.length > 0) {
+      activeTaxConfig.rates.forEach(r => {
+        const name = (r.rateName || r.componentName || r.component_name || '').toUpperCase();
+        const pct = Number(r.percentage !== undefined ? r.percentage : r.ratePercentage || r.rate_percentage || 0);
+        if (name.includes('CGST')) c = pct;
+        else if (name.includes('SGST')) s = pct;
+        else if (name.includes('IGST')) i = pct;
+      });
+    }
 
-  const grandTotal = subtotal + totalTax;
+    return { cgstRate: c, sgstRate: s, igstRate: i };
+  }, [activeTaxConfig]);
+
+  // Synchronize tax type and corresponding tax configuration ID
+  const handleTaxTypeChange = (newTaxType) => {
+    setTaxType(newTaxType);
+    const matching = taxConfigurations.find(t => (t.taxType || t.tax_type) === newTaxType);
+    if (matching) {
+      setSelectedTaxConfigId(matching.id);
+    }
+  };
+
+  // State mismatch detection for GST compliance
+  const account = opportunity?.account || {};
+  const customerGstin = account.gstin || '';
+  const customerState = account.billingState || account.state || '';
+
+  const stateMismatchNotice = useMemo(() => {
+    if (customerGstin && customerGstin.length >= 2) {
+      const stateCode = customerGstin.trim().substring(0, 2);
+      if (stateCode !== '24' && taxType === 'INTRA_STATE') {
+        return `GST State Notice: Customer GSTIN starts with "${stateCode}" (outside Gujarat 24). Intra-State GST (CGST + SGST) is currently selected. For inter-state supply, Inter-State (IGST 18%) is recommended.`;
+      }
+      if (stateCode === '24' && taxType === 'INTER_STATE') {
+        return 'GST State Notice: Customer GSTIN indicates Gujarat (24). Inter-State (IGST) is currently selected. For intra-state supply within Gujarat, Intra-State (CGST + SGST) is recommended.';
+      }
+    } else if (customerState) {
+      const isGujarat = customerState.toLowerCase().includes('gujarat');
+      if (!isGujarat && taxType === 'INTRA_STATE') {
+        return `Location Notice: Customer billing state is recorded as "${customerState}". For supplies outside Gujarat, Inter-State (IGST 18%) is recommended.`;
+      }
+    }
+    return null;
+  }, [customerGstin, customerState, taxType]);
+
+  // Authoritative Financial Calculations (Paise Rounding)
+  const grossSubtotal = useMemo(() => {
+    return items.reduce((sum, item) => {
+      const gross = (Number(item.quantity || 1) * Number(item.unitPrice || 0));
+      return sum + Math.max(0, gross);
+    }, 0);
+  }, [items]);
+
+  const totalDiscount = useMemo(() => {
+    return items.reduce((sum, item) => sum + Number(item.discountAmount || 0), 0);
+  }, [items]);
+
+  const taxableSubtotal = useMemo(() => {
+    return Math.max(0, grossSubtotal - totalDiscount);
+  }, [grossSubtotal, totalDiscount]);
+
+  const { cgstAmount, sgstAmount, igstAmount, totalTax, grandTotal } = useMemo(() => {
+    let cgst = 0;
+    let sgst = 0;
+    let igst = 0;
+
+    if (taxType === 'INTRA_STATE') {
+      cgst = Math.round(taxableSubtotal * (cgstRate / 100) * 100) / 100;
+      sgst = Math.round(taxableSubtotal * (sgstRate / 100) * 100) / 100;
+    } else if (taxType === 'INTER_STATE') {
+      igst = Math.round(taxableSubtotal * (igstRate / 100) * 100) / 100;
+    }
+
+    const tax = cgst + sgst + igst;
+    return {
+      cgstAmount: cgst,
+      sgstAmount: sgst,
+      igstAmount: igst,
+      totalTax: tax,
+      grandTotal: taxableSubtotal + tax
+    };
+  }, [taxableSubtotal, taxType, cgstRate, sgstRate, igstRate]);
 
   // Add standard service from catalogue
   const handleAddService = (srv) => {
@@ -221,8 +341,9 @@ export default function QuotationManagerModal({
       serviceId: srv.id,
       packageId: null,
       packageVersionId: null,
-      itemName: srv.serviceName,
-      itemCode: srv.serviceCode,
+      parentItemId: null,
+      itemName: srv.name || srv.serviceName,
+      itemCode: srv.code || srv.serviceCode,
       description: srv.description || srv.categoryName || '',
       billingUnit: srv.billingUnitName || 'Test',
       standardPrice: Number(srv.standardPrice || 0),
@@ -245,9 +366,10 @@ export default function QuotationManagerModal({
       serviceId: null,
       packageId: pkg.id,
       packageVersionId: activeVer?.id || null,
-      itemName: pkg.packageName,
-      itemCode: pkg.packageCode,
-      description: pkg.description || `Package includes ${activeVer?.items?.length || 0} services`,
+      parentItemId: null,
+      itemName: pkg.name || pkg.packageName,
+      itemCode: pkg.code || pkg.packageCode,
+      description: pkg.description || `Package includes ${activeVer?.components?.length || activeVer?.items?.length || 0} services`,
       billingUnit: 'Package',
       standardPrice: pkgPrice,
       unitPrice: pkgPrice,
@@ -277,6 +399,7 @@ export default function QuotationManagerModal({
       serviceId: null,
       packageId: null,
       packageVersionId: null,
+      parentItemId: null,
       itemName: customItemName.trim(),
       itemCode: customItemType === 'CUSTOM_SERVICE' ? 'CUSTOM-SRV' : 'CUSTOM-PRD',
       description: customItemDescription.trim(),
@@ -290,7 +413,6 @@ export default function QuotationManagerModal({
     };
 
     setItems([...items, newItem]);
-    // Reset custom form
     setCustomItemName('');
     setCustomItemDescription('');
     setCustomItemPrice('');
@@ -302,7 +424,21 @@ export default function QuotationManagerModal({
   // Update Item in place
   const handleItemFieldChange = (index, field, value) => {
     const updated = [...items];
-    updated[index] = { ...updated[index], [field]: value };
+    const item = { ...updated[index] };
+
+    if (field === 'discountAmount') {
+      const gross = Number(item.quantity || 1) * Number(item.unitPrice || 0);
+      const disc = Math.max(0, Math.min(Number(value) || 0, gross));
+      item.discountAmount = disc;
+    } else if (field === 'quantity') {
+      item.quantity = Math.max(1, Number(value) || 1);
+    } else if (field === 'unitPrice') {
+      item.unitPrice = Math.max(0, Number(value) || 0);
+    } else {
+      item[field] = value;
+    }
+
+    updated[index] = item;
     setItems(updated);
   };
 
@@ -310,7 +446,7 @@ export default function QuotationManagerModal({
     setItems(items.filter((_, i) => i !== index));
   };
 
-  // Save Quotation to Backend (Single Current Quotation)
+  // Save Quotation to Backend
   const handleSaveQuotation = async (silent = false) => {
     if (items.length === 0) {
       alert('Please add at least one line item to the quotation before saving.');
@@ -324,7 +460,7 @@ export default function QuotationManagerModal({
         title: title || `Quotation for ${opportunity.name}`,
         currency: currency,
         taxType: taxType,
-        taxConfigurationId: selectedTaxConfigId || undefined,
+        taxConfigurationId: activeTaxConfig?.id || selectedTaxConfigId || undefined,
         validUntilDate: validUntilDate || undefined,
         termsAndConditions: termsAndConditions,
         notes: notes,
@@ -333,6 +469,7 @@ export default function QuotationManagerModal({
           serviceId: it.serviceId || undefined,
           packageId: it.packageId || undefined,
           packageVersionId: it.packageVersionId || undefined,
+          parentItemId: it.parentItemId || undefined,
           itemName: it.itemName,
           itemCode: it.itemCode,
           description: it.description,
@@ -351,9 +488,17 @@ export default function QuotationManagerModal({
         const savedQuote = res.data.quotation;
         setQuotationId(savedQuote.id);
         setQuotationNumber(savedQuote.quotationNumber);
+        setRevisionNumber(savedQuote.revisionNumber || 1);
+        setQuotationStatus(savedQuote.status || 'Active');
         setEmailText(savedQuote.emailText || '');
+
+        if (res.data.revisions) {
+          setRevisions(res.data.revisions);
+        }
+
         if (!silent) {
-          showToast(`Quotation ${savedQuote.quotationNumber} saved successfully!`);
+          const revMsg = savedQuote.revisionNumber > 1 ? ` (Revision R${savedQuote.revisionNumber})` : '';
+          showToast(`Quotation ${savedQuote.quotationNumber}${revMsg} saved successfully.`);
         }
         if (onQuotationSaved) {
           onQuotationSaved(savedQuote);
@@ -369,62 +514,74 @@ export default function QuotationManagerModal({
     }
   };
 
+  // Direct PI Generation (Authorized CRM Admin / Manager)
+  const handleProceedToInvoice = async () => {
+    // 1. Save changes first
+    const savedQuote = await handleSaveQuotation(true);
+    if (!savedQuote) return;
+
+    // 2. Open Invoice Preparation
+    const launchInvoice = onGenerateInvoice || onApproveAndCreateInvoice;
+    if (launchInvoice) {
+      launchInvoice(savedQuote);
+    }
+  };
+
   // Copy Quotation Text (Email-Ready)
   const handleCopyQuotation = async () => {
-    let textToCopy = emailText;
-
-    // If quotation is dirty or not saved yet, construct email text dynamically
-    if (!textToCopy || items.length > 0) {
-      let lines = [];
-      lines.push('===========================================================');
-      lines.push('REVY ENVIRONMENTAL SOLUTIONS PVT. LTD. - COMMERCIAL QUOTATION');
-      lines.push('===========================================================');
-      lines.push(`Opportunity: ${opportunity.name} (${opportunity.opportunityId || ''})`);
-      lines.push(`Customer: ${opportunity.accountName || opportunity.account?.name || 'Valued Client'}`);
-      lines.push(`Quotation Reference: ${quotationNumber || 'DRAFT'}`);
-      lines.push(`Date: ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`);
-      lines.push('-----------------------------------------------------------');
-      lines.push('ITEMS & PRICING:');
-      items.forEach((it, idx) => {
-        const lineTotal = (Number(it.quantity || 1) * Number(it.unitPrice || 0)) - Number(it.discountAmount || 0);
-        lines.push(`${idx + 1}. ${it.itemName}`);
-        if (it.description) lines.push(`   Description: ${it.description}`);
-        lines.push(`   Qty: ${it.quantity} ${it.billingUnit} @ ₹${Number(it.unitPrice).toLocaleString('en-IN')}`);
-        if (Number(it.discountAmount) > 0) {
-          lines.push(`   Discount: -₹${Number(it.discountAmount).toLocaleString('en-IN')}`);
-        }
-        lines.push(`   Line Total: ₹${lineTotal.toLocaleString('en-IN')}`);
-      });
-      lines.push('-----------------------------------------------------------');
-      lines.push(`Subtotal: ₹${subtotal.toLocaleString('en-IN')}`);
-      if (taxType === 'INTRA_STATE') {
-        lines.push(`CGST (9%): ₹${cgstAmount.toLocaleString('en-IN')}`);
-        lines.push(`SGST (9%): ₹${sgstAmount.toLocaleString('en-IN')}`);
-      } else if (taxType === 'INTER_STATE') {
-        lines.push(`IGST (18%): ₹${igstAmount.toLocaleString('en-IN')}`);
-      } else {
-        lines.push('Taxes: Exempt / Not Applicable');
+    let lines = [];
+    lines.push('===========================================================');
+    lines.push('REVY ENVIRONMENTAL SOLUTIONS PVT. LTD. - COMMERCIAL QUOTATION');
+    lines.push('===========================================================');
+    lines.push(`Opportunity: ${opportunity.name} (${opportunity.opportunityId || ''})`);
+    lines.push(`Customer: ${opportunity.accountName || opportunity.account?.name || 'Valued Client'}`);
+    lines.push(`Quotation: ${quotationNumber || 'DRAFT'} (Rev: R${revisionNumber})`);
+    lines.push(`Date: ${new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}`);
+    lines.push('-----------------------------------------------------------');
+    lines.push('ITEMS & PRICING:');
+    items.forEach((it, idx) => {
+      const gross = (Number(it.quantity || 1) * Number(it.unitPrice || 0));
+      const taxable = Math.max(0, gross - Number(it.discountAmount || 0));
+      lines.push(`${idx + 1}. ${it.itemName}`);
+      if (it.description) lines.push(`   Description: ${it.description}`);
+      lines.push(`   Qty: ${it.quantity} ${it.billingUnit} @ ₹${Number(it.unitPrice).toLocaleString('en-IN')}`);
+      if (Number(it.discountAmount) > 0) {
+        lines.push(`   Discount: -₹${Number(it.discountAmount).toLocaleString('en-IN')}`);
       }
-      lines.push(`Total Tax: ₹${totalTax.toLocaleString('en-IN')}`);
-      lines.push(`GRAND TOTAL: ₹${grandTotal.toLocaleString('en-IN')}`);
-      lines.push('-----------------------------------------------------------');
-      if (termsAndConditions) {
-        lines.push('TERMS & CONDITIONS:');
-        lines.push(termsAndConditions);
-        lines.push('-----------------------------------------------------------');
-      }
-      if (notes) {
-        lines.push('NOTES:');
-        lines.push(notes);
-      }
-      lines.push('===========================================================');
-      textToCopy = lines.join('\n');
+      lines.push(`   Taxable Amount: ₹${taxable.toLocaleString('en-IN')}`);
+    });
+    lines.push('-----------------------------------------------------------');
+    lines.push(`Gross Subtotal: ₹${grossSubtotal.toLocaleString('en-IN')}`);
+    if (totalDiscount > 0) {
+      lines.push(`Total Discount: -₹${totalDiscount.toLocaleString('en-IN')}`);
+      lines.push(`Taxable Amount: ₹${taxableSubtotal.toLocaleString('en-IN')}`);
     }
+    if (taxType === 'INTRA_STATE') {
+      lines.push(`CGST (${cgstRate}%): ₹${cgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+      lines.push(`SGST (${sgstRate}%): ₹${sgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+    } else if (taxType === 'INTER_STATE') {
+      lines.push(`IGST (${igstRate}%): ₹${igstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+    } else {
+      lines.push('Taxes: Exempt / Not Applicable (₹0.00)');
+    }
+    lines.push(`Total Tax: ₹${totalTax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+    lines.push(`GRAND TOTAL: ₹${grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+    lines.push('-----------------------------------------------------------');
+    if (termsAndConditions) {
+      lines.push('TERMS & CONDITIONS:');
+      lines.push(termsAndConditions);
+      lines.push('-----------------------------------------------------------');
+    }
+    if (notes) {
+      lines.push('NOTES:');
+      lines.push(notes);
+    }
+    lines.push('===========================================================');
 
     try {
-      await navigator.clipboard.writeText(textToCopy);
+      await navigator.clipboard.writeText(lines.join('\n'));
       setCopied(true);
-      showToast('Quotation copied to clipboard! Ready to paste into an email.');
+      showToast('Quotation text copied to clipboard! Ready to paste into email.');
       setTimeout(() => setCopied(false), 2500);
     } catch (err) {
       console.error('Failed to copy to clipboard:', err);
@@ -432,26 +589,17 @@ export default function QuotationManagerModal({
     }
   };
 
-  // Approve Quotation and Trigger Invoice Preparation Modal
-  const handleApproveAndProceedToInvoice = async () => {
-    // 1. Save latest changes first
-    const savedQuote = await handleSaveQuotation(true);
-    if (!savedQuote) return;
-
-    // 2. Call parent callback to open InvoicePreparationModal
-    if (onApproveAndCreateInvoice) {
-      onApproveAndCreateInvoice(savedQuote);
-    }
-  };
-
   // Filtered Services in Picker
-  const filteredServices = services.filter(s => {
-    const matchesCat = selectedCategoryFilter === 'all' || s.categoryId === selectedCategoryFilter;
-    const matchesSearch = !pickerSearch ||
-      s.serviceName?.toLowerCase().includes(pickerSearch.toLowerCase()) ||
-      s.serviceCode?.toLowerCase().includes(pickerSearch.toLowerCase());
-    return matchesCat && matchesSearch;
-  });
+  const filteredServices = useMemo(() => {
+    return services.filter(s => {
+      const matchesCat = selectedCategoryFilter === 'all' || s.categoryId === selectedCategoryFilter;
+      const sName = String(s.name || s.serviceName || '').toLowerCase();
+      const sCode = String(s.code || s.serviceCode || '').toLowerCase();
+      const search = pickerSearch.toLowerCase().trim();
+      const matchesSearch = !search || sName.includes(search) || sCode.includes(search);
+      return matchesCat && matchesSearch;
+    });
+  }, [services, selectedCategoryFilter, pickerSearch]);
 
   if (!isOpen || !opportunity) return null;
 
@@ -462,36 +610,36 @@ export default function QuotationManagerModal({
       left: 0,
       right: 0,
       bottom: 0,
-      backgroundColor: 'rgba(0, 0, 0, 0.75)',
+      backgroundColor: 'rgba(15, 23, 42, 0.65)',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       zIndex: 9999,
-      padding: '1rem'
+      padding: '1.25rem'
     }}>
       <div style={{
-        backgroundColor: '#0f172a',
-        borderRadius: '12px',
+        backgroundColor: '#ffffff',
+        borderRadius: '8px',
         width: '100%',
-        maxWidth: '1150px',
+        maxWidth: '1200px',
         maxHeight: '94vh',
         display: 'flex',
         flexDirection: 'column',
-        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-        border: '1px solid #334155',
-        color: '#f8fafc',
+        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)',
+        border: '1px solid #e2e8f0',
+        color: '#0f172a',
         overflow: 'hidden'
       }}>
-        {/* Header */}
+        {/* SECTION A: HEADER */}
         <div style={{
-          padding: '1.25rem 1.5rem',
-          borderBottom: '1px solid #1e293b',
+          padding: '1.25rem 1.75rem',
+          borderBottom: '1px solid #e2e8f0',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          backgroundColor: '#1e293b'
+          backgroundColor: '#f8fafc'
         }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
             <div style={{
               width: '40px',
               height: '40px',
@@ -500,13 +648,14 @@ export default function QuotationManagerModal({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: 'white'
+              color: 'white',
+              flexShrink: 0
             }}>
-              <FileText size={22} />
+              <FileSpreadsheet size={22} />
             </div>
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                <h2 style={{ fontSize: '1.2rem', fontWeight: 600, margin: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                <h2 style={{ fontSize: '1.2rem', fontWeight: 700, margin: 0, color: '#0f172a' }}>
                   Quotation Management
                 </h2>
                 {quotationNumber ? (
@@ -515,8 +664,9 @@ export default function QuotationManagerModal({
                     borderRadius: '4px',
                     fontSize: '0.75rem',
                     fontWeight: 700,
-                    backgroundColor: '#0369a1',
-                    color: '#e0f2fe'
+                    backgroundColor: '#e0f2fe',
+                    color: '#0369a1',
+                    fontFamily: 'monospace'
                   }}>
                     {quotationNumber}
                   </span>
@@ -526,15 +676,47 @@ export default function QuotationManagerModal({
                     borderRadius: '4px',
                     fontSize: '0.75rem',
                     fontWeight: 600,
-                    backgroundColor: '#475569',
-                    color: '#cbd5e1'
+                    backgroundColor: '#f1f5f9',
+                    color: '#64748b'
                   }}>
                     Draft
                   </span>
                 )}
+                <span style={{
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  backgroundColor: '#ede9fe',
+                  color: '#6d28d9'
+                }}>
+                  Revision R{revisionNumber}
+                </span>
+                <span style={{
+                  padding: '2px 8px',
+                  borderRadius: '4px',
+                  fontSize: '0.75rem',
+                  fontWeight: 600,
+                  backgroundColor: quotationStatus === 'Active' ? '#dcfce7' : quotationStatus === 'Superseded' ? '#f1f5f9' : '#fef3c7',
+                  color: quotationStatus === 'Active' ? '#15803d' : quotationStatus === 'Superseded' ? '#64748b' : '#b45309'
+                }}>
+                  {quotationStatus}
+                </span>
+                {!canEdit && (
+                  <span style={{
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    backgroundColor: '#fee2e2',
+                    color: '#b91c1c'
+                  }}>
+                    Read-Only
+                  </span>
+                )}
               </div>
-              <p style={{ fontSize: '0.82rem', color: '#94a3b8', margin: '2px 0 0' }}>
-                Opportunity: <strong>{opportunity.name}</strong> • Account: <strong>{opportunity.accountName || opportunity.account?.name || 'N/A'}</strong>
+              <p style={{ fontSize: '0.825rem', color: '#64748b', margin: '3px 0 0' }}>
+                Opportunity: <strong>{opportunity.name}</strong> • Customer: <strong>{opportunity.accountName || account.name || 'Valued Client'}</strong>
               </p>
             </div>
           </div>
@@ -543,61 +725,120 @@ export default function QuotationManagerModal({
             {toastMessage && (
               <span style={{
                 fontSize: '0.8rem',
-                color: '#34d399',
-                backgroundColor: 'rgba(16, 185, 129, 0.15)',
-                border: '1px solid rgba(16, 185, 129, 0.3)',
+                color: '#15803d',
+                backgroundColor: '#dcfce7',
+                border: '1px solid #bbf7d0',
                 padding: '4px 10px',
-                borderRadius: '6px'
+                borderRadius: '6px',
+                fontWeight: 600
               }}>
                 {toastMessage}
               </span>
             )}
 
-            <button
-              onClick={handleCopyQuotation}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                backgroundColor: '#334155',
-                color: '#f8fafc',
-                border: '1px solid #475569',
-                borderRadius: '6px',
-                padding: '0.5rem 0.85rem',
-                fontSize: '0.85rem',
-                fontWeight: 500,
-                cursor: 'pointer'
-              }}
-              title="Copy email-formatted quotation to clipboard"
-            >
-              {copied ? <Check size={16} color="#34d399" /> : <Copy size={16} />}
-              {copied ? 'Copied!' : 'Copy Quotation'}
-            </button>
+            {revisions.length > 1 && (
+              <button
+                type="button"
+                onClick={() => setShowRevisionHistory(!showRevisionHistory)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '4px',
+                  padding: '5px 10px',
+                  borderRadius: '6px',
+                  border: '1px solid #cbd5e1',
+                  background: '#ffffff',
+                  fontSize: '0.8rem',
+                  fontWeight: 600,
+                  color: '#475569',
+                  cursor: 'pointer'
+                }}
+              >
+                <History size={14} />
+                <span>Revisions ({revisions.length})</span>
+                <ChevronDown size={14} />
+              </button>
+            )}
 
             <button
               onClick={onClose}
               style={{
-                background: 'transparent',
+                background: 'none',
                 border: 'none',
-                color: '#94a3b8',
+                color: '#64748b',
                 cursor: 'pointer',
-                padding: '4px'
+                padding: '0.4rem',
+                borderRadius: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
               }}
+              title="Close"
             >
-              <X size={22} />
+              <X size={20} />
             </button>
           </div>
         </div>
 
-        {/* Modal Body */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+        {/* REVISION HISTORY DRAWER */}
+        {showRevisionHistory && (
+          <div style={{
+            backgroundColor: '#f8fafc',
+            borderBottom: '1px solid #e2e8f0',
+            padding: '0.75rem 1.75rem',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '1rem',
+            overflowX: 'auto'
+          }}>
+            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#475569', whiteSpace: 'nowrap' }}>
+              Historical Revisions:
+            </span>
+            {revisions.map(rev => (
+              <div
+                key={rev.id}
+                style={{
+                  padding: '4px 10px',
+                  borderRadius: '6px',
+                  border: '1px solid',
+                  borderColor: rev.isActive ? '#0284c7' : '#cbd5e1',
+                  background: rev.isActive ? '#e0f2fe' : '#ffffff',
+                  fontSize: '0.75rem',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                <span style={{ fontWeight: 700, color: rev.isActive ? '#0369a1' : '#334155' }}>
+                  {rev.version || `R${rev.revisionNumber}`}
+                </span>
+                <span style={{ color: '#64748b' }}>₹{Number(rev.amount || 0).toLocaleString()}</span>
+                <span style={{
+                  fontSize: '0.7rem',
+                  padding: '1px 5px',
+                  borderRadius: '3px',
+                  background: rev.isActive ? '#bae6fd' : '#f1f5f9',
+                  color: rev.isActive ? '#0369a1' : '#64748b',
+                  fontWeight: 600
+                }}>
+                  {rev.status}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* MODAL MAIN CONTENT BODY */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem 1.75rem' }}>
           {error && (
             <div style={{
+              backgroundColor: '#fef2f2',
+              border: '1px solid #fecaca',
+              borderRadius: '6px',
               padding: '0.75rem 1rem',
-              backgroundColor: 'rgba(239, 68, 68, 0.15)',
-              border: '1px solid #ef4444',
-              borderRadius: '8px',
-              color: '#fca5a5',
+              marginBottom: '1.25rem',
+              color: '#b91c1c',
               fontSize: '0.85rem',
               display: 'flex',
               alignItems: 'center',
@@ -608,308 +849,381 @@ export default function QuotationManagerModal({
             </div>
           )}
 
-          {/* Quotation Header Fields */}
+          {stateMismatchNotice && (
+            <div style={{
+              backgroundColor: '#fffbeb',
+              border: '1px solid #fde68a',
+              borderRadius: '6px',
+              padding: '0.65rem 0.9rem',
+              marginBottom: '1.25rem',
+              color: '#92400e',
+              fontSize: '0.82rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem'
+            }}>
+              <Info size={16} style={{ flexShrink: 0, color: '#d97706' }} />
+              <span>{stateMismatchNotice}</span>
+            </div>
+          )}
+
+          {/* SECTION B: CUSTOMER & OPPORTUNITY INFORMATION */}
           <div style={{
+            backgroundColor: '#f8fafc',
+            border: '1px solid #e2e8f0',
+            borderRadius: '8px',
+            padding: '1rem 1.25rem',
+            marginBottom: '1.5rem',
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-            gap: '1rem',
-            backgroundColor: '#1e293b',
-            padding: '1rem',
-            borderRadius: '8px',
-            border: '1px solid #334155'
+            gap: '1rem'
           }}>
             <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' }}>
-                Quotation Title
+              <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Building size={12} /> Account / Customer
+              </span>
+              <div style={{ fontWeight: 700, fontSize: '0.9rem', color: '#0f172a', marginTop: '2px' }}>
+                {opportunity.accountName || account.name || 'Valued Client'}
+              </div>
+              {account.industry && (
+                <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{account.industry}</div>
+              )}
+            </div>
+
+            <div>
+              <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <User size={12} /> Contact Person
+              </span>
+              <div style={{ fontWeight: 600, fontSize: '0.875rem', color: '#0f172a', marginTop: '2px' }}>
+                {opportunity.contactPerson || opportunity.primaryContact?.name || account.primaryContactName || 'N/A'}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                {opportunity.contactEmail || opportunity.primaryContact?.email || '—'}
+              </div>
+            </div>
+
+            <div>
+              <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <MapPin size={12} /> Billing Location / GSTIN
+              </span>
+              <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#0f172a', marginTop: '2px' }}>
+                {account.billingCity ? `${account.billingCity}, ${account.billingState || 'India'}` : 'Location on file'}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#64748b', fontFamily: 'monospace' }}>
+                {account.gstin ? `GSTIN: ${account.gstin}` : 'GSTIN: Unregistered / Default'}
+              </div>
+            </div>
+
+            <div>
+              <span style={{ fontSize: '0.72rem', fontWeight: 600, color: '#64748b', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Calendar size={12} /> Opportunity Context
+              </span>
+              <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#0f172a', marginTop: '2px' }}>
+                Stage: {opportunity.stage || 'Commercial Stage'}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                Estimated Value: ₹{Number(opportunity.value || 0).toLocaleString()}
+              </div>
+            </div>
+          </div>
+
+          {/* QUOTATION HEADER FIELDS */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+            gap: '1rem',
+            marginBottom: '1.5rem'
+          }}>
+            <div>
+              <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '4px' }}>
+                Quotation Title *
               </label>
               <input
                 type="text"
                 value={title}
                 onChange={e => setTitle(e.target.value)}
-                placeholder="e.g. Laboratory Analysis Proposal"
+                disabled={!canEdit}
+                placeholder="e.g. Wastewater Bioculture & Analytical Proposal"
                 style={{
                   width: '100%',
-                  marginTop: '4px',
                   padding: '0.5rem 0.75rem',
-                  backgroundColor: '#0f172a',
-                  border: '1px solid #475569',
+                  border: '1px solid #cbd5e1',
                   borderRadius: '6px',
-                  color: 'white',
-                  fontSize: '0.85rem'
+                  fontSize: '0.85rem',
+                  backgroundColor: canEdit ? '#ffffff' : '#f8fafc',
+                  color: '#0f172a'
                 }}
               />
             </div>
 
             <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' }}>
-                Tax Configuration
+              <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '4px' }}>
+                Tax Regime
               </label>
               <select
                 value={taxType}
-                onChange={e => setTaxType(e.target.value)}
+                onChange={e => handleTaxTypeChange(e.target.value)}
+                disabled={!canEdit}
                 style={{
                   width: '100%',
-                  marginTop: '4px',
                   padding: '0.5rem 0.75rem',
-                  backgroundColor: '#0f172a',
-                  border: '1px solid #475569',
+                  border: '1px solid #cbd5e1',
                   borderRadius: '6px',
-                  color: 'white',
-                  fontSize: '0.85rem'
+                  fontSize: '0.85rem',
+                  backgroundColor: canEdit ? '#ffffff' : '#f8fafc',
+                  color: '#0f172a'
                 }}
               >
-                <option value="INTRA_STATE">Intra-State (CGST 9% + SGST 9% = 18%)</option>
-                <option value="INTER_STATE">Inter-State (IGST 18%)</option>
-                <option value="EXEMPT">Exempt / Zero-Rated (0%)</option>
+                <option value="INTRA_STATE">Intra-State (CGST {cgstRate}% + SGST {sgstRate}%)</option>
+                <option value="INTER_STATE">Inter-State (IGST {igstRate}%)</option>
+                <option value="EXEMPT">Exempt / Zero Tax</option>
               </select>
             </div>
 
             <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' }}>
-                Valid Until Date
+              <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '4px' }}>
+                Validity Date
               </label>
               <input
                 type="date"
-                value={validUntilDate}
+                value={validUntilDate ? validUntilDate.split('T')[0] : ''}
                 onChange={e => setValidUntilDate(e.target.value)}
+                disabled={!canEdit}
                 style={{
                   width: '100%',
-                  marginTop: '4px',
                   padding: '0.5rem 0.75rem',
-                  backgroundColor: '#0f172a',
-                  border: '1px solid #475569',
+                  border: '1px solid #cbd5e1',
                   borderRadius: '6px',
-                  color: 'white',
-                  fontSize: '0.85rem'
-                }}
-              />
-            </div>
-
-            <div>
-              <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' }}>
-                Currency
-              </label>
-              <input
-                type="text"
-                value={currency}
-                disabled
-                style={{
-                  width: '100%',
-                  marginTop: '4px',
-                  padding: '0.5rem 0.75rem',
-                  backgroundColor: '#1e293b',
-                  border: '1px solid #334155',
-                  borderRadius: '6px',
-                  color: '#94a3b8',
-                  fontSize: '0.85rem'
+                  fontSize: '0.85rem',
+                  backgroundColor: canEdit ? '#ffffff' : '#f8fafc',
+                  color: '#0f172a'
                 }}
               />
             </div>
           </div>
 
-          {/* Line Items Section */}
-          <div style={{ backgroundColor: '#1e293b', borderRadius: '8px', border: '1px solid #334155', overflow: 'hidden' }}>
+          {/* SECTION D: QUOTATION ITEMS TABLE */}
+          <div style={{ marginBottom: '1.5rem' }}>
             <div style={{
-              padding: '0.85rem 1.25rem',
               display: 'flex',
-              alignItems: 'center',
               justifyContent: 'space-between',
-              borderBottom: '1px solid #334155',
-              backgroundColor: '#1e293b'
+              alignItems: 'center',
+              marginBottom: '0.75rem'
             }}>
               <div>
-                <h3 style={{ fontSize: '0.95rem', fontWeight: 600, margin: 0 }}>
-                  Quotation Line Items ({items.length})
+                <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 700, color: '#0f172a' }}>
+                  Commercial Line Items ({items.length})
                 </h3>
-                <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                  Select from 61 catalogue services across 4 categories, packages, or custom items.
+                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                  Laboratory services, test packages, and custom items
                 </span>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setShowItemPicker(true)}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.4rem',
-                  backgroundColor: '#0284c7',
-                  color: 'white',
-                  border: 'none',
-                  borderRadius: '6px',
-                  padding: '0.45rem 0.85rem',
-                  fontSize: '0.85rem',
-                  fontWeight: 600,
-                  cursor: 'pointer'
-                }}
-              >
-                <Plus size={16} />
-                Add Item / Service
-              </button>
-            </div>
-
-            {items.length === 0 ? (
-              <div style={{ padding: '2.5rem', textAlign: 'center', color: '#94a3b8' }}>
-                <FlaskConical size={36} style={{ margin: '0 auto 0.75rem', opacity: 0.5 }} />
-                <p style={{ margin: 0, fontSize: '0.9rem' }}>No items added to this quotation yet.</p>
+              {canEdit && (
                 <button
                   type="button"
                   onClick={() => setShowItemPicker(true)}
                   style={{
-                    marginTop: '0.75rem',
-                    background: 'none',
-                    border: '1px dashed #475569',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '5px',
+                    padding: '6px 12px',
                     borderRadius: '6px',
-                    color: '#38bdf8',
-                    padding: '0.5rem 1rem',
-                    fontSize: '0.85rem',
+                    backgroundColor: '#0284c7',
+                    color: '#ffffff',
+                    border: 'none',
+                    fontSize: '0.825rem',
+                    fontWeight: 600,
                     cursor: 'pointer'
                   }}
                 >
-                  + Add from Service Catalogue or Custom
+                  <Plus size={15} />
+                  <span>Add Line Item</span>
                 </button>
+              )}
+            </div>
+
+            {items.length === 0 ? (
+              <div style={{
+                padding: '2.5rem',
+                textAlign: 'center',
+                backgroundColor: '#f8fafc',
+                border: '1px dashed #cbd5e1',
+                borderRadius: '8px'
+              }}>
+                <FlaskConical size={32} color="#94a3b8" style={{ margin: '0 auto 0.5rem', display: 'block' }} />
+                <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#334155' }}>
+                  No Items Added Yet
+                </div>
+                <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '4px 0 1rem' }}>
+                  Select from all 61 active laboratory services, pre-configured packages, or add custom services.
+                </p>
+                {canEdit && (
+                  <button
+                    type="button"
+                    onClick={() => setShowItemPicker(true)}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: '6px',
+                      backgroundColor: '#0284c7',
+                      color: '#ffffff',
+                      border: 'none',
+                      fontSize: '0.825rem',
+                      fontWeight: 600,
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Open Service Catalogue
+                  </button>
+                )}
               </div>
             ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+              <div style={{ overflowX: 'auto', border: '1px solid #e2e8f0', borderRadius: '6px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.825rem' }}>
                   <thead>
-                    <tr style={{ backgroundColor: '#0f172a', color: '#94a3b8', textAlign: 'left', borderBottom: '1px solid #334155' }}>
-                      <th style={{ padding: '0.65rem 0.75rem', width: '40px' }}>#</th>
-                      <th style={{ padding: '0.65rem 0.75rem', width: '90px' }}>Type</th>
-                      <th style={{ padding: '0.65rem 0.75rem' }}>Item & Description</th>
-                      <th style={{ padding: '0.65rem 0.75rem', width: '90px' }}>Qty</th>
-                      <th style={{ padding: '0.65rem 0.75rem', width: '70px' }}>Unit</th>
-                      <th style={{ padding: '0.65rem 0.75rem', width: '100px', textAlign: 'right' }}>Std Price</th>
-                      <th style={{ padding: '0.65rem 0.75rem', width: '120px', textAlign: 'right' }}>
-                        Negotiated Rate (₹)
-                      </th>
-                      <th style={{ padding: '0.65rem 0.75rem', width: '100px', textAlign: 'right' }}>Discount</th>
-                      <th style={{ padding: '0.65rem 0.75rem', width: '120px', textAlign: 'right' }}>Line Total</th>
-                      <th style={{ padding: '0.65rem 0.75rem', width: '50px', textAlign: 'center' }}></th>
+                    <tr style={{ backgroundColor: '#f8fafc', borderBottom: '1px solid #e2e8f0', textAlign: 'left' }}>
+                      <th style={{ padding: '8px 12px', width: '38px', textAlign: 'center' }}>#</th>
+                      <th style={{ padding: '8px 12px', minWidth: '180px' }}>Item Name</th>
+                      <th style={{ padding: '8px 12px', width: '110px' }}>Type</th>
+                      <th style={{ padding: '8px 12px', width: '90px', textAlign: 'right' }}>Qty</th>
+                      <th style={{ padding: '8px 12px', width: '80px' }}>Unit</th>
+                      <th style={{ padding: '8px 12px', width: '110px', textAlign: 'right' }}>Unit Price (₹)</th>
+                      <th style={{ padding: '8px 12px', width: '100px', textAlign: 'right' }}>Discount (₹)</th>
+                      <th style={{ padding: '8px 12px', width: '120px', textAlign: 'right' }}>Taxable Amt (₹)</th>
+                      {canEdit && <th style={{ padding: '8px 12px', width: '40px', textAlign: 'center' }}></th>}
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map((it, idx) => {
-                      const lineTotal = (Number(it.quantity || 1) * Number(it.unitPrice || 0)) - Number(it.discountAmount || 0);
-                      if (!isOpen || !opportunity) return null;
+                    {items.map((item, idx) => {
+                      const qty = Number(item.quantity || 1);
+                      const unitPrice = Number(item.unitPrice || 0);
+                      const disc = Number(item.discountAmount || 0);
+                      const gross = qty * unitPrice;
+                      const taxable = Math.max(0, gross - disc);
 
-  return (
-                        <tr key={idx} style={{ borderBottom: '1px solid #334155' }}>
-                          <td style={{ padding: '0.65rem 0.75rem', color: '#94a3b8' }}>{idx + 1}</td>
-                          <td style={{ padding: '0.65rem 0.75rem' }}>
+                      return (
+                        <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '8px 12px', textAlign: 'center', color: '#64748b' }}>
+                            {idx + 1}
+                          </td>
+                          <td style={{ padding: '8px 12px' }}>
+                            <div style={{ fontWeight: 600, color: '#0f172a' }}>{item.itemName}</div>
+                            {item.itemCode && (
+                              <div style={{ fontSize: '0.72rem', color: '#64748b', fontFamily: 'monospace' }}>
+                                {item.itemCode}
+                              </div>
+                            )}
+                            {item.description && (
+                              <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '2px' }}>
+                                {item.description}
+                              </div>
+                            )}
+                          </td>
+                          <td style={{ padding: '8px 12px' }}>
                             <span style={{
-                              fontSize: '0.72rem',
                               padding: '2px 6px',
                               borderRadius: '4px',
-                              fontWeight: 600,
-                              backgroundColor: it.itemType === 'PACKAGE' ? '#4338ca' : it.itemType.startsWith('CUSTOM') ? '#b45309' : '#0369a1',
-                              color: 'white'
+                              fontSize: '0.7rem',
+                              fontWeight: 700,
+                              backgroundColor:
+                                item.itemType === 'PACKAGE' ? '#ede9fe' :
+                                item.itemType === 'ADDON' ? '#fef3c7' :
+                                item.itemType?.startsWith('CUSTOM') ? '#fff7ed' : '#e0f2fe',
+                              color:
+                                item.itemType === 'PACKAGE' ? '#6d28d9' :
+                                item.itemType === 'ADDON' ? '#b45309' :
+                                item.itemType?.startsWith('CUSTOM') ? '#c2410c' : '#0369a1'
                             }}>
-                              {it.itemType.replace('CUSTOM_', 'CST-')}
+                              {item.itemType}
                             </span>
                           </td>
-                          <td style={{ padding: '0.65rem 0.75rem' }}>
-                            <div style={{ fontWeight: 600, color: '#f8fafc' }}>{it.itemName}</div>
-                            {it.itemCode && <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>[{it.itemCode}] </span>}
-                            <input
-                              type="text"
-                              value={it.description}
-                              onChange={e => handleItemFieldChange(idx, 'description', e.target.value)}
-                              placeholder="Notes / description for quote"
-                              style={{
-                                width: '100%',
-                                marginTop: '3px',
-                                padding: '2px 6px',
-                                backgroundColor: '#0f172a',
-                                border: '1px solid #334155',
-                                borderRadius: '4px',
-                                color: '#cbd5e1',
-                                fontSize: '0.75rem'
-                              }}
-                            />
+                          <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                            {canEdit ? (
+                              <input
+                                type="number"
+                                min="1"
+                                value={item.quantity}
+                                onChange={e => handleItemFieldChange(idx, 'quantity', e.target.value)}
+                                style={{
+                                  width: '65px',
+                                  padding: '4px 6px',
+                                  border: '1px solid #cbd5e1',
+                                  borderRadius: '4px',
+                                  textAlign: 'right',
+                                  fontSize: '0.825rem'
+                                }}
+                              />
+                            ) : (
+                              item.quantity
+                            )}
                           </td>
-                          <td style={{ padding: '0.65rem 0.75rem' }}>
-                            <input
-                              type="number"
-                              min="1"
-                              value={it.quantity}
-                              onChange={e => handleItemFieldChange(idx, 'quantity', Math.max(1, parseInt(e.target.value) || 1))}
-                              style={{
-                                width: '100%',
-                                padding: '4px 6px',
-                                backgroundColor: '#0f172a',
-                                border: '1px solid #475569',
-                                borderRadius: '4px',
-                                color: 'white',
-                                fontSize: '0.85rem',
-                                textAlign: 'center'
-                              }}
-                            />
+                          <td style={{ padding: '8px 12px', color: '#64748b' }}>
+                            {item.billingUnit}
                           </td>
-                          <td style={{ padding: '0.65rem 0.75rem', color: '#94a3b8' }}>
-                            {it.billingUnit || 'Test'}
+                          <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                            {canEdit ? (
+                              <input
+                                type="number"
+                                min="0"
+                                value={item.unitPrice}
+                                onChange={e => handleItemFieldChange(idx, 'unitPrice', e.target.value)}
+                                style={{
+                                  width: '90px',
+                                  padding: '4px 6px',
+                                  border: '1px solid #cbd5e1',
+                                  borderRadius: '4px',
+                                  textAlign: 'right',
+                                  fontSize: '0.825rem'
+                                }}
+                              />
+                            ) : (
+                              `₹${unitPrice.toLocaleString()}`
+                            )}
                           </td>
-                          <td style={{ padding: '0.65rem 0.75rem', textAlign: 'right', color: '#94a3b8' }}>
-                            ₹{Number(it.standardPrice || 0).toLocaleString('en-IN')}
+                          <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                            {canEdit ? (
+                              <input
+                                type="number"
+                                min="0"
+                                max={gross}
+                                value={item.discountAmount}
+                                onChange={e => handleItemFieldChange(idx, 'discountAmount', e.target.value)}
+                                style={{
+                                  width: '80px',
+                                  padding: '4px 6px',
+                                  border: '1px solid #cbd5e1',
+                                  borderRadius: '4px',
+                                  textAlign: 'right',
+                                  fontSize: '0.825rem',
+                                  color: disc > 0 ? '#b91c1c' : '#0f172a'
+                                }}
+                              />
+                            ) : (
+                              disc > 0 ? `-₹${disc.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : '₹0.00'
+                            )}
                           </td>
-                          <td style={{ padding: '0.65rem 0.75rem', textAlign: 'right' }}>
-                            <input
-                              type="number"
-                              min="0"
-                              step="1"
-                              value={it.unitPrice}
-                              onChange={e => handleItemFieldChange(idx, 'unitPrice', Math.max(0, parseFloat(e.target.value) || 0))}
-                              style={{
-                                width: '100%',
-                                padding: '4px 6px',
-                                backgroundColor: '#0f172a',
-                                border: '1px solid #0284c7',
-                                borderRadius: '4px',
-                                color: '#38bdf8',
-                                fontWeight: 600,
-                                fontSize: '0.85rem',
-                                textAlign: 'right'
-                              }}
-                            />
+                          <td style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 700, color: '#0f172a' }}>
+                            ₹{taxable.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </td>
-                          <td style={{ padding: '0.65rem 0.75rem', textAlign: 'right' }}>
-                            <input
-                              type="number"
-                              min="0"
-                              step="1"
-                              value={it.discountAmount}
-                              onChange={e => handleItemFieldChange(idx, 'discountAmount', Math.max(0, parseFloat(e.target.value) || 0))}
-                              style={{
-                                width: '100%',
-                                padding: '4px 6px',
-                                backgroundColor: '#0f172a',
-                                border: '1px solid #475569',
-                                borderRadius: '4px',
-                                color: '#fca5a5',
-                                fontSize: '0.85rem',
-                                textAlign: 'right'
-                              }}
-                            />
-                          </td>
-                          <td style={{ padding: '0.65rem 0.75rem', textAlign: 'right', fontWeight: 700, color: '#f8fafc' }}>
-                            ₹{Math.max(0, lineTotal).toLocaleString('en-IN')}
-                          </td>
-                          <td style={{ padding: '0.65rem 0.75rem', textAlign: 'center' }}>
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveItem(idx)}
-                              style={{
-                                background: 'transparent',
-                                border: 'none',
-                                color: '#ef4444',
-                                cursor: 'pointer',
-                                padding: '2px'
-                              }}
-                              title="Remove item"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </td>
+                          {canEdit && (
+                            <td style={{ padding: '8px 12px', textAlign: 'center' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveItem(idx)}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  color: '#dc2626',
+                                  cursor: 'pointer',
+                                  padding: '4px',
+                                  borderRadius: '4px'
+                                }}
+                                title="Remove item"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       );
                     })}
@@ -919,212 +1233,244 @@ export default function QuotationManagerModal({
             )}
           </div>
 
-          {/* Quotation Summary & Calculations */}
+          {/* SECTION E: TERMS, NOTES & FINANCIAL SUMMARY */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))',
-            gap: '1.25rem'
+            gridTemplateColumns: '1fr 340px',
+            gap: '1.5rem',
+            alignItems: 'start'
           }}>
-            {/* Left: Terms and Conditions */}
-            <div style={{ backgroundColor: '#1e293b', padding: '1rem', borderRadius: '8px', border: '1px solid #334155' }}>
-              <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase' }}>
-                Terms & Conditions
-              </label>
-              <textarea
-                rows={5}
-                value={termsAndConditions}
-                onChange={e => setTermsAndConditions(e.target.value)}
-                style={{
-                  width: '100%',
-                  marginTop: '6px',
-                  padding: '0.5rem',
-                  backgroundColor: '#0f172a',
-                  border: '1px solid #475569',
-                  borderRadius: '6px',
-                  color: 'white',
-                  fontSize: '0.82rem',
-                  fontFamily: 'inherit',
-                  resize: 'vertical'
-                }}
-              />
+            <div>
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '4px' }}>
+                  Terms &amp; Conditions
+                </label>
+                <textarea
+                  rows={4}
+                  value={termsAndConditions}
+                  onChange={e => setTermsAndConditions(e.target.value)}
+                  disabled={!canEdit}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem 0.75rem',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '6px',
+                    fontSize: '0.8rem',
+                    backgroundColor: canEdit ? '#ffffff' : '#f8fafc',
+                    color: '#0f172a',
+                    lineHeight: 1.45
+                  }}
+                />
+              </div>
 
-              <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#94a3b8', textTransform: 'uppercase', marginTop: '0.75rem', display: 'block' }}>
-                Notes / Special Instructions
-              </label>
-              <textarea
-                rows={2}
-                value={notes}
-                onChange={e => setNotes(e.target.value)}
-                style={{
-                  width: '100%',
-                  marginTop: '6px',
-                  padding: '0.5rem',
-                  backgroundColor: '#0f172a',
-                  border: '1px solid #475569',
-                  borderRadius: '6px',
-                  color: 'white',
-                  fontSize: '0.82rem',
-                  fontFamily: 'inherit',
-                  resize: 'vertical'
-                }}
-              />
+              <div>
+                <label style={{ fontSize: '0.78rem', fontWeight: 600, color: '#475569', display: 'block', marginBottom: '4px' }}>
+                  Commercial Notes / Remarks
+                </label>
+                <textarea
+                  rows={2}
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                  disabled={!canEdit}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem 0.75rem',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: '6px',
+                    fontSize: '0.8rem',
+                    backgroundColor: canEdit ? '#ffffff' : '#f8fafc',
+                    color: '#0f172a'
+                  }}
+                />
+              </div>
             </div>
 
-            {/* Right: Totals Box */}
+            {/* FINANCIAL SUMMARY CARD */}
             <div style={{
-              backgroundColor: '#1e293b',
-              padding: '1.25rem',
+              backgroundColor: '#f8fafc',
+              border: '1px solid #e2e8f0',
               borderRadius: '8px',
-              border: '1px solid #334155',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'space-between'
+              padding: '1.25rem'
             }}>
-              <div>
-                <h4 style={{ fontSize: '0.9rem', fontWeight: 600, margin: '0 0 1rem', borderBottom: '1px solid #334155', paddingBottom: '0.5rem' }}>
-                  Commercial Summary
-                </h4>
+              <h4 style={{ margin: '0 0 1rem 0', fontSize: '0.9rem', fontWeight: 700, color: '#0f172a' }}>
+                Financial Summary
+              </h4>
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', fontSize: '0.85rem' }}>
-                  <span style={{ color: '#94a3b8' }}>Subtotal (Excl. Tax):</span>
-                  <span style={{ fontWeight: 600 }}>₹{subtotal.toLocaleString('en-IN')}</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', fontSize: '0.825rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+                  <span>Gross Subtotal:</span>
+                  <span style={{ fontWeight: 600 }}>₹{grossSubtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
 
-                {taxType === 'INTRA_STATE' && (
+                {totalDiscount > 0 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#b91c1c' }}>
+                    <span>Total Discount:</span>
+                    <span style={{ fontWeight: 600 }}>-₹{totalDiscount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#0f172a', fontWeight: 600, borderTop: '1px dashed #cbd5e1', paddingTop: '4px' }}>
+                  <span>Taxable Amount:</span>
+                  <span>₹{taxableSubtotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                </div>
+
+                {taxType === 'INTRA_STATE' ? (
                   <>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.4rem', fontSize: '0.82rem', color: '#94a3b8' }}>
-                      <span>CGST (9%):</span>
-                      <span>₹{cgstAmount.toLocaleString('en-IN')}</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+                      <span>CGST ({cgstRate}%):</span>
+                      <span>₹{cgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', fontSize: '0.82rem', color: '#94a3b8' }}>
-                      <span>SGST (9%):</span>
-                      <span>₹{sgstAmount.toLocaleString('en-IN')}</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+                      <span>SGST ({sgstRate}%):</span>
+                      <span>₹{sgstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                   </>
-                )}
-
-                {taxType === 'INTER_STATE' && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', fontSize: '0.82rem', color: '#94a3b8' }}>
-                    <span>IGST (18%):</span>
-                    <span>₹{igstAmount.toLocaleString('en-IN')}</span>
+                ) : taxType === 'INTER_STATE' ? (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+                    <span>IGST ({igstRate}%):</span>
+                    <span>₹{igstAmount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
+                    <span>Tax (Exempt):</span>
+                    <span>₹0.00</span>
                   </div>
                 )}
 
-                {taxType === 'EXEMPT' && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', fontSize: '0.82rem', color: '#94a3b8' }}>
-                    <span>Taxes:</span>
-                    <span>Exempt (0%)</span>
-                  </div>
-                )}
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.6rem', fontSize: '0.85rem', color: '#94a3b8' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', color: '#475569' }}>
                   <span>Total Tax:</span>
-                  <span style={{ fontWeight: 600, color: '#f8fafc' }}>₹{totalTax.toLocaleString('en-IN')}</span>
+                  <span style={{ fontWeight: 600 }}>₹{totalTax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
 
                 <div style={{
                   display: 'flex',
                   justifyContent: 'space-between',
-                  marginTop: '0.75rem',
-                  paddingTop: '0.75rem',
-                  borderTop: '1px solid #475569',
-                  fontSize: '1.1rem',
-                  fontWeight: 700,
-                  color: '#38bdf8'
+                  borderTop: '2px solid #0f172a',
+                  paddingTop: '0.5rem',
+                  marginTop: '0.5rem',
+                  fontSize: '1.05rem',
+                  fontWeight: 800,
+                  color: '#0284c7'
                 }}>
                   <span>Grand Total:</span>
-                  <span>₹{grandTotal.toLocaleString('en-IN')}</span>
+                  <span>₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                 </div>
               </div>
 
-              {/* Action Buttons in summary footer */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '1.25rem' }}>
-                <button
-                  type="button"
-                  onClick={handleApproveAndProceedToInvoice}
-                  disabled={saving || items.length === 0}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '0.5rem',
-                    backgroundColor: '#10b981',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '6px',
-                    padding: '0.75rem',
-                    fontSize: '0.92rem',
-                    fontWeight: 700,
-                    cursor: saving || items.length === 0 ? 'not-allowed' : 'pointer',
-                    opacity: saving || items.length === 0 ? 0.6 : 1,
-                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.3)'
-                  }}
-                >
-                  <CheckCircle size={18} />
-                  Approve Quotation and Create Invoice
-                </button>
-              </div>
+              {canEdit && (
+                <div style={{ marginTop: '1.25rem' }}>
+                  <button
+                    type="button"
+                    onClick={handleProceedToInvoice}
+                    disabled={saving || items.length === 0}
+                    style={{
+                      width: '100%',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '0.5rem',
+                      backgroundColor: '#059669',
+                      color: '#ffffff',
+                      border: 'none',
+                      borderRadius: '6px',
+                      padding: '0.75rem',
+                      fontSize: '0.875rem',
+                      fontWeight: 700,
+                      cursor: saving || items.length === 0 ? 'not-allowed' : 'pointer',
+                      opacity: saving || items.length === 0 ? 0.6 : 1,
+                      boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+                    }}
+                  >
+                    <Send size={16} />
+                    <span>Generate Proforma Invoice</span>
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        {/* Modal Footer */}
+        {/* SECTION F: MODAL FOOTER ACTIONS */}
         <div style={{
-          padding: '1rem 1.5rem',
-          borderTop: '1px solid #1e293b',
+          padding: '1rem 1.75rem',
+          borderTop: '1px solid #e2e8f0',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          backgroundColor: '#1e293b'
+          backgroundColor: '#f8fafc'
         }}>
-          <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-            * Note: REVY CRM maintains only the single current quotation per opportunity. Saving replaces previous quote data.
-          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <button
+              type="button"
+              onClick={handleCopyQuotation}
+              disabled={items.length === 0}
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                backgroundColor: '#ffffff',
+                border: '1px solid #cbd5e1',
+                color: '#334155',
+                padding: '0.5rem 0.85rem',
+                borderRadius: '6px',
+                fontSize: '0.825rem',
+                fontWeight: 600,
+                cursor: items.length === 0 ? 'not-allowed' : 'pointer'
+              }}
+              title="Copy formatted quotation text for email"
+            >
+              {copied ? <Check size={15} color="#15803d" /> : <Copy size={15} />}
+              <span>{copied ? 'Copied!' : 'Copy Email Text'}</span>
+            </button>
+          </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <button
               type="button"
               onClick={onClose}
               style={{
-                backgroundColor: 'transparent',
-                border: '1px solid #475569',
-                color: '#cbd5e1',
+                backgroundColor: '#ffffff',
+                border: '1px solid #cbd5e1',
+                color: '#475569',
                 padding: '0.5rem 1rem',
                 borderRadius: '6px',
                 fontSize: '0.85rem',
+                fontWeight: 500,
                 cursor: 'pointer'
               }}
             >
               Cancel
             </button>
 
-            <button
-              type="button"
-              onClick={() => handleSaveQuotation(false)}
-              disabled={saving}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.4rem',
-                backgroundColor: '#0284c7',
-                color: 'white',
-                border: 'none',
-                padding: '0.5rem 1.25rem',
-                borderRadius: '6px',
-                fontSize: '0.85rem',
-                fontWeight: 600,
-                cursor: saving ? 'not-allowed' : 'pointer',
-                opacity: saving ? 0.7 : 1
-              }}
-            >
-              <Save size={16} />
-              {saving ? 'Saving...' : 'Save Current Quotation'}
-            </button>
+            {canEdit && (
+              <button
+                type="button"
+                onClick={() => handleSaveQuotation(false)}
+                disabled={saving || items.length === 0}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.4rem',
+                  backgroundColor: '#0284c7',
+                  color: '#ffffff',
+                  border: 'none',
+                  padding: '0.5rem 1.25rem',
+                  borderRadius: '6px',
+                  fontSize: '0.85rem',
+                  fontWeight: 600,
+                  cursor: saving || items.length === 0 ? 'not-allowed' : 'pointer',
+                  opacity: saving || items.length === 0 ? 0.7 : 1
+                }}
+              >
+                <Save size={16} />
+                <span>{saving ? 'Saving...' : 'Save Quotation'}</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Item Picker Drawer / Sub-Modal */}
+      {/* CATALOGUE ITEM PICKER DRAWER / SUB-MODAL */}
       {showItemPicker && (
         <div style={{
           position: 'fixed',
@@ -1132,7 +1478,7 @@ export default function QuotationManagerModal({
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.8)',
+          backgroundColor: 'rgba(15, 23, 42, 0.7)',
           zIndex: 10000,
           display: 'flex',
           alignItems: 'center',
@@ -1140,46 +1486,47 @@ export default function QuotationManagerModal({
           padding: '1.5rem'
         }}>
           <div style={{
-            backgroundColor: '#0f172a',
-            border: '1px solid #334155',
-            borderRadius: '12px',
+            backgroundColor: '#ffffff',
+            border: '1px solid #e2e8f0',
+            borderRadius: '8px',
             width: '100%',
-            maxWidth: '850px',
-            maxHeight: '85vh',
+            maxWidth: '900px',
+            maxHeight: '88vh',
             display: 'flex',
             flexDirection: 'column',
-            overflow: 'hidden'
+            overflow: 'hidden',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
           }}>
             {/* Picker Header */}
             <div style={{
-              padding: '1rem 1.25rem',
-              backgroundColor: '#1e293b',
-              borderBottom: '1px solid #334155',
+              padding: '1rem 1.5rem',
+              backgroundColor: '#f8fafc',
+              borderBottom: '1px solid #e2e8f0',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between'
             }}>
               <div>
-                <h3 style={{ fontSize: '1.05rem', fontWeight: 600, margin: 0, color: 'white' }}>
-                  Add Line Item to Quotation
+                <h3 style={{ fontSize: '1.05rem', fontWeight: 700, margin: 0, color: '#0f172a' }}>
+                  Select Catalogue Item
                 </h3>
-                <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                  Select from 61 catalogue services, packages, or configure a custom service/product.
+                <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                  Choose from active laboratory services, test packages, or custom items
                 </span>
               </div>
               <button
                 onClick={() => setShowItemPicker(false)}
-                style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+                style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer' }}
               >
                 <X size={20} />
               </button>
             </div>
 
-            {/* Picker Tabs */}
+            {/* Picker Navigation Tabs */}
             <div style={{
               display: 'flex',
-              backgroundColor: '#0f172a',
-              borderBottom: '1px solid #334155',
+              backgroundColor: '#ffffff',
+              borderBottom: '1px solid #e2e8f0',
               padding: '0 1rem'
             }}>
               <button
@@ -1189,9 +1536,9 @@ export default function QuotationManagerModal({
                   padding: '0.75rem 1rem',
                   border: 'none',
                   background: 'none',
-                  color: pickerTab === 'services' ? '#38bdf8' : '#94a3b8',
-                  borderBottom: pickerTab === 'services' ? '2px solid #38bdf8' : 'none',
-                  fontWeight: 600,
+                  color: pickerTab === 'services' ? '#0284c7' : '#64748b',
+                  borderBottom: pickerTab === 'services' ? '2px solid #0284c7' : 'none',
+                  fontWeight: pickerTab === 'services' ? 700 : 500,
                   fontSize: '0.85rem',
                   cursor: 'pointer',
                   display: 'flex',
@@ -1200,7 +1547,7 @@ export default function QuotationManagerModal({
                 }}
               >
                 <FlaskConical size={16} />
-                Catalogue Services (61)
+                <span>Laboratory Services ({services.length})</span>
               </button>
 
               <button
@@ -1210,9 +1557,9 @@ export default function QuotationManagerModal({
                   padding: '0.75rem 1rem',
                   border: 'none',
                   background: 'none',
-                  color: pickerTab === 'packages' ? '#38bdf8' : '#94a3b8',
-                  borderBottom: pickerTab === 'packages' ? '2px solid #38bdf8' : 'none',
-                  fontWeight: 600,
+                  color: pickerTab === 'packages' ? '#6d28d9' : '#64748b',
+                  borderBottom: pickerTab === 'packages' ? '2px solid #6d28d9' : 'none',
+                  fontWeight: pickerTab === 'packages' ? 700 : 500,
                   fontSize: '0.85rem',
                   cursor: 'pointer',
                   display: 'flex',
@@ -1221,7 +1568,7 @@ export default function QuotationManagerModal({
                 }}
               >
                 <PackageIcon size={16} />
-                Packages & Bundles ({packages.length})
+                <span>Packages &amp; Bundles ({packages.length})</span>
               </button>
 
               <button
@@ -1231,9 +1578,9 @@ export default function QuotationManagerModal({
                   padding: '0.75rem 1rem',
                   border: 'none',
                   background: 'none',
-                  color: pickerTab === 'custom' ? '#f59e0b' : '#94a3b8',
-                  borderBottom: pickerTab === 'custom' ? '2px solid #f59e0b' : 'none',
-                  fontWeight: 600,
+                  color: pickerTab === 'custom' ? '#d97706' : '#64748b',
+                  borderBottom: pickerTab === 'custom' ? '2px solid #d97706' : 'none',
+                  fontWeight: pickerTab === 'custom' ? 700 : 500,
                   fontSize: '0.85rem',
                   cursor: 'pointer',
                   display: 'flex',
@@ -1242,83 +1589,94 @@ export default function QuotationManagerModal({
                 }}
               >
                 <Sparkles size={16} />
-                Custom Product / Service
+                <span>Custom Item</span>
               </button>
             </div>
 
-            {/* Picker Content */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
+            {/* Picker Content Body */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '1.25rem 1.5rem' }}>
               {pickerTab === 'services' && (
                 <div>
                   {/* Category Filter & Search */}
-                  <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
+                  <div style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
                     <select
                       value={selectedCategoryFilter}
                       onChange={e => setSelectedCategoryFilter(e.target.value)}
                       style={{
-                        padding: '0.5rem',
-                        backgroundColor: '#1e293b',
-                        border: '1px solid #475569',
+                        padding: '0.45rem 0.65rem',
+                        backgroundColor: '#ffffff',
+                        border: '1px solid #cbd5e1',
                         borderRadius: '6px',
-                        color: 'white',
-                        fontSize: '0.82rem',
-                        width: '260px'
+                        color: '#0f172a',
+                        fontSize: '0.825rem',
+                        minWidth: '220px'
                       }}
                     >
-                      <option value="all">All 4 Categories</option>
+                      <option value="all">All Service Categories ({categories.length})</option>
                       {categories.map(c => (
-                        <option key={c.id} value={c.id}>{c.categoryName}</option>
+                        <option key={c.id} value={c.id}>{c.categoryName || c.name}</option>
                       ))}
                     </select>
 
                     <input
                       type="text"
-                      placeholder="Search 61 services by name or code..."
+                      placeholder="Search services by name or code..."
                       value={pickerSearch}
                       onChange={e => setPickerSearch(e.target.value)}
                       style={{
                         flex: 1,
-                        padding: '0.5rem 0.75rem',
-                        backgroundColor: '#1e293b',
-                        border: '1px solid #475569',
+                        minWidth: '220px',
+                        padding: '0.45rem 0.75rem',
+                        backgroundColor: '#ffffff',
+                        border: '1px solid #cbd5e1',
                         borderRadius: '6px',
-                        color: 'white',
-                        fontSize: '0.82rem'
+                        color: '#0f172a',
+                        fontSize: '0.825rem'
                       }}
                     />
                   </div>
 
-                  {/* Services Grid / List */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '0.75rem' }}>
+                  {/* Services Grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '0.75rem' }}>
                     {filteredServices.map(srv => (
                       <div
                         key={srv.id}
                         onClick={() => handleAddService(srv)}
                         style={{
-                          backgroundColor: '#1e293b',
-                          border: '1px solid #334155',
-                          borderRadius: '8px',
-                          padding: '0.75rem',
+                          backgroundColor: '#ffffff',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '6px',
+                          padding: '0.85rem',
                           cursor: 'pointer',
                           transition: 'all 0.15s ease'
                         }}
-                        onMouseEnter={e => e.currentTarget.style.borderColor = '#0284c7'}
-                        onMouseLeave={e => e.currentTarget.style.borderColor = '#334155'}
+                        onMouseEnter={e => {
+                          e.currentTarget.style.borderColor = '#0284c7';
+                          e.currentTarget.style.backgroundColor = '#f0f9ff';
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.style.borderColor = '#e2e8f0';
+                          e.currentTarget.style.backgroundColor = '#ffffff';
+                        }}
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '4px' }}>
-                          <span style={{ fontSize: '0.7rem', color: '#38bdf8', fontWeight: 600 }}>{srv.serviceCode}</span>
-                          <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#34d399' }}>₹{Number(srv.standardPrice || 0).toLocaleString('en-IN')}</span>
+                          <span style={{ fontSize: '0.7rem', color: '#0369a1', fontWeight: 700, fontFamily: 'monospace' }}>
+                            {srv.code || srv.serviceCode}
+                          </span>
+                          <span style={{ fontSize: '0.85rem', fontWeight: 700, color: '#0f172a' }}>
+                            ₹{Number(srv.standardPrice || 0).toLocaleString()}
+                          </span>
                         </div>
-                        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'white', lineHeight: 1.25, marginBottom: '4px' }}>
-                          {srv.serviceName}
+                        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#0f172a', lineHeight: 1.3, marginBottom: '4px' }}>
+                          {srv.name || srv.serviceName}
                         </div>
-                        <div style={{ fontSize: '0.72rem', color: '#94a3b8' }}>
-                          {srv.categoryName} • Unit: {srv.billingUnitName || 'Test'}
+                        <div style={{ fontSize: '0.72rem', color: '#64748b' }}>
+                          {srv.categoryName || 'Laboratory Service'} • Unit: {srv.billingUnitName || 'Test'}
                         </div>
                       </div>
                     ))}
                     {filteredServices.length === 0 && (
-                      <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>
+                      <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '2rem', color: '#64748b' }}>
                         No services found matching search filters.
                       </div>
                     )}
@@ -1328,36 +1686,49 @@ export default function QuotationManagerModal({
 
               {pickerTab === 'packages' && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.75rem' }}>
-                  {packages.map(pkg => (
-                    <div
-                      key={pkg.id}
-                      onClick={() => handleAddPackage(pkg)}
-                      style={{
-                        backgroundColor: '#1e293b',
-                        border: '1px solid #334155',
-                        borderRadius: '8px',
-                        padding: '1rem',
-                        cursor: 'pointer'
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.borderColor = '#6366f1'}
-                      onMouseLeave={e => e.currentTarget.style.borderColor = '#334155'}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <span style={{ fontSize: '0.7rem', color: '#818cf8', fontWeight: 600 }}>{pkg.packageCode}</span>
-                        <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#34d399' }}>
-                          ₹{Number(pkg.activeVersion?.packagePrice || 0).toLocaleString('en-IN')}
-                        </span>
+                  {packages.map(pkg => {
+                    const activeVer = pkg.activeVersion;
+                    const price = Number(activeVer?.packagePrice || 0);
+                    return (
+                      <div
+                        key={pkg.id}
+                        onClick={() => handleAddPackage(pkg)}
+                        style={{
+                          backgroundColor: '#ffffff',
+                          border: '1px solid #e2e8f0',
+                          borderRadius: '6px',
+                          padding: '0.85rem',
+                          cursor: 'pointer',
+                          transition: 'all 0.15s ease'
+                        }}
+                        onMouseEnter={e => {
+                          e.currentTarget.style.borderColor = '#6d28d9';
+                          e.currentTarget.style.backgroundColor = '#faf5ff';
+                        }}
+                        onMouseLeave={e => {
+                          e.currentTarget.style.borderColor = '#e2e8f0';
+                          e.currentTarget.style.backgroundColor = '#ffffff';
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <span style={{ fontSize: '0.7rem', color: '#6d28d9', fontWeight: 700, fontFamily: 'monospace' }}>
+                            {pkg.code || pkg.packageCode}
+                          </span>
+                          <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#0f172a' }}>
+                            ₹{price.toLocaleString()}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: '0.875rem', fontWeight: 600, color: '#0f172a', margin: '4px 0' }}>
+                          {pkg.name || pkg.packageName}
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
+                          {pkg.description || `Pre-configured test bundle (v${activeVer?.versionNumber || 1})`}
+                        </div>
                       </div>
-                      <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'white', margin: '4px 0' }}>
-                        {pkg.packageName}
-                      </div>
-                      <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                        {pkg.description || 'Pre-configured test bundle'}
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {packages.length === 0 && (
-                    <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>
+                    <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '2rem', color: '#64748b' }}>
                       No active packages available.
                     </div>
                   )}
@@ -1365,25 +1736,24 @@ export default function QuotationManagerModal({
               )}
 
               {pickerTab === 'custom' && (
-                <div style={{ backgroundColor: '#1e293b', padding: '1.25rem', borderRadius: '8px', border: '1px solid #334155' }}>
-                  <h4 style={{ fontSize: '0.95rem', fontWeight: 600, margin: '0 0 1rem', color: '#f59e0b' }}>
+                <div style={{ backgroundColor: '#f8fafc', padding: '1.25rem', borderRadius: '6px', border: '1px solid #e2e8f0' }}>
+                  <h4 style={{ fontSize: '0.95rem', fontWeight: 700, margin: '0 0 1rem', color: '#0f172a' }}>
                     Configure Custom Item
                   </h4>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
                     <div>
-                      <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8' }}>Item Type</label>
+                      <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#475569' }}>Item Type</label>
                       <select
                         value={customItemType}
                         onChange={e => setCustomItemType(e.target.value)}
                         style={{
                           width: '100%',
                           marginTop: '4px',
-                          padding: '0.5rem',
-                          backgroundColor: '#0f172a',
-                          border: '1px solid #475569',
+                          padding: '0.45rem',
+                          backgroundColor: '#ffffff',
+                          border: '1px solid #cbd5e1',
                           borderRadius: '6px',
-                          color: 'white',
                           fontSize: '0.85rem'
                         }}
                       >
@@ -1393,48 +1763,46 @@ export default function QuotationManagerModal({
                     </div>
 
                     <div>
-                      <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8' }}>Item Name *</label>
+                      <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#475569' }}>Item Name *</label>
                       <input
                         type="text"
                         value={customItemName}
                         onChange={e => setCustomItemName(e.target.value)}
-                        placeholder="e.g. Specialized Heavy Metal Profiling"
+                        placeholder="e.g. Specialized Effluent Testing"
                         style={{
                           width: '100%',
                           marginTop: '4px',
-                          padding: '0.5rem',
-                          backgroundColor: '#0f172a',
-                          border: '1px solid #475569',
+                          padding: '0.45rem',
+                          backgroundColor: '#ffffff',
+                          border: '1px solid #cbd5e1',
                           borderRadius: '6px',
-                          color: 'white',
                           fontSize: '0.85rem'
                         }}
                       />
                     </div>
 
                     <div>
-                      <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8' }}>Unit Price (₹) *</label>
+                      <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#475569' }}>Unit Price (₹) *</label>
                       <input
                         type="number"
                         min="0"
                         value={customItemPrice}
                         onChange={e => setCustomItemPrice(e.target.value)}
-                        placeholder="e.g. 4500"
+                        placeholder="e.g. 5000"
                         style={{
                           width: '100%',
                           marginTop: '4px',
-                          padding: '0.5rem',
-                          backgroundColor: '#0f172a',
-                          border: '1px solid #475569',
+                          padding: '0.45rem',
+                          backgroundColor: '#ffffff',
+                          border: '1px solid #cbd5e1',
                           borderRadius: '6px',
-                          color: 'white',
                           fontSize: '0.85rem'
                         }}
                       />
                     </div>
 
                     <div>
-                      <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8' }}>Billing Unit</label>
+                      <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#475569' }}>Billing Unit</label>
                       <input
                         type="text"
                         value={customItemUnit}
@@ -1443,11 +1811,10 @@ export default function QuotationManagerModal({
                         style={{
                           width: '100%',
                           marginTop: '4px',
-                          padding: '0.5rem',
-                          backgroundColor: '#0f172a',
-                          border: '1px solid #475569',
+                          padding: '0.45rem',
+                          backgroundColor: '#ffffff',
+                          border: '1px solid #cbd5e1',
                           borderRadius: '6px',
-                          color: 'white',
                           fontSize: '0.85rem'
                         }}
                       />
@@ -1455,7 +1822,7 @@ export default function QuotationManagerModal({
                   </div>
 
                   <div style={{ marginBottom: '1rem' }}>
-                    <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8' }}>Description / Scope of Work</label>
+                    <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#475569' }}>Description / Scope of Work</label>
                     <textarea
                       rows={2}
                       value={customItemDescription}
@@ -1464,77 +1831,13 @@ export default function QuotationManagerModal({
                       style={{
                         width: '100%',
                         marginTop: '4px',
-                        padding: '0.5rem',
-                        backgroundColor: '#0f172a',
-                        border: '1px solid #475569',
+                        padding: '0.45rem',
+                        backgroundColor: '#ffffff',
+                        border: '1px solid #cbd5e1',
                         borderRadius: '6px',
-                        color: 'white',
                         fontSize: '0.85rem'
                       }}
                     />
-                  </div>
-
-                  {/* Custom handling choice: One-time vs Permanent Save */}
-                  <div style={{
-                    backgroundColor: '#0f172a',
-                    padding: '1rem',
-                    borderRadius: '6px',
-                    border: '1px solid #334155',
-                    marginBottom: '1rem'
-                  }}>
-                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#f8fafc', display: 'block', marginBottom: '0.5rem' }}>
-                      Catalogue Storage Choice:
-                    </span>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', marginBottom: '0.5rem' }}>
-                      <input
-                        type="radio"
-                        name="customSaveChoice"
-                        checked={!customSavePermanently}
-                        onChange={() => setCustomSavePermanently(false)}
-                      />
-                      <span style={{ fontSize: '0.82rem', color: '#cbd5e1' }}>
-                        <strong>Add as a one-time item</strong> for this quotation only (does not alter catalogue)
-                      </span>
-                    </label>
-
-                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: canManageCatalogue ? 'pointer' : 'not-allowed' }}>
-                      <input
-                        type="radio"
-                        name="customSaveChoice"
-                        checked={customSavePermanently}
-                        disabled={!canManageCatalogue}
-                        onChange={() => setCustomSavePermanently(true)}
-                      />
-                      <span style={{ fontSize: '0.82rem', color: canManageCatalogue ? '#f59e0b' : '#64748b' }}>
-                        <strong>Save permanently to catalogue</strong> for future use {canManageCatalogue ? '' : '(Requires CRM Admin permission)'}
-                      </span>
-                    </label>
-
-                    {customSavePermanently && (
-                      <div style={{ marginTop: '0.75rem', paddingLeft: '1.5rem' }}>
-                        <label style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8' }}>
-                          Select Category for Permanent Addition:
-                        </label>
-                        <select
-                          value={customCategoryId}
-                          onChange={e => setCustomCategoryId(e.target.value)}
-                          style={{
-                            display: 'block',
-                            marginTop: '4px',
-                            padding: '0.4rem 0.6rem',
-                            backgroundColor: '#1e293b',
-                            border: '1px solid #475569',
-                            borderRadius: '4px',
-                            color: 'white',
-                            fontSize: '0.82rem'
-                          }}
-                        >
-                          {categories.map(c => (
-                            <option key={c.id} value={c.id}>{c.categoryName}</option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
                   </div>
 
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
@@ -1542,12 +1845,12 @@ export default function QuotationManagerModal({
                       type="button"
                       onClick={() => setShowItemPicker(false)}
                       style={{
-                        padding: '0.5rem 1rem',
-                        backgroundColor: '#334155',
-                        border: 'none',
-                        color: '#cbd5e1',
+                        padding: '0.45rem 0.85rem',
+                        backgroundColor: '#ffffff',
+                        border: '1px solid #cbd5e1',
+                        color: '#475569',
                         borderRadius: '6px',
-                        fontSize: '0.85rem',
+                        fontSize: '0.825rem',
                         cursor: 'pointer'
                       }}
                     >
@@ -1557,17 +1860,17 @@ export default function QuotationManagerModal({
                       type="button"
                       onClick={handleAddCustomItem}
                       style={{
-                        padding: '0.5rem 1.25rem',
-                        backgroundColor: '#f59e0b',
+                        padding: '0.45rem 1rem',
+                        backgroundColor: '#d97706',
                         border: 'none',
-                        color: '#0f172a',
-                        fontWeight: 700,
+                        color: '#ffffff',
+                        fontWeight: 600,
                         borderRadius: '6px',
-                        fontSize: '0.85rem',
+                        fontSize: '0.825rem',
                         cursor: 'pointer'
                       }}
                     >
-                      Add Custom Item to Quote
+                      Add Custom Item
                     </button>
                   </div>
                 </div>

@@ -138,7 +138,7 @@ class Opportunity(Base):
             name="ck_crm_opportunities_amount_non_negative"
         ),
         CheckConstraint(
-            "stage IN ('Enquiry', 'Offer', 'Negotiation', 'Supply', 'Payment', 'Dormant')",
+            "stage IN ('Enquiry', 'Offer', 'Negotiation', 'PI Issued', 'Supply', 'Payment', 'Dormant')",
             name="ck_crm_opportunities_stage"
         ),
     )
@@ -151,7 +151,7 @@ class Opportunity(Base):
     originating_lead_id = Column(String(36), ForeignKey("leads.id", ondelete="SET NULL"), nullable=True, index=True)
 
     status = Column(String(50), nullable=False, default="Open", index=True)  # Open, Won, Lost
-    stage = Column(String(50), nullable=False, default="Enquiry", index=True)  # Enquiry, Offer, Negotiation, Supply, Payment, Dormant
+    stage = Column(String(50), nullable=False, default="Enquiry", index=True)  # Enquiry, Offer, Negotiation, PI Issued, Supply, Payment, Dormant
     loss_reason = Column(Text, nullable=True)
     won_reason = Column(Text, nullable=True)
     closed_by_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -190,6 +190,24 @@ class Opportunity(Base):
     milestones = relationship("Milestone", back_populates="opportunity", cascade="all, delete-orphan")
     quotations = relationship("OpportunityQuotation", back_populates="opportunity", cascade="all, delete-orphan", order_by="desc(OpportunityQuotation.created_at)")
     communications = relationship("LeadCommunicationHistory", back_populates="opportunity", cascade="all, delete-orphan", order_by="desc(LeadCommunicationHistory.communication_date)")
+    stage_history = relationship("OpportunityStageHistory", back_populates="opportunity", cascade="all, delete-orphan", order_by="desc(OpportunityStageHistory.created_at)")
+
+
+class OpportunityStageHistory(Base):
+    __tablename__ = "crm_opportunity_stage_history"
+
+    id = Column(String(36), primary_key=True, default=generate_uuid)
+    opportunity_id = Column(String(36), ForeignKey("crm_opportunities.id", ondelete="CASCADE"), nullable=False, index=True)
+    previous_stage = Column(String(50), nullable=True)
+    new_stage = Column(String(50), nullable=False, index=True)
+    triggering_event = Column(String(100), nullable=False, index=True)
+    triggering_user_id = Column(String(36), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    triggering_user_name = Column(String(255), nullable=True)
+    remarks = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
+
+    opportunity = relationship("Opportunity", back_populates="stage_history")
+    triggering_user = relationship("User", foreign_keys=[triggering_user_id])
 
 
 class Lead(Base):

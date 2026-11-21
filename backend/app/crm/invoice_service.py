@@ -36,9 +36,12 @@ from app.crm.invoice_schema import (
     CompanySettingsUpdate,
     ProformaInvoicePreviewRequest,
     ProformaInvoiceCreate,
-    ProformaInvoiceRevisionCreate
+    ProformaInvoiceRevisionCreate,
+    ProformaInvoiceUpdate
 )
-from app.crm.service import get_next_sequence_id
+from app.crm.financial_service import FinancialCalculator, money, format_inr, format_qty
+from app.crm.permissions import is_crm_admin_or_manager
+from app.crm.service import get_next_sequence_id, record_opportunity_stage_transition
 
 CENT = Decimal("0.01")
 
@@ -331,27 +334,68 @@ class ProformaInvoiceService:
     def get_next_pi_number(self, target_date: Optional[py_date] = None, commit: bool = False) -> Tuple[str, str]:
         """
         Generates sequential, concurrency-safe PI number: REVY/PI/2026-27/0001
-        Returns tuple: (pi_number, financial_year)
+        Uses database row locking on CrmSequence with collision handling to prevent
+        race conditions when initializing the sequence for a new financial year.
         """
         fy = get_financial_year(target_date)
         entity_name = f"PI_{fy}"
-        seq = self.db.query(CrmSequence).filter(CrmSequence.entity_name == entity_name).with_for_update().first()
+
+        seq = self.db.query(CrmSequence).filter(
+            CrmSequence.entity_name == entity_name
+        ).with_for_update().first()
+
         if not seq:
-            seq = CrmSequence(entity_name=entity_name, current_value=1)
-            self.db.add(seq)
-            val = 1
+            # Query existing PIs in database for this financial year to find highest sequence
+            existing_pis = self.db.query(ProformaInvoice.pi_number).filter(
+                ProformaInvoice.financial_year == fy
+            ).all()
+            max_val = 0
+            for (p_num,) in existing_pis:
+                try:
+                    num_part = int(p_num.split("/")[-1])
+                    if num_part > max_val:
+                        max_val = num_part
+                except Exception:
+                    pass
+
+            try:
+                nested = self.db.begin_nested()
+                seq = CrmSequence(entity_name=entity_name, current_value=max_val + 1)
+                self.db.add(seq)
+                nested.commit()
+                val = max_val + 1
+            except Exception:
+                nested.rollback()
+                seq = self.db.query(CrmSequence).filter(
+                    CrmSequence.entity_name == entity_name
+                ).with_for_update().first()
+                if seq:
+                    seq.current_value += 1
+                    val = seq.current_value
+                else:
+                    max_val += 1
+                    val = max_val
         else:
             seq.current_value += 1
             val = seq.current_value
+
+        # Double check candidate against existing PIs to guarantee global uniqueness
+        candidate_num = f"REVY/PI/{fy}/{val:04d}"
+        while self.db.query(ProformaInvoice).filter(ProformaInvoice.pi_number == candidate_num).first() is not None:
+            val += 1
+            if seq:
+                seq.current_value = val
+            candidate_num = f"REVY/PI/{fy}/{val:04d}"
+
         if commit:
             self.db.commit()
         else:
             self.db.flush()
-        num = f"REVY/PI/{fy}/{val:04d}"
-        return num, fy
+
+        return candidate_num, fy
 
     # =========================================================================
-    # 3. CALCULATIONS & TAXES
+    # 3. CALCULATIONS & TAXES (UNIFIED FINANCIAL ENGINE)
     # =========================================================================
     def calculate_invoice_totals(
         self,
@@ -359,109 +403,16 @@ class ProformaInvoiceService:
         tax_type: str = "INTRA_STATE",
         tax_configuration_id: Optional[str] = None
     ) -> Dict[str, Any]:
-        lines = []
-        subtotal = Decimal("0.00")
-
-        for idx, item in enumerate(items, start=1):
-            qty = Decimal(str(getattr(item, "quantity", 1)))
-            rate = Decimal(str(getattr(item, "rate", 0)))
-            amt = money(qty * rate)
-            subtotal += amt
-            lines.append({
-                "sr_no": getattr(item, "sr_no", idx) or idx,
-                "item_type": getattr(item, "item_type", "SERVICE"),
-                "service_id": getattr(item, "service_id", None),
-                "package_id": getattr(item, "package_id", None),
-                "item_code": getattr(item, "item_code", None),
-                "name": getattr(item, "name", "") or getattr(item, "item_name", "Item"),
-                "description": getattr(item, "description", None),
-                "quantity": qty,
-                "quantity_formatted": format_qty(qty),
-                "unit": getattr(item, "unit", None),
-                "rate": rate,
-                "rate_formatted": format_inr(rate),
-                "amount": amt,
-                "amount_formatted": format_inr(amt),
-                "notes": getattr(item, "notes", None)
-            })
-
-        cgst_rate = Decimal("0.0")
-        cgst_amt = Decimal("0.00")
-        sgst_rate = Decimal("0.0")
-        sgst_amt = Decimal("0.00")
-        igst_rate = Decimal("0.0")
-        igst_amt = Decimal("0.00")
-
-        # Tax rates from tax config if provided, otherwise standard Indian GST defaults (9% + 9% or 18%)
-        tax_config = None
-        if tax_configuration_id:
-            tax_config = self.db.query(TaxConfiguration).options(
-                joinedload(TaxConfiguration.rates)
-            ).filter(TaxConfiguration.id == tax_configuration_id).first()
-
-        clean_tax_type = (tax_type or "INTRA_STATE").upper()
-
-        if clean_tax_type == "INTRA_STATE":
-            if tax_config and tax_config.rates:
-                for r in tax_config.rates:
-                    if not r.is_active:
-                        continue
-                    pct = Decimal(str(r.rate_percentage))
-                    name = r.component_name.upper()
-                    if "CGST" in name:
-                        cgst_rate = pct
-                    elif "SGST" in name or "UTGST" in name:
-                        sgst_rate = pct
-            else:
-                cgst_rate = Decimal("9.0")
-                sgst_rate = Decimal("9.0")
-
-            cgst_amt = money(subtotal * (cgst_rate / Decimal("100.0")))
-            sgst_amt = money(subtotal * (sgst_rate / Decimal("100.0")))
-            total_tax = cgst_amt + sgst_amt
-
-        elif clean_tax_type == "INTER_STATE":
-            if tax_config and tax_config.rates:
-                for r in tax_config.rates:
-                    if not r.is_active:
-                        continue
-                    pct = Decimal(str(r.rate_percentage))
-                    name = r.component_name.upper()
-                    if "IGST" in name:
-                        igst_rate = pct
-            else:
-                igst_rate = Decimal("18.0")
-
-            igst_amt = money(subtotal * (igst_rate / Decimal("100.0")))
-            total_tax = igst_amt
-
-        else:  # EXEMPT
-            total_tax = Decimal("0.00")
-
-        grand_total = subtotal + total_tax
-
-        return {
-            "lines": lines,
-            "subtotal": subtotal,
-            "subtotal_formatted": format_inr(subtotal),
-            "tax_type": clean_tax_type,
-            "cgst_rate": cgst_rate,
-            "cgst_rate_formatted": format_qty(cgst_rate),
-            "cgst_amount": cgst_amt,
-            "cgst_amount_formatted": format_inr(cgst_amt),
-            "sgst_rate": sgst_rate,
-            "sgst_rate_formatted": format_qty(sgst_rate),
-            "sgst_amount": sgst_amt,
-            "sgst_amount_formatted": format_inr(sgst_amt),
-            "igst_rate": igst_rate,
-            "igst_rate_formatted": format_qty(igst_rate),
-            "igst_amount": igst_amt,
-            "igst_amount_formatted": format_inr(igst_amt),
-            "total_tax": total_tax,
-            "total_tax_formatted": format_inr(total_tax),
-            "grand_total": grand_total,
-            "grand_total_formatted": format_inr(grand_total)
-        }
+        """
+        Delegates to the shared FinancialCalculator to guarantee 100% calculation
+        parity across quotations, proforma invoices, and documents.
+        """
+        return FinancialCalculator.calculate_commercial_totals(
+            db=self.db,
+            items=items,
+            tax_type=tax_type,
+            tax_configuration_id=tax_configuration_id
+        )
 
     # =========================================================================
     # 4. RENDER HTML DOCUMENT
@@ -469,17 +420,21 @@ class ProformaInvoiceService:
     def render_invoice_html(
         self,
         pi_number: str,
-        pi_date: Any,
-        financial_year: str,
-        revision_number: int,
-        opportunity: Opportunity,
-        account: Account,
-        calculated_totals: Dict[str, Any],
-        company_snapshot: Dict[str, Any],
-        terms: List[str],
+        pi_date: Any = None,
+        financial_year: Optional[str] = None,
+        revision_number: Optional[int] = None,
+        opportunity: Optional[Opportunity] = None,
+        account: Optional[Account] = None,
+        calculated_totals: Optional[Dict[str, Any]] = None,
+        company_snapshot: Optional[Dict[str, Any]] = None,
+        terms: Optional[List[str]] = None,
         reference_note: Optional[str] = None,
         is_preview: bool = False
     ) -> str:
+        if pi_date is None and financial_year is None and calculated_totals is None:
+            # Single argument invocation with pi_id or pi_number
+            return self.render_stored_revision_html(pi_number, revision_number=revision_number)
+
         from jinja2 import Environment, FileSystemLoader, select_autoescape
 
         template_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "templates")
@@ -543,24 +498,37 @@ class ProformaInvoiceService:
 
         date_str = pi_date.strftime("%d-%b-%Y") if hasattr(pi_date, "strftime") else str(pi_date)
 
+        total_disc = Decimal(str(calculated_totals.get("total_discount") or calculated_totals.get("discount_amount") or 0))
+        has_discount = total_disc > Decimal("0.00")
+        gross_sub = calculated_totals.get("gross_subtotal_formatted") or calculated_totals.get("subtotal_formatted", "0.00")
+        disc_amt = calculated_totals.get("discount_amount_formatted") or calculated_totals.get("total_discount_formatted", "0.00")
+        taxable_amt = calculated_totals.get("taxable_subtotal_formatted") or calculated_totals.get("subtotal_formatted", "0.00")
+
         rendered = template.render(
             invoice_title="PROFORMA INVOICE",
             pi_number=pi_number,
             pi_date=date_str,
             financial_year=financial_year,
             revision_number=revision_number,
-            opportunity_number=opportunity.opportunity_id,
-            reference_text=reference_note or opportunity.name,
+            opportunity_number=opportunity.opportunity_id if opportunity else "",
+            reference_text=reference_note or (opportunity.name if opportunity else ""),
             currency_symbol="₹",
             logo_uri=logo_uri,
             signature_uri=signature_uri,
             company=company_snapshot,
             customer=customer_info,
-            bank=company_snapshot.get("bank", {}),
-            signatory=company_snapshot.get("signatory", {}),
+            bank=company_snapshot.get("bank", {}) if company_snapshot else {},
+            signatory=company_snapshot.get("signatory", {}) if company_snapshot else {},
             lines=calculated_totals["lines"],
             terms=terms,
-            subtotal_formatted=calculated_totals["subtotal_formatted"],
+            has_discount=has_discount,
+            subtotal_gross_formatted=gross_sub,
+            gross_subtotal_formatted=gross_sub,
+            discount_amount_formatted=disc_amt,
+            total_discount_formatted=disc_amt,
+            taxable_amount_formatted=taxable_amt,
+            subtotal_formatted=taxable_amt,
+            total_discount=float(total_disc),
             tax_type=calculated_totals["tax_type"],
             cgst_rate_formatted=calculated_totals["cgst_rate_formatted"],
             cgst_amount_formatted=calculated_totals["cgst_amount_formatted"],
@@ -568,6 +536,7 @@ class ProformaInvoiceService:
             sgst_amount_formatted=calculated_totals["sgst_amount_formatted"],
             igst_rate_formatted=calculated_totals["igst_rate_formatted"],
             igst_amount_formatted=calculated_totals["igst_amount_formatted"],
+            total_tax_formatted=calculated_totals.get("total_tax_formatted", format_inr(calculated_totals.get("total_tax", 0.0))),
             grand_total_formatted=calculated_totals["grand_total_formatted"],
             is_preview=is_preview
         )
@@ -663,7 +632,14 @@ class ProformaInvoiceService:
     ) -> ProformaInvoice:
         """
         Creates a permanent Proforma Invoice with sequential numbering and Revision 1.
+        Restricted to CRM Admin and CRM Manager.
         """
+        if not is_crm_admin_or_manager(actor):
+            raise PermissionError("Only CRM Admin and CRM Manager have permission to generate Proforma Invoices.")
+
+        if not payload.items or len(payload.items) == 0:
+            raise ValueError("Cannot create a Proforma Invoice with zero items. At least one line item is required.")
+
         quotation = self.db.query(OpportunityQuotation).filter(
             OpportunityQuotation.id == payload.quotationId
         ).first()
@@ -676,11 +652,8 @@ class ProformaInvoiceService:
         if not opp or not opp.account:
             raise ValueError(f"Opportunity or associated Account not found for ID '{payload.opportunityId}'.")
 
-        # Approve quotation automatically if in draft / review
-        if quotation.status in ("Draft", "Internal Review"):
-            quotation.status = "Approved"
-            quotation.approved_by_id = str(actor.id) if getattr(actor, "id", None) else None
-            quotation.approved_at = datetime.now(timezone.utc)
+        if quotation.opportunity_id != opp.id:
+            raise ValueError("Quotation does not belong to the selected opportunity.")
 
         pi_date = payload.piDate or py_date.today()
         pi_number, fy = self.get_next_pi_number(pi_date, commit=False)
@@ -722,7 +695,7 @@ class ProformaInvoiceService:
             currency="INR",
             subtotal=totals["subtotal"],
             tax_type=totals["tax_type"],
-            tax_configuration_id=payload.taxConfigurationId,
+            tax_configuration_id=totals.get("tax_configuration_id") or payload.taxConfigurationId,
             cgst_rate=totals["cgst_rate"],
             cgst_amount=totals["cgst_amount"],
             sgst_rate=totals["sgst_rate"],
@@ -759,6 +732,16 @@ class ProformaInvoiceService:
             )
             self.db.add(item)
 
+        record_opportunity_stage_transition(
+            db=self.db,
+            opp=opp,
+            new_stage="PI Issued",
+            triggering_event="PI_GENERATED",
+            actor=actor,
+            remarks=f"Proforma Invoice generated: {pi.pi_number}",
+            commit=False
+        )
+
         self.db.commit()
         self.db.refresh(pi)
 
@@ -791,6 +774,9 @@ class ProformaInvoiceService:
         payload: ProformaInvoiceRevisionCreate,
         request: Any = None
     ) -> ProformaInvoiceRevision:
+        if not is_crm_admin_or_manager(actor):
+            raise PermissionError("Only CRM Admin and CRM Manager have permission to revise Proforma Invoices.")
+
         pi = self.db.query(ProformaInvoice).filter(
             ProformaInvoice.id == pi_id
         ).with_for_update().first()
@@ -829,7 +815,7 @@ class ProformaInvoiceService:
             currency="INR",
             subtotal=totals["subtotal"],
             tax_type=totals["tax_type"],
-            tax_configuration_id=payload.taxConfigurationId,
+            tax_configuration_id=totals.get("tax_configuration_id") or payload.taxConfigurationId,
             cgst_rate=totals["cgst_rate"],
             cgst_amount=totals["cgst_amount"],
             sgst_rate=totals["sgst_rate"],
@@ -888,6 +874,162 @@ class ProformaInvoiceService:
         return rev
 
     # =========================================================================
+    # 7B. DIRECT EDIT OF ISSUED PROFORMA INVOICE (AUDITED WITH OVERRIDE REASON)
+    # =========================================================================
+    def update_proforma_invoice(
+        self,
+        actor: Any,
+        pi_id: str,
+        payload: ProformaInvoiceUpdate,
+        request: Any = None
+    ) -> ProformaInvoice:
+        """
+        Directly edits an existing issued Proforma Invoice with strict audit logging
+        of the differential changes (old vs new) and mandatory override reason.
+        Restricted to CRM Admin and CRM Manager.
+        """
+        if not is_crm_admin_or_manager(actor):
+            raise PermissionError("Only CRM Admin and CRM Manager have permission to edit issued Proforma Invoices.")
+
+        if not payload.overrideReason or not payload.overrideReason.strip():
+            raise ValueError("An override reason is required to edit an issued Proforma Invoice.")
+
+        if not payload.items or len(payload.items) == 0:
+            raise ValueError("Cannot update a Proforma Invoice with zero items. At least one line item is required.")
+
+        pi = self.db.query(ProformaInvoice).filter(
+            ProformaInvoice.id == pi_id
+        ).with_for_update().first()
+        if not pi:
+            raise ValueError(f"Proforma Invoice '{pi_id}' not found.")
+
+        # Find current revision
+        rev = self.db.query(ProformaInvoiceRevision).filter(
+            ProformaInvoiceRevision.proforma_invoice_id == pi.id,
+            ProformaInvoiceRevision.revision_number == pi.current_revision_number
+        ).with_for_update().first()
+        if not rev:
+            raise ValueError(f"Current revision {pi.current_revision_number} for PI '{pi.pi_number}' not found.")
+
+        # Compute new totals
+        totals = self.calculate_invoice_totals(
+            items=payload.items,
+            tax_type=payload.taxType or rev.tax_type,
+            tax_configuration_id=payload.taxConfigurationId or rev.tax_configuration_id
+        )
+
+        # Build differential audit record
+        changes: Dict[str, Any] = {}
+        old_subtotal = float(rev.subtotal)
+        new_subtotal = float(totals["subtotal"])
+        if old_subtotal != new_subtotal:
+            changes["subtotal"] = {"old": old_subtotal, "new": new_subtotal}
+
+        old_tax = float(rev.total_tax)
+        new_tax = float(totals["total_tax"])
+        if old_tax != new_tax:
+            changes["total_tax"] = {"old": old_tax, "new": new_tax}
+
+        old_gt = float(rev.grand_total)
+        new_gt = float(totals["grand_total"])
+        if old_gt != new_gt:
+            changes["grand_total"] = {"old": old_gt, "new": new_gt}
+
+        if rev.tax_type != totals["tax_type"]:
+            changes["tax_type"] = {"old": rev.tax_type, "new": totals["tax_type"]}
+
+        if payload.piDate and rev.pi_date != payload.piDate:
+            changes["pi_date"] = {"old": str(rev.pi_date), "new": str(payload.piDate)}
+
+        if payload.referenceNote is not None and rev.reference_note != payload.referenceNote:
+            changes["reference_note"] = {"old": rev.reference_note, "new": payload.referenceNote}
+
+        if payload.notes is not None and rev.notes != payload.notes:
+            changes["notes"] = {"old": rev.notes, "new": payload.notes}
+
+        # Item diff summary
+        old_items_count = len(rev.items)
+        new_items_count = len(totals["lines"])
+        changes["items_count"] = {"old": old_items_count, "new": new_items_count}
+
+        # Update revision headers
+        if payload.piDate:
+            rev.pi_date = payload.piDate
+        if payload.referenceNote is not None:
+            rev.reference_note = payload.referenceNote
+        if payload.notes is not None:
+            rev.notes = payload.notes
+        if payload.terms is not None:
+            rev.terms_snapshot = payload.terms
+
+        rev.tax_type = totals["tax_type"]
+        rev.tax_configuration_id = totals.get("tax_configuration_id") or payload.taxConfigurationId or rev.tax_configuration_id
+        rev.subtotal = totals["subtotal"]
+        rev.cgst_rate = totals["cgst_rate"]
+        rev.cgst_amount = totals["cgst_amount"]
+        rev.sgst_rate = totals["sgst_rate"]
+        rev.sgst_amount = totals["sgst_amount"]
+        rev.igst_rate = totals["igst_rate"]
+        rev.igst_amount = totals["igst_amount"]
+        rev.total_tax = totals["total_tax"]
+        rev.grand_total = totals["grand_total"]
+
+        # Replace line items
+        for old_item in list(rev.items):
+            self.db.delete(old_item)
+        self.db.flush()
+
+        for line in totals["lines"]:
+            item = ProformaInvoiceItem(
+                revision_id=rev.id,
+                sr_no=line["sr_no"],
+                item_type=line["item_type"],
+                service_id=line["service_id"],
+                package_id=line["package_id"],
+                item_code=line["item_code"],
+                item_name=line["name"],
+                description=line["description"],
+                quantity=line["quantity"],
+                unit=line["unit"],
+                rate=line["rate"],
+                amount=line["amount"],
+                notes=line["notes"]
+            )
+            self.db.add(item)
+
+        pi.updated_at = datetime.now(timezone.utc)
+        self.db.commit()
+        self.db.refresh(pi)
+
+        try:
+            old_state = {"subtotal": old_subtotal, "total_tax": old_tax, "grand_total": old_gt, "items_count": old_items_count}
+            new_state = {"subtotal": new_subtotal, "total_tax": new_tax, "grand_total": new_gt, "items_count": new_items_count}
+            self.audit_service.log(
+                action="CRM_PROFORMA_INVOICE_EDITED",
+                request=request,
+                performed_by_employee_id=str(actor.id) if getattr(actor, "id", None) else None,
+                performed_by_name=getattr(actor, "name", None) or getattr(actor, "username", "Unknown"),
+                role_used=getattr(actor, "active_role", "CRM_ADMIN"),
+                target_info={
+                    "recordId": pi.id,
+                    "target_record_id": pi.id,
+                    "proforma_invoice_id": pi.id,
+                    "pi_number": pi.pi_number,
+                    "revision_number": rev.revision_number,
+                    "override_reason": payload.overrideReason,
+                    "changes": changes,
+                    "details": json.dumps({"override_reason": payload.overrideReason, "changes": changes}),
+                    "new_grand_total": float(totals["grand_total"])
+                },
+                before_state=old_state,
+                after_state=new_state
+            )
+        except Exception as e:
+            logger.warning(f"Failed to write audit log for PI edit: {e}")
+
+        return pi
+
+    # =========================================================================
     # 8. GET & RENDER EXISTING PI REVISION
     # =========================================================================
     def get_proforma_invoice(self, pi_id: str) -> Optional[ProformaInvoice]:
@@ -914,23 +1056,43 @@ class ProformaInvoiceService:
             if not rev:
                 raise ValueError(f"No revisions found for PI '{pi.pi_number}'.")
 
+        gross_subtotal = Decimal("0.00")
+        total_discount = Decimal("0.00")
+        lines = []
+        for it in rev.items:
+            qty = Decimal(str(it.quantity or 0))
+            rate = Decimal(str(it.rate or 0))
+            line_gross = money(qty * rate)
+            line_amt = Decimal(str(it.amount or 0))
+            disc = money(line_gross - line_amt) if line_gross > line_amt else Decimal("0.00")
+            gross_subtotal += line_gross
+            total_discount += disc
+            lines.append({
+                "sr_no": it.sr_no,
+                "name": it.item_name,
+                "description": it.description,
+                "quantity": it.quantity,
+                "quantity_formatted": format_qty(it.quantity),
+                "unit": it.unit,
+                "rate": it.rate,
+                "rate_formatted": format_inr(it.rate),
+                "gross_amount": line_gross,
+                "gross_amount_formatted": format_inr(line_gross),
+                "discount_amount": disc,
+                "discount_amount_formatted": format_inr(disc),
+                "discount_formatted": format_inr(disc),
+                "amount": it.amount,
+                "amount_formatted": format_inr(it.amount),
+                "notes": it.notes
+            })
+
         totals = {
-            "lines": [
-                {
-                    "sr_no": it.sr_no,
-                    "name": it.item_name,
-                    "description": it.description,
-                    "quantity": it.quantity,
-                    "quantity_formatted": format_qty(it.quantity),
-                    "unit": it.unit,
-                    "rate": it.rate,
-                    "rate_formatted": format_inr(it.rate),
-                    "amount": it.amount,
-                    "amount_formatted": format_inr(it.amount),
-                    "notes": it.notes
-                }
-                for it in rev.items
-            ],
+            "lines": lines,
+            "gross_subtotal": gross_subtotal,
+            "gross_subtotal_formatted": format_inr(gross_subtotal),
+            "total_discount": total_discount,
+            "total_discount_formatted": format_inr(total_discount),
+            "subtotal": rev.subtotal,
             "subtotal_formatted": format_inr(rev.subtotal),
             "tax_type": rev.tax_type,
             "cgst_rate_formatted": format_qty(rev.cgst_rate),
@@ -939,6 +1101,7 @@ class ProformaInvoiceService:
             "sgst_amount_formatted": format_inr(rev.sgst_amount),
             "igst_rate_formatted": format_qty(rev.igst_rate),
             "igst_amount_formatted": format_inr(rev.igst_amount),
+            "total_tax_formatted": format_inr(rev.total_tax),
             "grand_total_formatted": format_inr(rev.grand_total)
         }
 
