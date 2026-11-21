@@ -663,6 +663,15 @@ class ReportService:
             "avgCostPerMeal": avg_cost_per_meal
         }
 
+        # Compute Beverage Overview for the Director Dashboard
+        from app.breakfast.beverage_service import BeverageService
+        bev_service = BeverageService(self.db)
+        beverage_overview = bev_service.get_beverage_dashboard_overview(
+            target_date=selected_date_str,
+            current_month=current_month,
+            total_active_employees=total_employees
+        )
+
         return {
             "success": True,
             "currentMonth": current_month,
@@ -702,6 +711,7 @@ class ReportService:
                     "notes": tr.notes or ""
                 }
                 for tr in month_temp_requests
-            ]
+            ],
+            "beverageOverview": beverage_overview
         }
 

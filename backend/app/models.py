@@ -19,7 +19,9 @@ from app.breakfast.model import (
     BreakfastOrderItem,
     BreakfastMoneyTransaction,
     BreakfastFundRequest,
-    BreakfastTemporaryRequest
+    BreakfastTemporaryRequest,
+    BmsBeverage,
+    BmsBeverageEntry
 )
 
 from app.crm.model import (

@@ -26,6 +26,7 @@ from app.notifications.router import router as notifications_router
 from app.users.router import router as users_router
 from app.modules.router import router as modules_router
 from app.breakfast.memberships_router import router as bms_memberships_router
+from app.breakfast.beverage_router import router as beverage_router
 
 from app.core.init_roles import ensure_roles_and_permissions
 from app.core.init_modules import ensure_modules_and_memberships
@@ -155,6 +156,7 @@ for prefix in ["/api/v1", "/api"]:
     app.include_router(users_router, prefix=prefix)
     app.include_router(modules_router, prefix=prefix)
     app.include_router(bms_memberships_router, prefix=prefix)
+    app.include_router(beverage_router, prefix=prefix)
     app.include_router(crm_router, prefix=prefix)
     app.include_router(catalogue_router, prefix=prefix)
     app.include_router(invoice_router, prefix=prefix)

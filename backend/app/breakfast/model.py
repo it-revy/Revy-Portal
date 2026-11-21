@@ -261,3 +261,7 @@ class BreakfastTemporaryRequest(Base):
         Index("ix_temp_req_emp_date", "employee_id", "requested_date"),
     )
 
+
+# Beverage Management Models
+from app.breakfast.beverage_model import BmsBeverage, BmsBeverageEntry
+

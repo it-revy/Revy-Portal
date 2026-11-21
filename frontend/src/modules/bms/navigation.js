@@ -11,7 +11,8 @@ import {
   FileSpreadsheet,
   PieChart,
   ShieldAlert,
-  Settings
+  Settings,
+  Coffee
 } from 'lucide-react';
 
 export const BMS_NAV_ITEMS = [
@@ -22,6 +23,21 @@ export const BMS_NAV_ITEMS = [
     icon: Utensils,
     permission: 'breakfast.submit',
     orPermission: 'breakfast.view'
+  },
+  {
+    path: '/bms/beverage-log',
+    legacyPaths: ['/beverage-log', '/beverages'],
+    label: 'Beverage Log',
+    icon: Coffee,
+    permission: 'bms.beverages.submit',
+    orPermission: 'bms.beverages.view'
+  },
+  {
+    path: '/bms/beverage-management',
+    legacyPaths: ['/admin/beverages'],
+    label: 'Beverage Mgmt',
+    icon: Coffee,
+    permission: 'bms.beverages.manage'
   },
   {
     path: '/bms/dashboard',

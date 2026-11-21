@@ -176,7 +176,7 @@ def ensure_modules_and_memberships():
         all_perms = {p.code: p for p in db.query(Permission).all()}
 
         bms_employee_perms = [
-            all_perms[c] for c in ["breakfast.submit", "breakfast.view_own", "breakfast.history_own"]
+            all_perms[c] for c in ["breakfast.submit", "breakfast.view_own", "breakfast.history_own", "bms.beverages.view", "bms.beverages.submit"]
             if c in all_perms
         ]
         bms_finance_perms = [
@@ -409,6 +409,24 @@ def ensure_modules_and_memberships():
             else:
                 mem.role_id = crm_admin_role.id
                 mem.is_active = True
+
+        # Ensure Initial BMS Beverages exist
+        from app.breakfast.beverage_model import BmsBeverage
+        existing_bevs = {b.name: b for b in db.query(BmsBeverage).all()}
+        default_beverages = [
+            ("Tea", "Traditional hot brewed tea", 1),
+            ("Green Tea", "Refreshing herbal green tea", 2),
+            ("Coffee", "Hot freshly brewed coffee", 3),
+        ]
+        for bev_name, bev_desc, bev_order in default_beverages:
+            if bev_name not in existing_bevs:
+                db.add(BmsBeverage(
+                    name=bev_name,
+                    description=bev_desc,
+                    unit="Cups",
+                    display_order=bev_order,
+                    is_active=True
+                ))
 
         db.commit()
         logger.info("Successfully synced modules, module roles, permissions, and migrated all user assignments.")

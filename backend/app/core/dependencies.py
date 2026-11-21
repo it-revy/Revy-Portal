@@ -167,7 +167,10 @@ def get_current_user(
 
     # Ensure EMPLOYEE default permissions are populated if present in roles_list
     if user.employee or any(e in roles_list for e in ["EMPLOYEE", "BMS_EMPLOYEE"]):
-        emp_perms = ["breakfast.submit", "breakfast.view_own", "breakfast.history_own"]
+        emp_perms = [
+            "breakfast.submit", "breakfast.view_own", "breakfast.history_own",
+            "bms.beverages.view", "bms.beverages.submit"
+        ]
         if not permissions_by_role.get("EMPLOYEE"):
             permissions_by_role["EMPLOYEE"] = list(emp_perms)
         if not permissions_by_role.get("BMS_EMPLOYEE"):

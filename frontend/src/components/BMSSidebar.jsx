@@ -144,6 +144,19 @@ const BMSSidebar = ({ isMobileOpen, onCloseMobile, isCollapsed: propIsCollapsed,
           </NavLink>
         )}
 
+        {/* Beverage Log - Accessible to employees with beverage submit/view permissions */}
+        {(hasPermission('bms.beverages.submit') || hasPermission('bms.beverages.view')) && (
+          <NavLink
+            to="/bms/beverage-log"
+            onClick={handleLinkClick}
+            className={() => `nav-item ${isRouteActive('/bms/beverage-log', ['/beverage-log', '/beverages']) ? 'active' : ''}`}
+            title="Beverage Log"
+          >
+            <Coffee size={18} />
+            {(!isCollapsed || isMobileOpen) && <span>Beverage Log</span>}
+          </NavLink>
+        )}
+
         {/* 2. Breakfast Dropdown / Management Group */}
         {hasPermission('breakfast.view') && (
           <div className="nav-group">
@@ -269,6 +282,19 @@ const BMSSidebar = ({ isMobileOpen, onCloseMobile, isCollapsed: propIsCollapsed,
           >
             <Users size={18} />
             {(!isCollapsed || isMobileOpen) && <span>Employees</span>}
+          </NavLink>
+        )}
+
+        {/* Beverage Management - for BMS Admins */}
+        {hasPermission('bms.beverages.manage') && (
+          <NavLink
+            to="/bms/beverage-management"
+            onClick={handleLinkClick}
+            className={() => `nav-item ${isRouteActive('/bms/beverage-management', ['/admin/beverages']) ? 'active' : ''}`}
+            title="Beverage Management"
+          >
+            <Coffee size={18} />
+            {(!isCollapsed || isMobileOpen) && <span>Beverage Mgmt</span>}
           </NavLink>
         )}
 

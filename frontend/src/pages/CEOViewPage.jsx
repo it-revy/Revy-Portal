@@ -17,7 +17,9 @@ import {
   Building,
   HelpCircle,
   FileSpreadsheet,
-  AlertCircle
+  AlertCircle,
+  Sun,
+  Sunset
 } from 'lucide-react';
 import { PageHeader, Button, DatePicker, StatusBadge } from '../components/ui';
 
@@ -101,6 +103,15 @@ const CEOViewPage = () => {
   const departments = report?.departmentBreakdown || [];
   const reasons = report?.reasonDistribution || {};
   const tempRequests = report?.temporaryRequests || [];
+
+  // Separate Beverage Overview Data
+  const beverageOverview = report?.beverageOverview || {};
+  const bevDay = beverageOverview?.daySummary || {};
+  const bevMonth = beverageOverview?.monthSummary || {};
+  const bevBeverages = bevDay?.beverages || [];
+  const bevMonthBeverages = bevMonth?.beverages || [];
+  const bevDailyTrend = beverageOverview?.dailyTrend || [];
+  const bevEmployees = beverageOverview?.employeeConsumption || [];
 
   const diffVal = summary.requestActualDifference ?? summary.quantityDifference ?? report?.requestActualDifference ?? 0;
   const isDiffPositive = diffVal > 0;
@@ -719,6 +730,265 @@ const CEOViewPage = () => {
               </table>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* ================================================================= */}
+      {/* SEPARATE BEVERAGE OVERVIEW SECTION (Section 5 Requirement)         */}
+      {/* ================================================================= */}
+      <div style={{ marginTop: '2.5rem', paddingTop: '2rem', borderTop: '2px dashed var(--border-color)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+          <div>
+            <h2 style={{ fontSize: '1.3rem', display: 'flex', alignItems: 'center', gap: '0.65rem', margin: 0 }}>
+              <Coffee size={24} color="#f59e0b" />
+              Beverage Operations &amp; Consumption Overview
+            </h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '0.25rem 0 0 0' }}>
+              Operational beverage consumption metrics for <strong>{selectedDate || report?.todayDate}</strong> ({report?.currentMonth}). All quantities measured in <strong>Cups</strong>. Maintained strictly distinct from breakfast meals.
+            </p>
+          </div>
+          <span className="badge" style={{ background: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b', fontWeight: 700, padding: '0.4rem 0.85rem' }}>
+            🍵 Morning &amp; Evening Sessions
+          </span>
+        </div>
+
+        {/* 4 Beverage KPI Cards */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+            gap: '1rem',
+            marginBottom: '1.75rem'
+          }}
+        >
+          {/* 1. Today Total Cups */}
+          <div className="glass-panel metric-card" style={{ padding: '1.25rem', borderLeft: '4px solid #f59e0b' }}>
+            <div>
+              <div className="metric-label" style={{ fontSize: '0.7rem' }}>TODAY'S BEVERAGE CUPS</div>
+              <div className="metric-val" style={{ fontSize: '1.6rem', color: '#fbbf24' }}>
+                {bevDay.totalCups || 0} <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Cups</span>
+              </div>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Morning: {bevDay.morningCups || 0} • Evening: {bevDay.eveningCups || 0}
+              </span>
+            </div>
+            <Coffee size={32} color="#f59e0b" opacity={0.8} />
+          </div>
+
+          {/* 2. Morning Session Cups */}
+          <div className="glass-panel metric-card" style={{ padding: '1.25rem', borderLeft: '4px solid #eab308' }}>
+            <div>
+              <div className="metric-label" style={{ fontSize: '0.7rem' }}>MORNING SESSION</div>
+              <div className="metric-val" style={{ fontSize: '1.6rem', color: '#fde047' }}>
+                {bevDay.morningCups || 0} <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Cups</span>
+              </div>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                AM Beverage consumption
+              </span>
+            </div>
+            <Sun size={32} color="#eab308" opacity={0.8} />
+          </div>
+
+          {/* 3. Evening Session Cups */}
+          <div className="glass-panel metric-card" style={{ padding: '1.25rem', borderLeft: '4px solid #8b5cf6' }}>
+            <div>
+              <div className="metric-label" style={{ fontSize: '0.7rem' }}>EVENING SESSION</div>
+              <div className="metric-val" style={{ fontSize: '1.6rem', color: '#a78bfa' }}>
+                {bevDay.eveningCups || 0} <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Cups</span>
+              </div>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                PM Beverage consumption
+              </span>
+            </div>
+            <Sunset size={32} color="#8b5cf6" opacity={0.8} />
+          </div>
+
+          {/* 4. Active Drinkers Participation */}
+          <div className="glass-panel metric-card" style={{ padding: '1.25rem', borderLeft: '4px solid #10b981' }}>
+            <div>
+              <div className="metric-label" style={{ fontSize: '0.7rem' }}>EMPLOYEE PARTICIPATION</div>
+              <div className="metric-val" style={{ fontSize: '1.6rem', color: '#34d399' }}>
+                {bevDay.participationRate || 0}%
+              </div>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                {bevDay.uniqueDrinkers || 0} of {totalEmployeesVal} employees today
+              </span>
+            </div>
+            <Users size={32} color="#10b981" opacity={0.8} />
+          </div>
+        </div>
+
+        {/* Beverage Catalogue Breakdown: Today vs Month */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 420px), 1fr))', gap: '1.5rem', marginBottom: '1.75rem' }}>
+          {/* Today's Beverage Distribution */}
+          <div className="panel-card" style={{ padding: '1.5rem' }}>
+            <h3 style={{ fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0 0 0.5rem 0' }}>
+              <Coffee size={18} color="var(--accent-primary)" />
+              Daily Beverage Breakdown ({selectedDate || report?.todayDate})
+            </h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', margin: '0 0 1rem 0' }}>
+              Morning and Evening distribution for all configured beverages
+            </p>
+
+            <div className="table-container">
+              <table className="custom-table">
+                <thead>
+                  <tr>
+                    <th>Beverage</th>
+                    <th>Morning</th>
+                    <th>Evening</th>
+                    <th>Total</th>
+                    <th>Share</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bevBeverages.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.5rem' }}>
+                        No beverages logged for this date.
+                      </td>
+                    </tr>
+                  ) : (
+                    bevBeverages.map(b => {
+                      const share = bevDay.totalCups > 0 ? Math.round((b.totalCups / bevDay.totalCups) * 100) : 0;
+                      return (
+                        <tr key={b.name}>
+                          <td><strong style={{ color: 'var(--text-primary)' }}>{b.name}</strong></td>
+                          <td>{b.morningCups} cups</td>
+                          <td>{b.eveningCups} cups</td>
+                          <td><strong style={{ color: 'var(--accent-primary)' }}>{b.totalCups} cups</strong></td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                              <div style={{ flex: 1, height: '5px', background: 'var(--border-color)', borderRadius: '3px', overflow: 'hidden', minWidth: '40px' }}>
+                                <div style={{ width: `${share}%`, height: '100%', background: '#f59e0b' }} />
+                              </div>
+                              <span style={{ fontSize: '0.75rem', minWidth: '30px' }}>{share}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Monthly Beverage Totals */}
+          <div className="panel-card" style={{ padding: '1.5rem' }}>
+            <h3 style={{ fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: '0 0 0.5rem 0' }}>
+              <Layers size={18} color="#8b5cf6" />
+              Monthly Beverage Volume ({report?.currentMonth})
+            </h3>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', margin: '0 0 1rem 0' }}>
+              Aggregated monthly consumption across all configured beverages
+            </p>
+
+            <div className="table-container">
+              <table className="custom-table">
+                <thead>
+                  <tr>
+                    <th>Beverage</th>
+                    <th>Morning</th>
+                    <th>Evening</th>
+                    <th>Month Total</th>
+                    <th>Share</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bevMonthBeverages.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '1.5rem' }}>
+                        No monthly beverage records found.
+                      </td>
+                    </tr>
+                  ) : (
+                    bevMonthBeverages.map(b => {
+                      const share = bevMonth.totalCups > 0 ? Math.round((b.totalCups / bevMonth.totalCups) * 100) : 0;
+                      return (
+                        <tr key={b.name}>
+                          <td><strong style={{ color: 'var(--text-primary)' }}>{b.name}</strong></td>
+                          <td>{b.morningCups} cups</td>
+                          <td>{b.eveningCups} cups</td>
+                          <td><strong style={{ color: '#8b5cf6' }}>{b.totalCups} cups</strong></td>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                              <div style={{ flex: 1, height: '5px', background: 'var(--border-color)', borderRadius: '3px', overflow: 'hidden', minWidth: '40px' }}>
+                                <div style={{ width: `${share}%`, height: '100%', background: '#8b5cf6' }} />
+                              </div>
+                              <span style={{ fontSize: '0.75rem', minWidth: '30px' }}>{share}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        {/* Employee-Wise Beverage Consumption Table */}
+        <div className="panel-card" style={{ padding: '1.5rem', marginBottom: '1.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+            <div>
+              <h3 style={{ fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.5rem', margin: 0 }}>
+                <Users size={18} color="var(--accent-primary)" />
+                Employee Beverage Consumption Ranking ({report?.currentMonth})
+              </h3>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', margin: '0.2rem 0 0 0' }}>
+                Cumulative employee consumption, session distribution, and preferred beverage for the month
+              </p>
+            </div>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+              Showing {bevEmployees.length} active participating employees
+            </span>
+          </div>
+
+          <div className="table-container">
+            <table className="custom-table">
+              <thead>
+                <tr>
+                  <th>Employee</th>
+                  <th>Department</th>
+                  <th>Morning Cups</th>
+                  <th>Evening Cups</th>
+                  <th>Total Cups</th>
+                  <th>Preferred Beverage</th>
+                  <th>Active Days</th>
+                </tr>
+              </thead>
+              <tbody>
+                {bevEmployees.length === 0 ? (
+                  <tr>
+                    <td colSpan="7" style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '2rem' }}>
+                      No employee beverage consumption logged for this month.
+                    </td>
+                  </tr>
+                ) : (
+                  bevEmployees.map(emp => (
+                    <tr key={emp.employeeId}>
+                      <td>
+                        <strong style={{ color: 'var(--text-primary)' }}>{emp.employeeName}</strong>
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{emp.employeeId}</div>
+                      </td>
+                      <td>{emp.department}</td>
+                      <td>{emp.morningCups} cups</td>
+                      <td>{emp.eveningCups} cups</td>
+                      <td>
+                        <strong style={{ color: 'var(--accent-primary)' }}>{emp.totalCups} cups</strong>
+                      </td>
+                      <td>
+                        <span className="badge badge-secondary">{emp.preferredBeverage}</span>
+                      </td>
+                      <td>{emp.daysActive} day(s)</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>

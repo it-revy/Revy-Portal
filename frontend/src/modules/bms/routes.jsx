@@ -14,6 +14,8 @@ import ReportsPage from '../../pages/ReportsPage';
 import CEOViewPage from '../../pages/CEOViewPage';
 import AuditLogsPage from '../../pages/AuditLogsPage';
 import SettingsPage from '../../pages/SettingsPage';
+import BeverageLogPage from '../../pages/BeverageLogPage';
+import BeverageManagementPage from '../../pages/BeverageManagementPage';
 import BMSLayout from '../../layouts/BMSLayout';
 
 export function getBMSRoutes() {
@@ -34,6 +36,24 @@ export function getBMSRoutes() {
       element={
         <BMSLayout>
           <EmployeeDailyPage />
+        </BMSLayout>
+      }
+    />,
+    <Route
+      key="bms-beverage-log"
+      path="/bms/beverage-log"
+      element={
+        <BMSLayout requiredPermission="bms.beverages.submit">
+          <BeverageLogPage />
+        </BMSLayout>
+      }
+    />,
+    <Route
+      key="bms-beverage-management"
+      path="/bms/beverage-management"
+      element={
+        <BMSLayout requiredPermission="bms.beverages.manage">
+          <BeverageManagementPage />
         </BMSLayout>
       }
     />,
